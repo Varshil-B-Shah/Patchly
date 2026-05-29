@@ -44,13 +44,27 @@ function connect() {
   }
 }
 
-// Respond to popup asking for current status
+// Respond to popup asking for current status, and handle activation from popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_STATUS') {
     sendResponse({ connected: isConnected })
     return true
   }
+  if (msg.type === 'ACTIVATE_PATCHLY') {
+    if (window.__patchlyActivate) window.__patchlyActivate()
+  }
 })
 
 // Start connecting when page loads
 connect()
+
+// Keyboard shortcut: Alt+Shift+P activates selection mode, Esc cancels
+document.addEventListener('keydown', (e) => {
+  if (e.altKey && e.shiftKey && e.key === 'P') {
+    e.preventDefault()
+    if (window.__patchlyActivate) window.__patchlyActivate()
+  }
+  if (e.key === 'Escape' && window.__patchlyCancel) {
+    window.__patchlyCancel()
+  }
+})

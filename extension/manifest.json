@@ -24,7 +24,8 @@
   "content_scripts": [
     {
       "matches": ["http://localhost/*", "http://127.0.0.1/*"],
-      "js": ["content.js"],
+      "js": ["content.js", "overlay.js"],
+      "css": ["overlay.css"],
       "run_at": "document_idle"
     }
   ],
