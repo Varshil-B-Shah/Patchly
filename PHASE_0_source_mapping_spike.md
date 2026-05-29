@@ -196,13 +196,13 @@ function resolveSource(patchlySrc, projectRoot) {
 const result = resolveSource(simulatedPayload.patchlySrc, simulatedPayload.projectRoot)
 
 if (result.success) {
-  console.log('✅ Source mapping works!')
+  console.log('Source mapping works!')
   console.log('File:', result.absolutePath)
   console.log('Line:', result.lineNumber)
   console.log('Target line:', result.targetLine)
   console.log('Context:\n', result.context)
 } else {
-  console.log('❌ Failed:', result.error)
+  console.log('Failed:', result.error)
 }
 ```
 
@@ -213,7 +213,7 @@ node spike.js
 
 **Expected output:**
 ```
-✅ Source mapping works!
+Source mapping works!
 File: /Users/you/patchly-spike/test-app/src/components/Hero.jsx
 Line: 5
 Target line:     <div className="flex flex-col items-center py-20 bg-gray-50">

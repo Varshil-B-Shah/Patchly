@@ -42,13 +42,13 @@ function test(label, patchlySrc) {
   console.log(`Input: ${patchlySrc}`)
   const result = resolveSource(patchlySrc, simulatedPayload.projectRoot)
   if (result.success) {
-    console.log('✅ Source mapping works!')
+    console.log('Source mapping works!')
     console.log('File:', result.absolutePath)
     console.log('Line:', result.lineNumber, '| Col:', result.colNumber)
     console.log('Target line:', result.targetLine?.trim())
     console.log('Context:\n' + result.context)
   } else {
-    console.log('❌ Failed:', result.error)
+    console.log('Failed:', result.error)
   }
 }
 
