@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Select any UI area on localhost, describe the change, watch the code update.",
   "type": "module",
+  "exports": {
+    ".": "./agent/index.js",
+    "./vite": "./vite-plugin/index.js"
+  },
   "bin": {
     "patchly": "./agent/index.js"
   },
@@ -11,7 +15,11 @@
     "dev": "node --watch agent/index.js"
   },
   "dependencies": {
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "@babel/parser": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@babel/generator": "^7.24.0",
+    "@babel/types": "^7.24.0"
   },
   "engines": {
     "node": ">=18.0.0"

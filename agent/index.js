@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // agent/index.js
 
-import { startServer } from './server.js'
-import { loadConfig } from './config.js'
-
-const PORT = 7842  // fixed port — extension hardcodes this too
+const PORT = 7842
 
 async function main() {
+  const { startServer } = await import('./server.js')
+  const { loadConfig } = await import('./config.js')
+
   console.log('Patchly agent starting...')
 
   const config = await loadConfig()
@@ -22,7 +22,11 @@ async function main() {
   console.log(`   Open your localhost app and activate Patchly with Alt+Shift+P`)
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err)
-  process.exit(1)
-})
+if (process.argv[2] === 'init') {
+  import('../bin/init.js')
+} else {
+  main().catch(err => {
+    console.error('Fatal error:', err)
+    process.exit(1)
+  })
+}

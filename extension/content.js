@@ -6,6 +6,7 @@ const AGENT_PORT = 7842
 const MSG_PING = 'PATCHLY_PING'
 const MSG_PONG = 'PATCHLY_PONG'
 const MSG_STATUS = 'PATCHLY_STATUS'
+const MSG_EDIT_REQUEST = 'PATCHLY_EDIT_REQUEST'
 
 let ws = null
 let isConnected = false
@@ -23,15 +24,20 @@ function connect() {
 
       if (msg.type === MSG_PONG || msg.type === MSG_STATUS) {
         isConnected = true
-        // Notify popup of connection status
-        chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: true })
+        try {
+          chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: true })
+        } catch (e) { return }
       }
     }
 
     ws.onclose = () => {
       isConnected = false
-      chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: false })
-      // Retry connection every 3 seconds
+      try {
+        chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: false })
+      } catch (e) {
+        // Extension was reloaded — stop retrying, new content script will take over
+        return
+      }
       setTimeout(connect, 3000)
     }
 
@@ -54,6 +60,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (window.__patchlyActivate) window.__patchlyActivate()
   }
 })
+
+// Send an EDIT_REQUEST to the agent over the existing WebSocket
+function sendEditRequest(payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.warn('[Patchly] Agent not connected — cannot send edit request')
+    return
+  }
+  ws.send(JSON.stringify({ type: MSG_EDIT_REQUEST, ...payload }))
+}
+
+window.__patchlySend = sendEditRequest
 
 // Start connecting when page loads
 connect()

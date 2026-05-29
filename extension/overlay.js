@@ -162,7 +162,24 @@ function findTargetElement(rect) {
     return
   }
 
-  selectedElement = candidates[0]
+  // Find the most specific element that covers at least 50% of the selection.
+  // candidates is ordered deepest-first, so the first qualifying match is the
+  // most specific element that actually "fits" the selection the user drew.
+  const selectionArea = rect.width * rect.height
+  let bestCandidate = candidates[0]
+
+  for (const el of candidates) {
+    const elRect = el.getBoundingClientRect()
+    const overlapX = Math.max(0, Math.min(rect.x + rect.width, elRect.right) - Math.max(rect.x, elRect.left))
+    const overlapY = Math.max(0, Math.min(rect.y + rect.height, elRect.bottom) - Math.max(rect.y, elRect.top))
+    const coverage = (overlapX * overlapY) / selectionArea
+    if (coverage >= 0.5) {
+      bestCandidate = el
+      break
+    }
+  }
+
+  selectedElement = bestCandidate
   selectedPatchlySrc = selectedElement.dataset.patchlySrc || null
 
   const elRect = selectedElement.getBoundingClientRect()
@@ -210,11 +227,16 @@ function submitPrompt() {
   }
 
   console.log('[Patchly] Edit request payload:', payload)
-  console.log('[Patchly] patchlySrc:', payload.patchlySrc || 'NOT FOUND — source mapping not working')
 
-  const submitBtn = document.getElementById('patchly-prompt-submit')
-  submitBtn.textContent = 'Logged'
-  submitBtn.style.background = '#22c55e'
+  if (window.__patchlySend) {
+    window.__patchlySend(payload)
+    const submitBtn = document.getElementById('patchly-prompt-submit')
+    submitBtn.textContent = 'Sent'
+    submitBtn.style.background = '#22c55e'
+  } else {
+    console.warn('[Patchly] __patchlySend not available')
+  }
+
   setTimeout(() => cancel(), 1000)
 }
 
