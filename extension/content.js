@@ -28,6 +28,10 @@ function connect() {
           chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: true })
         } catch (e) { return }
       }
+
+      if (msg.type === 'PATCHLY_PREVIEW') {
+        if (window.__patchlyShowPreview) window.__patchlyShowPreview(msg)
+      }
     }
 
     ws.onclose = () => {
@@ -71,6 +75,12 @@ function sendEditRequest(payload) {
 }
 
 window.__patchlySend = sendEditRequest
+
+// Generic send — used by overlay.js for CONFIRM/REJECT after preview toast
+window.__patchlySendToAgent = function(data) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify(data))
+}
 
 // Start connecting when page loads
 connect()

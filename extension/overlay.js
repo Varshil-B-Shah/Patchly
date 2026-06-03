@@ -242,3 +242,72 @@ function submitPrompt() {
 
 window.__patchlyActivate = activate
 window.__patchlyCancel = cancel
+
+function showPreviewToast({ explanation, find, replace, filePath, lineNumber, sessionId }) {
+  const existing = document.getElementById('patchly-toast')
+  if (existing) existing.remove()
+
+  const toast = document.createElement('div')
+  toast.id = 'patchly-toast'
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    z-index: 2147483647;
+    max-width: 380px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    pointer-events: all;
+  `
+
+  toast.innerHTML = `
+    <div style="font-weight:600;margin-bottom:6px;color:#1a1a1a">
+      Patchly will:
+    </div>
+    <div style="color:#444;margin-bottom:10px;line-height:1.4">
+      ${explanation}
+    </div>
+    <div style="font-size:11px;color:#888;margin-bottom:12px">
+      ${filePath} &middot; line ${lineNumber}
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="patchly-confirm" style="
+        flex:1;background:#6366f1;color:#fff;border:none;
+        border-radius:7px;padding:7px;font-size:13px;cursor:pointer;
+        font-family:inherit;
+      ">Apply</button>
+      <button id="patchly-reject" style="
+        flex:1;background:#f5f5f5;color:#444;border:none;
+        border-radius:7px;padding:7px;font-size:13px;cursor:pointer;
+        font-family:inherit;
+      ">Cancel</button>
+    </div>
+  `
+
+  document.body.appendChild(toast)
+
+  document.getElementById('patchly-confirm').onclick = () => {
+    toast.remove()
+    if (window.__patchlySendToAgent) {
+      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId })
+    }
+  }
+
+  document.getElementById('patchly-reject').onclick = () => {
+    toast.remove()
+    if (window.__patchlySendToAgent) {
+      window.__patchlySendToAgent({ type: 'PATCHLY_REJECT', sessionId })
+    }
+  }
+
+  setTimeout(() => {
+    if (document.getElementById('patchly-toast') === toast) toast.remove()
+  }, 30000)
+}
+
+window.__patchlyShowPreview = showPreviewToast

@@ -13,6 +13,11 @@ export const MSG = {
   EDIT_DONE:    'PATCHLY_EDIT_DONE',
   EDIT_ERROR:   'PATCHLY_EDIT_ERROR',
   STATUS:       'PATCHLY_STATUS',
+  PREVIEW:      'PATCHLY_PREVIEW',
+
+  // Extension → Agent (Phase 4+)
+  CONFIRM:      'PATCHLY_CONFIRM',
+  REJECT:       'PATCHLY_REJECT',
 }
 
 // Message shape reference (not enforced in v1, just documentation)

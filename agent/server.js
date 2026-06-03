@@ -2,6 +2,9 @@
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import { resolveSource } from './sourceMapper.js'
+import { getEditInstruction } from './llm.js'
+
+const pendingEdits = new Map()  // sessionId → { absolutePath, find, replace }
 
 export async function startServer(port, config) {
   const wss = new WebSocketServer({ port })
@@ -15,7 +18,7 @@ export async function startServer(port, config) {
       projectRoot: config.projectRoot,
     }))
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       let msg
       try {
         msg = JSON.parse(data.toString())
@@ -49,14 +52,56 @@ export async function startServer(port, config) {
 
         console.log('Source resolved:', sourceResult.absolutePath, 'line', sourceResult.lineNumber)
         console.log('Target line:', sourceResult.targetLine)
+        console.log('Source resolved. Calling LLM...')
 
-        // Phase 3: confirm source resolved — Phase 4 continues from here with LLM call
+        let llmResult = await getEditInstruction({
+          sourceResult,
+          elementHtml,
+          elementClasses,
+          prompt,
+          config,
+        })
+
+        if (!llmResult.success && llmResult.code === 'JSON_PARSE_FAILED') {
+          console.log('LLM returned invalid JSON, retrying with stricter prompt...')
+          llmResult = await getEditInstruction({
+            sourceResult,
+            elementHtml,
+            elementClasses,
+            prompt: prompt + ' — respond with ONLY the JSON object, nothing else',
+            config,
+          })
+        }
+
+        if (!llmResult.success) {
+          console.log('LLM error:', llmResult.code, '—', llmResult.message)
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            sessionId,
+            code: llmResult.code,
+            message: llmResult.message,
+          }))
+          return
+        }
+
+        console.log('LLM response:', llmResult.explanation)
+        console.log('  find:', llmResult.find.slice(0, 80))
+        console.log('  replace:', llmResult.replace.slice(0, 80))
+
+        pendingEdits.set(sessionId, {
+          absolutePath: sourceResult.absolutePath,
+          find: llmResult.find,
+          replace: llmResult.replace,
+        })
+
         ws.send(JSON.stringify({
-          type: MSG.STATUS,
-          phase3debug: true,
-          resolvedPath: sourceResult.absolutePath,
-          resolvedLine: sourceResult.lineNumber,
-          targetLine: sourceResult.targetLine,
+          type: MSG.PREVIEW,
+          sessionId,
+          explanation: llmResult.explanation,
+          find: llmResult.find,
+          replace: llmResult.replace,
+          filePath: sourceResult.relativePath,
+          lineNumber: sourceResult.lineNumber,
         }))
       }
     })
