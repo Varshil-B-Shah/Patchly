@@ -7,6 +7,7 @@ const MSG_PING = 'PATCHLY_PING'
 const MSG_PONG = 'PATCHLY_PONG'
 const MSG_STATUS = 'PATCHLY_STATUS'
 const MSG_EDIT_REQUEST = 'PATCHLY_EDIT_REQUEST'
+const MSG_SETTINGS = 'PATCHLY_SETTINGS'
 
 let ws = null
 let isConnected = false
@@ -17,6 +18,18 @@ function connect() {
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: MSG_PING }))
+
+      // Forward saved Azure settings from Chrome storage to the agent
+      chrome.storage.local.get(['azureEndpoint', 'azureKey', 'azureModel'], (data) => {
+        if (data.azureEndpoint || data.azureKey) {
+          ws.send(JSON.stringify({
+            type: MSG_SETTINGS,
+            azureEndpoint: data.azureEndpoint,
+            azureApiKey: data.azureKey,
+            model: data.azureModel,
+          }))
+        }
+      })
     }
 
     ws.onmessage = (event) => {
@@ -30,6 +43,7 @@ function connect() {
       }
 
       if (msg.type === 'PATCHLY_PREVIEW') {
+        if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowPreview) window.__patchlyShowPreview(msg)
       }
 
@@ -38,10 +52,12 @@ function connect() {
       }
 
       if (msg.type === 'PATCHLY_EDIT_ERROR') {
+        if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowError) window.__patchlyShowError(msg.message)
       }
 
       if (msg.type === 'PATCHLY_INFO') {
+        if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowInfo) window.__patchlyShowInfo(msg.message)
       }
 

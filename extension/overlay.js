@@ -233,14 +233,35 @@ function submitPrompt() {
   if (window.__patchlySend) {
     window.__patchlySend(payload)
     const submitBtn = document.getElementById('patchly-prompt-submit')
-    submitBtn.textContent = 'Sent'
-    submitBtn.style.background = '#22c55e'
+    submitBtn.textContent = '...'
+    submitBtn.disabled = true
+    submitBtn.style.background = '#818cf8'
+    promptInput.disabled = true
   } else {
     console.warn('[Patchly] __patchlySend not available')
   }
 
-  setTimeout(() => cancel(), 1000)
+  if (selectionRect) selectionRect.style.display = 'none'
+  if (elementHighlight) elementHighlight.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
 }
+
+function resetPromptBar() {
+  const submitBtn = document.getElementById('patchly-prompt-submit')
+  if (submitBtn) {
+    submitBtn.textContent = 'Apply'
+    submitBtn.disabled = false
+    submitBtn.style.background = ''
+  }
+  if (promptInput) {
+    promptInput.disabled = false
+    promptInput.value = ''
+  }
+  if (promptBar) promptBar.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
+}
+
+window.__patchlyResetPromptBar = resetPromptBar
 
 window.__patchlyActivate = activate
 window.__patchlyCancel = cancel

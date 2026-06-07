@@ -58,7 +58,7 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       return {
         success: false,
         code: 'LLM_API_ERROR',
-        message: `Azure API error ${response.status}: ${errorText.slice(0, 200)}`,
+        message: `Azure API error (status ${response.status}). Check your endpoint URL and API key in settings.`,
       }
     }
 
@@ -190,10 +190,11 @@ function parseEditInstruction(rawContent) {
     }
 
   } catch {
+    console.log('[LLM] Could not parse response as JSON. Raw:', cleaned.slice(0, 200))
     return {
       success: false,
       code: 'JSON_PARSE_FAILED',
-      message: `Could not parse LLM response as JSON. Raw: ${cleaned.slice(0, 200)}`,
+      message: `Patchly couldn't understand the AI's response. Please try again.`,
     }
   }
 }

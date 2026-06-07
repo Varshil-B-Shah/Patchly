@@ -37,10 +37,11 @@ export function resolveSource(patchlySrc, projectRoot) {
   }
 
   if (!fs.existsSync(absolutePath)) {
+    console.log('[sourceMapper] File not found:', absolutePath)
     return {
       success: false,
       code: 'FILE_NOT_FOUND',
-      message: `File not found: ${absolutePath}`,
+      message: `Could not find ${filePath}. The file may have been moved, renamed, or deleted.`,
     }
   }
 

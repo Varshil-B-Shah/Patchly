@@ -36,6 +36,13 @@ export async function startServer(port, config) {
         ws.send(JSON.stringify({ type: MSG.PONG }))
       }
 
+      if (msg.type === MSG.SETTINGS) {
+        if (msg.azureEndpoint) config.azureEndpoint = msg.azureEndpoint
+        if (msg.azureApiKey) config.azureApiKey = msg.azureApiKey
+        if (msg.model) config.model = msg.model
+        console.log('Settings updated from extension')
+      }
+
       if (msg.type === MSG.EDIT_REQUEST) {
         const { patchlySrc, elementHtml, elementClasses, prompt, sessionId } = msg
 

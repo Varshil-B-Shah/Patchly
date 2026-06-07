@@ -23,6 +23,28 @@ function detectDevPort(projectRoot) {
   return framework === 'nextjs' ? 3000 : 5173
 }
 
+function hasPatchlyPlugin(projectRoot) {
+  for (const fileName of ['vite.config.js', 'vite.config.ts']) {
+    const configPath = path.resolve(projectRoot, fileName)
+    if (!fs.existsSync(configPath)) continue
+    const content = fs.readFileSync(configPath, 'utf8')
+    if (content.includes('patchlyPlugin')) return true
+  }
+  return false
+}
+
+function updateGitignore(projectRoot) {
+  const gitignorePath = path.resolve(projectRoot, '.gitignore')
+  if (!fs.existsSync(gitignorePath)) return
+
+  let content = fs.readFileSync(gitignorePath, 'utf8')
+  if (content.includes('.patchlyrc.json')) return
+
+  content += `${content.endsWith('\n') ? '' : '\n'}.patchlyrc.json\n`
+  fs.writeFileSync(gitignorePath, content)
+  console.log('Updated .gitignore')
+}
+
 async function init() {
   const projectRoot = process.cwd()
   const configPath = path.resolve(projectRoot, CONFIG_FILE)
@@ -45,19 +67,27 @@ async function init() {
   }
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+  updateGitignore(projectRoot)
 
   console.log('\nPatchly initialized!\n')
   console.log(`Created ${CONFIG_FILE}`)
   console.log(`Detected framework: ${framework}`)
   console.log(`Detected dev port: ${devPort}`)
   console.log('\n------------------------------------')
-  console.log('Next step: add Patchly to your vite.config.js\n')
-  console.log(`  import { patchlyPlugin } from 'patchly/vite'`)
-  console.log('\n  export default defineConfig({')
-  console.log('    plugins: [patchlyPlugin(), react()],  // patchlyPlugin FIRST')
-  console.log('  })')
+
+  if (hasPatchlyPlugin(projectRoot)) {
+    console.log('patchlyPlugin() is already configured in vite.config.js')
+  } else {
+    console.log('Next step: add Patchly to your vite.config.js\n')
+    console.log(`  import { patchlyPlugin } from 'patchly/vite'`)
+    console.log('\n  export default defineConfig({')
+    console.log('    plugins: [patchlyPlugin(), react()],  // patchlyPlugin FIRST')
+    console.log('  })')
+  }
+
   console.log('------------------------------------\n')
-  console.log(`Then fill in your Azure OpenAI credentials in ${CONFIG_FILE}`)
+  console.log('Add your Azure OpenAI credentials from the extension popup (Settings),')
+  console.log(`or fill them into ${CONFIG_FILE} directly.`)
   console.log('Or set env vars: PATCHLY_AZURE_ENDPOINT and PATCHLY_AZURE_KEY\n')
   console.log('Then run: npx patchly')
 }

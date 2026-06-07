@@ -69,10 +69,11 @@ export function applyEdit({ absolutePath, find, replace, projectRoot }) {
 
   // 4. File must exist
   if (!fs.existsSync(resolvedPath)) {
+    console.log('[fileEditor] File not found:', resolvedPath)
     return {
       success: false,
       code: 'FILE_NOT_FOUND',
-      message: `File not found: ${resolvedPath}`
+      message: `Could not find ${relativePath}. The file may have been moved, renamed, or deleted.`
     }
   }
 
@@ -81,10 +82,11 @@ export function applyEdit({ absolutePath, find, replace, projectRoot }) {
   try {
     content = fs.readFileSync(resolvedPath, 'utf8')
   } catch (err) {
+    console.log('[fileEditor] Read error:', err.message)
     return {
       success: false,
       code: 'READ_ERROR',
-      message: `Could not read file: ${err.message}`
+      message: `Could not read ${relativePath}. It may have been moved or deleted.`
     }
   }
 
@@ -113,10 +115,11 @@ export function applyEdit({ absolutePath, find, replace, projectRoot }) {
   try {
     fs.writeFileSync(resolvedPath, newContent, 'utf8')
   } catch (err) {
+    console.log('[fileEditor] Write error:', err.message)
     return {
       success: false,
       code: 'WRITE_ERROR',
-      message: `Could not write file: ${err.message}`
+      message: `Could not write to ${relativePath}. Check that the file isn't read-only or open in another program.`
     }
   }
 
@@ -137,10 +140,11 @@ export function undoEdit({ absolutePath, previousContent }) {
     console.log(`Undid edit to ${path.basename(resolvedPath)}`)
     return { success: true }
   } catch (err) {
+    console.log('[fileEditor] Undo error:', err.message)
     return {
       success: false,
       code: 'UNDO_ERROR',
-      message: `Undo failed: ${err.message}`
+      message: `Could not undo the change to ${path.basename(resolvedPath)}. Check that the file isn't read-only or open in another program.`
     }
   }
 }

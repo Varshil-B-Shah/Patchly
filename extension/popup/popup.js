@@ -37,3 +37,28 @@ chrome.runtime.onMessage.addListener((msg) => {
     setConnected(msg.connected)
   }
 })
+
+// Settings: load saved values on open, save on click
+const endpointInput = document.getElementById('azure-endpoint')
+const keyInput = document.getElementById('azure-key')
+const modelInput = document.getElementById('azure-model')
+const saveBtn = document.getElementById('save-settings')
+const saveStatus = document.getElementById('save-status')
+
+chrome.storage.local.get(['azureEndpoint', 'azureKey', 'azureModel'], (data) => {
+  if (data.azureEndpoint) endpointInput.value = data.azureEndpoint
+  if (data.azureKey) keyInput.value = data.azureKey
+  if (data.azureModel) modelInput.value = data.azureModel
+})
+
+saveBtn.onclick = () => {
+  const settings = {
+    azureEndpoint: endpointInput.value.trim(),
+    azureKey: keyInput.value.trim(),
+    azureModel: modelInput.value.trim(),
+  }
+  chrome.storage.local.set(settings, () => {
+    saveStatus.style.display = 'block'
+    setTimeout(() => { saveStatus.style.display = 'none' }, 2000)
+  })
+}
