@@ -86,8 +86,7 @@ async function init() {
   }
 
   console.log('------------------------------------\n')
-  console.log('Add your Azure OpenAI credentials from the extension popup (Settings),')
-  console.log(`or fill them into ${CONFIG_FILE} directly.`)
+  console.log(`Now fill in your Azure OpenAI credentials in ${CONFIG_FILE}`)
   console.log('Or set env vars: PATCHLY_AZURE_ENDPOINT and PATCHLY_AZURE_KEY\n')
   console.log('Then run: npx patchly')
 }

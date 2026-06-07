@@ -15,12 +15,12 @@ No hunting through files. No searching for classNames. Just point and fix.
 npx patchly init
 ```
 Follow the printed instructions to add `patchlyPlugin()` to your `vite.config.js`
-(skipped automatically if it's already there).
+(skipped automatically if it's already there), then add your Azure OpenAI credentials
+to the generated `.patchlyrc.json`.
 
 **2. Load the Chrome extension:**
 Open `chrome://extensions`, enable Developer Mode, and "Load unpacked" the
-`extension/` folder. Click the Patchly icon and add your Azure OpenAI credentials
-under Settings — no JSON editing required.
+`extension/` folder.
 
 ---
 
@@ -42,7 +42,7 @@ Made a mistake? Click **Undo** in the success toast to revert instantly.
 - React + Vite + Tailwind CSS (the AI is instructed to write Tailwind classes only)
 - Node.js 18+
 - Chrome browser
-- Azure OpenAI API key (add it from the extension popup's Settings section)
+- Azure OpenAI API key (add it to `.patchlyrc.json`, created by `npx patchly init`)
 
 ---
 

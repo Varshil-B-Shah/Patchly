@@ -7,7 +7,6 @@ export const MSG = {
   PING:         'PATCHLY_PING',
   EDIT_REQUEST: 'PATCHLY_EDIT_REQUEST',
   UNDO:         'PATCHLY_UNDO',
-  SETTINGS:     'PATCHLY_SETTINGS',
 
   // Agent → Extension
   PONG:         'PATCHLY_PONG',
