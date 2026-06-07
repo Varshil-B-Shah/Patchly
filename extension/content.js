@@ -32,6 +32,22 @@ function connect() {
       if (msg.type === 'PATCHLY_PREVIEW') {
         if (window.__patchlyShowPreview) window.__patchlyShowPreview(msg)
       }
+
+      if (msg.type === 'PATCHLY_EDIT_DONE') {
+        if (window.__patchlyShowSuccess) window.__patchlyShowSuccess({ filePath: msg.filePath })
+      }
+
+      if (msg.type === 'PATCHLY_EDIT_ERROR') {
+        if (window.__patchlyShowError) window.__patchlyShowError(msg.message)
+      }
+
+      if (msg.type === 'PATCHLY_INFO') {
+        if (window.__patchlyShowInfo) window.__patchlyShowInfo(msg.message)
+      }
+
+      if (msg.type === 'PATCHLY_UNDO_DONE') {
+        if (window.__patchlyShowSuccess) window.__patchlyShowSuccess({ filePath: 'Undone', showUndo: false })
+      }
     }
 
     ws.onclose = () => {

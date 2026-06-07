@@ -14,6 +14,8 @@ export const MSG = {
   EDIT_ERROR:   'PATCHLY_EDIT_ERROR',
   STATUS:       'PATCHLY_STATUS',
   PREVIEW:      'PATCHLY_PREVIEW',
+  UNDO_DONE:    'PATCHLY_UNDO_DONE',
+  INFO:         'PATCHLY_INFO',
 
   // Extension → Agent (Phase 4+)
   CONFIRM:      'PATCHLY_CONFIRM',

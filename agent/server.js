@@ -1,10 +1,13 @@
 // agent/server.js
+import path from 'path'
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import { resolveSource } from './sourceMapper.js'
 import { getEditInstruction } from './llm.js'
+import { applyEdit, undoEdit } from './fileEditor.js'
 
 const pendingEdits = new Map()  // sessionId → { absolutePath, find, replace }
+let lastEdit = null  // tracks the most recent applied edit for undo
 
 export async function startServer(port, config) {
   const wss = new WebSocketServer({ port })
@@ -75,6 +78,16 @@ export async function startServer(port, config) {
 
         if (!llmResult.success) {
           console.log('LLM error:', llmResult.code, '—', llmResult.message)
+
+          if (llmResult.code === 'LLM_CANNOT_EDIT') {
+            ws.send(JSON.stringify({
+              type: MSG.INFO,
+              sessionId,
+              message: llmResult.message,
+            }))
+            return
+          }
+
           ws.send(JSON.stringify({
             type: MSG.EDIT_ERROR,
             sessionId,
@@ -103,6 +116,77 @@ export async function startServer(port, config) {
           filePath: sourceResult.relativePath,
           lineNumber: sourceResult.lineNumber,
         }))
+      }
+
+      if (msg.type === MSG.CONFIRM) {
+        const { sessionId } = msg
+        const pending = pendingEdits.get(sessionId)
+
+        if (!pending) {
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            sessionId,
+            code: 'NO_PENDING_EDIT',
+            message: 'No pending edit found for this session. It may have expired.',
+          }))
+          return
+        }
+
+        const editResult = applyEdit({
+          absolutePath: pending.absolutePath,
+          find: pending.find,
+          replace: pending.replace,
+          projectRoot: config.projectRoot,
+        })
+
+        pendingEdits.delete(sessionId)
+
+        if (!editResult.success) {
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            sessionId,
+            code: editResult.code,
+            message: editResult.message,
+          }))
+          return
+        }
+
+        lastEdit = { absolutePath: editResult.absolutePath, previousContent: editResult.previousContent }
+
+        ws.send(JSON.stringify({
+          type: MSG.EDIT_DONE,
+          sessionId,
+          filePath: path.relative(config.projectRoot, editResult.absolutePath),
+        }))
+      }
+
+      if (msg.type === MSG.REJECT) {
+        pendingEdits.delete(msg.sessionId)
+      }
+
+      if (msg.type === MSG.UNDO) {
+        if (!lastEdit) {
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            code: 'NOTHING_TO_UNDO',
+            message: 'Nothing to undo.',
+          }))
+          return
+        }
+
+        const undoResult = undoEdit({ absolutePath: lastEdit.absolutePath, previousContent: lastEdit.previousContent })
+        lastEdit = null
+
+        if (!undoResult.success) {
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            code: undoResult.code,
+            message: undoResult.message,
+          }))
+          return
+        }
+
+        ws.send(JSON.stringify({ type: MSG.UNDO_DONE }))
       }
     })
 

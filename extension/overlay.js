@@ -77,6 +77,7 @@ function cancel() {
   if (elementHighlight) elementHighlight.style.display = 'none'
   if (promptBar) promptBar.style.display = 'none'
   if (componentLabel) componentLabel.style.display = 'none'
+  if (promptInput) promptInput.value = ''
 }
 
 function onMouseDown(e) {
@@ -90,6 +91,7 @@ function onMouseDown(e) {
 
   promptBar.style.display = 'none'
   componentLabel.style.display = 'none'
+  promptInput.value = ''
 
   updateSelectionRect()
   selectionRect.style.display = 'block'
@@ -311,3 +313,128 @@ function showPreviewToast({ explanation, find, replace, filePath, lineNumber, se
 }
 
 window.__patchlyShowPreview = showPreviewToast
+
+function showSuccessToast({ filePath, showUndo = true }) {
+  const existing = document.getElementById('patchly-toast')
+  if (existing) existing.remove()
+
+  const toast = document.createElement('div')
+  toast.id = 'patchly-toast'
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #fff;
+    border: 1px solid #d1fae5;
+    border-left: 4px solid #22c55e;
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    z-index: 2147483647;
+    max-width: 360px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `
+
+  toast.innerHTML = `
+    <div style="flex:1">
+      <span style="color:#16a34a;font-weight:600">Applied</span>
+      <span style="color:#666"> — ${filePath}</span>
+    </div>
+    ${showUndo ? `<button id="patchly-undo-btn" style="
+      background:none;border:1px solid #d1d5db;border-radius:6px;
+      padding:3px 10px;font-size:12px;cursor:pointer;color:#555;
+      font-family:inherit;white-space:nowrap;
+    ">Undo</button>` : ''}
+  `
+
+  document.body.appendChild(toast)
+
+  if (showUndo) {
+    document.getElementById('patchly-undo-btn').onclick = () => {
+      toast.remove()
+      if (window.__patchlySendToAgent) {
+        window.__patchlySendToAgent({ type: 'PATCHLY_UNDO' })
+      }
+    }
+  }
+
+  setTimeout(() => {
+    if (document.getElementById('patchly-toast') === toast) toast.remove()
+  }, 6000)
+}
+
+function showErrorToast(message) {
+  const existing = document.getElementById('patchly-toast')
+  if (existing) existing.remove()
+
+  const toast = document.createElement('div')
+  toast.id = 'patchly-toast'
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #fff;
+    border: 1px solid #fee2e2;
+    border-left: 4px solid #ef4444;
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    z-index: 2147483647;
+    max-width: 360px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+  `
+
+  toast.innerHTML = `
+    <div style="color:#dc2626;font-weight:600;margin-bottom:4px">Patchly error</div>
+    <div style="color:#666;line-height:1.4">${message}</div>
+  `
+
+  document.body.appendChild(toast)
+
+  setTimeout(() => {
+    if (document.getElementById('patchly-toast') === toast) toast.remove()
+  }, 8000)
+}
+
+function showInfoToast(message) {
+  const existing = document.getElementById('patchly-toast')
+  if (existing) existing.remove()
+
+  const toast = document.createElement('div')
+  toast.id = 'patchly-toast'
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #fff;
+    border: 1px solid #e0e7ff;
+    border-left: 4px solid #6366f1;
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    z-index: 2147483647;
+    max-width: 360px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+  `
+
+  toast.innerHTML = `
+    <div style="color:#4f46e5;font-weight:600;margin-bottom:4px">Patchly</div>
+    <div style="color:#666;line-height:1.4">${message}</div>
+  `
+
+  document.body.appendChild(toast)
+
+  setTimeout(() => {
+    if (document.getElementById('patchly-toast') === toast) toast.remove()
+  }, 8000)
+}
+
+window.__patchlyShowSuccess = showSuccessToast
+window.__patchlyShowError = showErrorToast
+window.__patchlyShowInfo = showInfoToast
