@@ -8,7 +8,7 @@ export function UserRow({ name, email, role, status }) {
       <td className="px-4 py-3 text-sm font-medium text-gray-800">{name}</td>
       <td className="px-4 py-3 text-sm text-gray-500">{email}</td>
       <td className="px-4 py-3 text-sm text-gray-600">{role}</td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 flex justify-center">
         <Badge tone={status === 'Active' ? 'green' : 'gray'}>{status}</Badge>
       </td>
     </tr>

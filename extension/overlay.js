@@ -933,17 +933,38 @@ function srcFileStem(src) {
   return base.replace(/\.(jsx?|tsx?)$/i, '')
 }
 
-// Find the outermost element under `root` whose data-patchly-src file matches the
-// suggested file (by basename, so "./components/StatsCard" ≈ "StatsCard.jsx").
-function findDescendantByFile(root, fileHint) {
-  if (!root) return null
+// Find an element whose data-patchly-src file matches the suggested file (by
+// basename, so "./components/StatsCard" ≈ "StatsCard.jsx").
+//
+// The redirected FILE is already constrained — the LLM can only suggest a file
+// the selected component imports — so this search just locates an anchor element
+// to read its source line. We keep it scoped to the selection: search the
+// selection's subtree, then climb to the NEAREST ancestor that contains a match
+// (e.g. from a table header up to the table, finding the row cells). The whole
+// page is only reached as a last resort. All instances of a component share one
+// source location, so the nearest match anchors to the right file.
+function findElementByFile(root, fileHint) {
   const wantStem = srcFileStem(fileHint)
-  const all = [root, ...root.querySelectorAll('[data-patchly-src]')]
-  const matches = all.filter(
-    (el) => el.dataset && el.dataset.patchlySrc && srcFileStem(el.dataset.patchlySrc) === wantStem,
-  )
-  if (matches.length === 0) return null
-  return matches.find((el) => !matches.some((o) => o !== el && o.contains(el))) || matches[0]
+
+  const pick = (scope) => {
+    if (!scope) return null
+    const all = [...scope.querySelectorAll('[data-patchly-src]')]
+    if (scope.dataset && scope.dataset.patchlySrc) all.unshift(scope)
+    const matches = all.filter(
+      (el) => el.dataset && el.dataset.patchlySrc && srcFileStem(el.dataset.patchlySrc) === wantStem,
+    )
+    if (matches.length === 0) return null
+    return matches.find((el) => !matches.some((o) => o !== el && o.contains(el))) || matches[0]
+  }
+
+  // Subtree first, then widen one ancestor at a time (closest region wins).
+  let scope = root
+  while (scope) {
+    const found = pick(scope)
+    if (found) return found
+    scope = scope.parentElement
+  }
+  return null
 }
 
 function showRedirectToast({ sessionId, prompt, suggestions }) {
@@ -953,7 +974,7 @@ function showRedirectToast({ sessionId, prompt, suggestions }) {
   const root = selectedElement
   const buttons = suggestions
     .map((s, i) => {
-      const found = findDescendantByFile(root, s.file)
+      const found = findElementByFile(root, s.file)
       const stem = srcFileStem(s.file)
       return `
         <button class="patchly-rd-btn" data-idx="${i}" ${found ? '' : 'disabled'}>
@@ -989,7 +1010,7 @@ function showRedirectToast({ sessionId, prompt, suggestions }) {
     if (btn.disabled) return
     btn.onclick = () => {
       const s = suggestions[Number(btn.getAttribute('data-idx'))]
-      const el = findDescendantByFile(root, s.file)
+      const el = findElementByFile(root, s.file)
       toast.remove()
       if (el) sendSingleEdit(el, el.dataset.patchlySrc, prompt)
     }

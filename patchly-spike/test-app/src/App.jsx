@@ -21,7 +21,7 @@ export default function App() {
         <main className="flex-1 p-8 space-y-8">
           {/* Conditional render — should still carry data-patchly-src */}
           {showBanner && (
-            <div className="flex items-center justify-between rounded-xl bg-brand-light px-4 py-3 text-sm text-brand-dark">
+            <div className="flex items-center justify-between rounded-xl bg-brand-light px-4 py-3 text-sm text-gray-900">
               <span>Welcome back — you have 3 new reports to review.</span>
               <button onClick={() => setShowBanner(false)} className="font-medium hover:underline">
                 Dismiss

@@ -17,7 +17,7 @@ export function UserTable() {
             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Name</th>
             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Email</th>
             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Role</th>
-            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-center">Status</th>
           </tr>
         </thead>
         <tbody>

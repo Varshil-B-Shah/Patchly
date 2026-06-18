@@ -286,10 +286,15 @@ Decision rules:
 - Multiple operations are allowed for compound edits (e.g. setClassName + setText together).
 - If you cannot make the edit, return "operations": [] and explain in "explanation".
 
+CRITICAL — operations may only target elements that LITERALLY appear in the file source below:
+- Every operation's target must be a lowercase HTML element you can actually see in the source (e.g. <th>, <button>, <li>, <p>).
+- NEVER emit an operation for content rendered by a child component. Child components are CAPITALIZED JSX tags (e.g. <UserRow/>, <StatsCard/>, <Badge/>) — their internal elements live in OTHER files, so you do not have their line numbers. Do not guess line numbers for them.
+
 Cross-file redirect:
-- If the element the instruction refers to is NOT in this file but is clearly rendered by one of the imported child components (see the "Direct imports" section), do NOT force an edit and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s):
-  "redirect": [ { "file": "src/components/StatsCard.jsx", "reason": "the revenue card and its border live in StatsCard" } ]
-  Use the import paths you were given to pick the file. List multiple only if genuinely unsure. Only use redirect when the target truly isn't in this file.
+- If the element the instruction refers to is rendered by an imported child component (a capitalized tag like <UserRow/> or <StatsCard/>) and is therefore NOT in this file, do NOT force an edit, do NOT guess a line, and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s) from the imports:
+  "redirect": [ { "file": "src/features/users/components/UserRow.jsx", "reason": "the status badge is rendered inside UserRow, not the table header" } ]
+- If the instruction would touch BOTH an element in this file AND something inside a child component, prefer the redirect to the child component (where the visible thing the user described actually lives) rather than editing only the in-file part.
+- Use the import paths you were given to pick the file. List multiple only if genuinely unsure.
 
 Examples:
 
