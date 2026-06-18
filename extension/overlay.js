@@ -730,7 +730,7 @@ function showPreviewBatch({ sessionId, edits }) {
         return `
           <div class="patchly-bp-card">
             <div class="patchly-bp-cardhead">
-              <span class="patchly-bp-file">${escapeHtml(e.filePath)}${e.lineNumber ? ':' + e.lineNumber : ''}</span>
+              <span class="patchly-bp-file">${escapeHtml(e.filePath)}${e.lineNumber ? ':' + e.lineNumber : ''}${e.targetCount > 1 ? ` · ${e.targetCount} components` : ''}</span>
               <span class="patchly-pp-conf ${confidenceClass(pct)}">${pct}%</span>
             </div>
             <div class="patchly-bp-expl">${escapeHtml(e.explanation || '')}</div>

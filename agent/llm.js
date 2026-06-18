@@ -8,9 +8,52 @@ import { loadProjectContext } from './contextBuilder.js'
 
 const VALID_OPS = new Set(Object.values(OPS))
 
+// Single-element edit (the interactive path): one target + optional screenshot.
 export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64, onProgress }) {
-  const { azureEndpoint, azureApiKey, model } = config
+  // Context (imports, global CSS, tailwind tokens). Best-effort — never blocks.
+  let context = { imports: [], globalCss: null, tailwindTokens: '' }
+  try {
+    context = loadProjectContext(sourceResult, config.projectRoot)
+  } catch {}
 
+  const systemPrompt = buildSystemPrompt(context.tailwindTokens)
+  const userPrompt = buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context })
+
+  const userContent = screenshot_base64
+    ? [
+        { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshot_base64}` } },
+        { type: 'text', text: userPrompt },
+      ]
+    : userPrompt
+
+  const res = await callLLM({ config, systemPrompt, userContent, onProgress })
+  if (!res.ok) return res
+  return parseEditRequest(res.rawContent)
+}
+
+// Multi-element edit within ONE file (the batch / fan-out path): all targets are
+// sent with the file body included exactly once, and the model returns a single
+// coherent operations[] covering every target. This both avoids the per-op drift
+// of merging independent single-target responses AND sends the file once instead
+// of N times. No screenshot (batch is text-context only).
+export async function getBatchEditInstruction({ sourceResult, items, prompt, config, onProgress }) {
+  let context = { imports: [], globalCss: null, tailwindTokens: '' }
+  try {
+    context = loadProjectContext(sourceResult, config.projectRoot)
+  } catch {}
+
+  const systemPrompt = buildSystemPrompt(context.tailwindTokens)
+  const userPrompt = buildBatchUserPrompt({ sourceResult, items, prompt, context })
+
+  const res = await callLLM({ config, systemPrompt, userContent: userPrompt, onProgress })
+  if (!res.ok) return res
+  return parseEditRequest(res.rawContent)
+}
+
+// Shared LLM transport: credentials, streaming fetch, idle timeout, finish_reason
+// handling. Returns { ok:true, rawContent } or { ok:false, code, message }.
+async function callLLM({ config, systemPrompt, userContent, onProgress }) {
+  const { azureEndpoint, azureApiKey, model } = config
   const endpoint = azureEndpoint || process.env.PATCHLY_AZURE_ENDPOINT
   const apiKey = azureApiKey || process.env.PATCHLY_AZURE_KEY
   const modelName = model || 'gpt-4o'
@@ -22,17 +65,6 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       message: 'Azure endpoint and API key are required. Add them to .patchlyrc.json or set PATCHLY_AZURE_ENDPOINT and PATCHLY_AZURE_KEY env vars.',
     }
   }
-
-  // Load file context (imports, global CSS, tailwind tokens). Failures are silent.
-  let context = { imports: [], globalCss: null, tailwindTokens: '' }
-  try {
-    context = loadProjectContext(sourceResult, config.projectRoot)
-  } catch {
-    // Context enrichment is best-effort — never block an edit.
-  }
-
-  const systemPrompt = buildSystemPrompt(context.tailwindTokens)
-  const userPrompt = buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context })
 
   const { url, includeModelInBody } = buildRequestConfig(endpoint, modelName)
 
@@ -63,15 +95,7 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       body: JSON.stringify({
         messages: [
           { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: screenshot_base64
-              ? [
-                  { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshot_base64}` } },
-                  { type: 'text', text: userPrompt },
-                ]
-              : userPrompt,
-          },
+          { role: 'user', content: userContent },
         ],
         max_completion_tokens: 4000,
         temperature: 0.1,
@@ -102,8 +126,7 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       return { ok: false, success: false, code: 'EMPTY_RESPONSE', message: 'LLM returned empty response' }
     }
 
-    // The model hit the token ceiling mid-response — the JSON is truncated, so
-    // parsing would fail with a confusing error. Report the real cause instead.
+    // The model hit the token ceiling mid-response — the JSON is truncated.
     if (finishReason === 'length') {
       return {
         ok: false, success: false,
@@ -112,7 +135,7 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       }
     }
 
-    return parseEditRequest(rawContent)
+    return { ok: true, rawContent }
 
   } catch (err) {
     clearTimeout(timeoutId)
@@ -312,6 +335,48 @@ function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, co
     sourceResult.fullContent,
     '```',
   ]
+
+  if (context.imports?.length > 0) {
+    lines.push('', '### Direct imports')
+    for (const imp of context.imports) {
+      lines.push(`/* ${imp.path} */`, '```jsx', imp.content, '```')
+    }
+  }
+
+  if (context.globalCss) {
+    lines.push('', '### Global CSS (excerpt)', '```css', context.globalCss, '```')
+  }
+
+  lines.push('', `User instruction: ${prompt}`)
+  return lines.join('\n')
+}
+
+// Build a prompt that edits MULTIPLE elements in one file. The file body appears
+// exactly once; each target is listed with its line/column so the model can emit
+// one operation per change with correct positions.
+function buildBatchUserPrompt({ sourceResult, items, prompt, context = {} }) {
+  const lines = [
+    `File: ${sourceResult.relativePath}`,
+    '',
+    `You are editing ${items.length} elements in THIS ONE file. Apply the instruction to EACH target below.`,
+    'Return ONE operations[] array covering all targets — each operation must carry the correct target.line and target.column for its element. Do not edit elements that are not listed.',
+    '',
+    'Targets:',
+  ]
+
+  items.forEach((it, i) => {
+    const textSnippet = (it.elementHtml || '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40)
+    lines.push(
+      `${i + 1}. line ${it.lineNumber} column ${it.colNumber ?? 0} — classes: ${it.elementClasses || '(none)'} — text: ${textSnippet || '(none)'}`,
+      `   html: ${(it.elementHtml || '').slice(0, 240)}`,
+    )
+  })
+
+  lines.push('', 'Full file contents:', '```jsx', sourceResult.fullContent, '```')
 
   if (context.imports?.length > 0) {
     lines.push('', '### Direct imports')

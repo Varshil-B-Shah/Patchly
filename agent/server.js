@@ -2,7 +2,7 @@
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import { resolveSource } from './sourceMapper.js'
-import { getEditInstruction } from './llm.js'
+import { getEditInstruction, getBatchEditInstruction } from './llm.js'
 import { undoEdit } from './fileEditor.js'
 import { applyEditOperations } from './ast/applyEdit.js'
 
@@ -13,45 +13,6 @@ const pendingEdits = new Map()  // sessionId → { operations }
 // same file restores the older snapshot wholesale (last-write-wins) — acceptable
 // for v2, no per-hunk stacking.
 const editHistory = new Map()
-
-// Resolve one target's source, call the LLM (with the JSON-retry), and pin every
-// operation's file to the resolved source. Returns a uniform result used by both
-// the single-edit and batch (fan-out) paths. Never throws on LLM/resolve failure.
-async function computeTargetEdit({ patchlySrc, elementHtml, elementClasses, screenshot_base64, prompt, config, onProgress }) {
-  const sourceResult = resolveSource(patchlySrc, config.projectRoot)
-  if (!sourceResult.success) {
-    return { ok: false, code: sourceResult.code, message: sourceResult.message, filePath: patchlySrc }
-  }
-
-  let llmResult = await getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64, onProgress })
-
-  if (!llmResult.ok && llmResult.code === 'JSON_PARSE_FAILED') {
-    llmResult = await getEditInstruction({
-      sourceResult, elementHtml, elementClasses,
-      prompt: prompt + ' — respond with ONLY the JSON object, nothing else',
-      config, screenshot_base64, onProgress,
-    })
-  }
-
-  if (!llmResult.ok) {
-    return { ok: false, code: llmResult.code, message: llmResult.message, filePath: sourceResult.relativePath, lineNumber: sourceResult.lineNumber }
-  }
-
-  // Pin every op's target file to the resolved source so an LLM path slip can't misfire.
-  const operations = llmResult.operations.map((op) => ({
-    ...op,
-    target: { ...op.target, file: sourceResult.relativePath },
-  }))
-
-  return {
-    ok: true,
-    operations,
-    explanation: llmResult.explanation,
-    confidence: llmResult.confidence,
-    filePath: sourceResult.relativePath,
-    lineNumber: sourceResult.lineNumber,
-  }
-}
 
 export async function startServer(port, config) {
   const wss = new WebSocketServer({ port })
@@ -84,9 +45,11 @@ export async function startServer(port, config) {
         const { patchlySrc, elementHtml, elementClasses, prompt, sessionId, screenshot_base64, targets } = msg
 
         // ── Multi-select fan-out ────────────────────────────────────────────
-        // Each target runs the same single-file pipeline; operations are then
-        // grouped per file (a file is written once, atomically), so several
-        // targets in the same file never drift each other's line numbers.
+        // Targets are grouped by file and each file is sent to the LLM exactly
+        // ONCE (with all its targets), which returns one coherent operations[]
+        // for that file. This avoids the per-op drift of stitching together
+        // independent single-target responses, and sends each file once instead
+        // of once per target (big token saving for same-file selections).
         if (Array.isArray(targets) && targets.length > 1) {
           const sendProgress = (stage, text) =>
             ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
@@ -94,58 +57,69 @@ export async function startServer(port, config) {
           console.log(`Batch edit request: "${prompt}" on ${targets.length} targets`)
           sendProgress('analyzing')
 
-          const results = []
-          for (let i = 0; i < targets.length; i++) {
-            sendProgress('generating', `Editing ${i + 1} of ${targets.length}…`)
-            const r = await computeTargetEdit({
-              ...targets[i],
-              prompt,
-              config,
-              onProgress: (p) => sendProgress('generating', p.text || `Editing ${i + 1} of ${targets.length}…`),
-            })
-            console.log(`  target ${i + 1}/${targets.length} [${targets[i].patchlySrc}]:`,
-              r.ok ? `ok — ${r.operations.length} op(s): ${r.operations.map(o => o.op).join(', ')}` : `FAIL ${r.code} — ${r.message}`)
-            results.push(r)
-          }
-
-          sendProgress('building')
-
-          // Group successful operations by file.
-          const groups = new Map()
-          for (const r of results) {
-            if (!r.ok) continue
-            const g = groups.get(r.filePath) || { filePath: r.filePath, operations: [], explanations: [], confidences: [], lineNumber: r.lineNumber }
-            g.operations.push(...r.operations)
-            g.explanations.push(r.explanation)
-            g.confidences.push(r.confidence)
-            groups.set(r.filePath, g)
+          // Resolve every target (cheap, local) and group by file.
+          const fileGroups = new Map()  // relativePath → { sourceResult, items: [...] }
+          const failed = []
+          for (const t of targets) {
+            const sr = resolveSource(t.patchlySrc, config.projectRoot)
+            if (!sr.success) {
+              failed.push({ ok: false, filePath: t.patchlySrc, code: sr.code, message: sr.message })
+              continue
+            }
+            const g = fileGroups.get(sr.relativePath) || { sourceResult: sr, items: [] }
+            g.items.push({ lineNumber: sr.lineNumber, colNumber: sr.colNumber, elementHtml: t.elementHtml, elementClasses: t.elementClasses })
+            fileGroups.set(sr.relativePath, g)
           }
 
           const edits = []
           const applyGroups = []
-          for (const g of groups.values()) {
-            // Apply bottom-to-top so a line-shifting op (wrap/insert) can't
+          let fileIdx = 0
+          const fileCount = fileGroups.size
+
+          for (const [relativePath, g] of fileGroups) {
+            fileIdx++
+            const label = `Editing file ${fileIdx} of ${fileCount}…`
+            sendProgress('generating', label)
+
+            const llm = await getBatchEditInstruction({
+              sourceResult: g.sourceResult,
+              items: g.items,
+              prompt,
+              config,
+              onProgress: (p) => sendProgress('generating', p.text || label),
+            })
+
+            console.log(`  file [${relativePath}] ${g.items.length} target(s):`,
+              llm.ok ? `ok — ${llm.operations.length} op(s): ${llm.operations.map(o => o.op).join(', ')}` : `FAIL ${llm.code} — ${llm.message}`)
+
+            if (!llm.ok) {
+              // Treat "model declined" the same as any other per-file failure.
+              edits.push({ ok: false, filePath: relativePath, code: llm.code, message: llm.message })
+              continue
+            }
+
+            // Pin file + apply bottom-to-top so a line-shifting op can't
             // invalidate the line numbers of not-yet-applied ops above it.
-            g.operations.sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
-            const preview = await applyEditOperations({ projectRoot: config.projectRoot, operations: g.operations, dryRun: true })
-            console.log(`  group [${g.filePath}] ${g.operations.length} op(s):`,
-              preview.ok ? 'preview ok' : `FAIL ${preview.code} — ${preview.message}`)
+            const operations = llm.operations
+              .map((op) => ({ ...op, target: { ...op.target, file: relativePath } }))
+              .sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
+
+            sendProgress('building')
+            const preview = await applyEditOperations({ projectRoot: config.projectRoot, operations, dryRun: true })
+            console.log(`  group [${relativePath}] preview:`, preview.ok ? 'ok' : `FAIL ${preview.code} — ${preview.message}`)
+
             if (!preview.ok) {
-              edits.push({ ok: false, filePath: g.filePath, code: preview.code, message: preview.message })
+              edits.push({ ok: false, filePath: relativePath, code: preview.code, message: preview.message })
             } else {
-              const explanation = g.explanations.join('; ')
-              edits.push({ ok: true, filePath: g.filePath, lineNumber: g.lineNumber, explanation, confidence: Math.min(...g.confidences), diff: preview.diff })
-              applyGroups.push({ filePath: g.filePath, operations: g.operations, explanation, lineNumber: g.lineNumber })
+              const lineNumber = g.items[0].lineNumber
+              edits.push({ ok: true, filePath: relativePath, lineNumber, explanation: llm.explanation, confidence: llm.confidence, diff: preview.diff, targetCount: g.items.length })
+              applyGroups.push({ filePath: relativePath, operations, explanation: llm.explanation, lineNumber })
             }
           }
 
-          // Surface targets that failed before grouping (resolve/LLM errors).
-          for (const r of results) {
-            if (!r.ok) edits.push({ ok: false, filePath: r.filePath, lineNumber: r.lineNumber, code: r.code, message: r.message })
-          }
+          for (const f of failed) edits.push(f)
 
           pendingEdits.set(sessionId, { batch: true, groups: applyGroups })
-
           ws.send(JSON.stringify({ type: MSG.PREVIEW_BATCH, sessionId, edits }))
           return
         }
