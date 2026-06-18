@@ -12,7 +12,8 @@
   },
   "scripts": {
     "agent": "node agent/index.js",
-    "dev": "node --watch agent/index.js"
+    "dev": "node --watch agent/index.js",
+    "test": "node --test agent/ast/__tests__/operations.test.js agent/ast/__tests__/drift.test.js agent/ast/__tests__/property.test.js"
   },
   "dependencies": {
     "@babel/generator": "^7.24.0",

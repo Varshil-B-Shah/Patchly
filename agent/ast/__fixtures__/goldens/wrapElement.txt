@@ -1,0 +1,11 @@
+export default function Button() {
+  return (
+    <div className="wrapper"><button
+            className="px-4 py-2 bg-blue-500 text-white rounded"
+            data-testid="submit-btn"
+            type="button"
+          >
+            Click me
+          </button></div>
+  )
+}

@@ -1,0 +1,5 @@
+export default function Button() {
+  return (
+    <a href="/submit" className="link-btn">Submit</a>
+  )
+}
