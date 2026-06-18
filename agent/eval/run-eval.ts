@@ -1,22 +1,23 @@
 #!/usr/bin/env node
-// agent/eval/run-eval.js
+// agent/eval/run-eval.ts
 // Quality eval script — runs a fixed set of (prompt + component) cases against
 // the live LLM and scores them. NOT part of npm test (hits real API).
 //
-// Usage: node agent/eval/run-eval.js
+// Usage: npx tsx agent/eval/run-eval.ts
 // Requires .patchlyrc.json or PATCHLY_AZURE_ENDPOINT + PATCHLY_AZURE_KEY env vars.
 
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { getEditInstruction } from '../llm.js'
+import type { PatchlyConfig, ResolvedConfig } from '../config.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const FIXTURES_DIR = path.join(__dirname, '../ast/__fixtures__')
-const PROJECT_ROOT = path.join(__dirname, '../..')
+const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const FIXTURES_DIR = path.join(currentDir, '../ast/__fixtures__')
+const PROJECT_ROOT = path.join(currentDir, '../..')
 
 // Load config from .patchlyrc.json if present.
-function loadConfig() {
+function loadConfig(): Partial<PatchlyConfig> {
   const rcPath = path.join(PROJECT_ROOT, '.patchlyrc.json')
   try {
     return JSON.parse(fs.readFileSync(rcPath, 'utf8'))
@@ -25,15 +26,26 @@ function loadConfig() {
   }
 }
 
-function readFixture(name) {
+function readFixture(name: string): string {
   return fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf8')
 }
 
 // ─── Test cases ───────────────────────────────────────────────────────────────
-// Each case: { label, fixtureName, relPath, lineNumber, colNumber, elementHtml,
-//              elementClasses, prompt, expectedOp, expectedAdd? }
 
-const CASES = [
+interface EvalCase {
+  label: string
+  fixtureName: string
+  relPath: string
+  lineNumber: number
+  colNumber: number
+  elementHtml: string
+  elementClasses: string
+  prompt: string
+  expectedOp: string
+  expectedAdd?: string[]
+}
+
+const CASES: EvalCase[] = [
   {
     label: 'Add Tailwind classes to a button',
     fixtureName: 'Button.jsx',
@@ -105,7 +117,9 @@ const CASES = [
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
-async function runCase(config, c) {
+type CaseResult = { pass: true; explanation: string } | { pass: false; reason: string }
+
+async function runCase(config: ResolvedConfig, c: EvalCase): Promise<CaseResult> {
   const fullContent = readFixture(c.fixtureName)
   const sourceResult = {
     relativePath: c.relPath,
@@ -125,7 +139,8 @@ async function runCase(config, c) {
   })
 
   if (!result.ok) {
-    return { pass: false, reason: `LLM error: ${result.code} — ${result.message}` }
+    const detail = 'message' in result ? result.message : result.explanation
+    return { pass: false, reason: `LLM error: ${result.code} — ${detail}` }
   }
 
   const firstOp = result.operations?.[0]
@@ -138,9 +153,10 @@ async function runCase(config, c) {
   }
 
   if (c.expectedAdd) {
-    const missing = c.expectedAdd.filter(cls => !(firstOp.add || []).includes(cls))
+    const add = 'add' in firstOp && firstOp.add ? firstOp.add : []
+    const missing = c.expectedAdd.filter((cls) => !add.includes(cls))
     if (missing.length > 0) {
-      return { pass: false, reason: `Missing expected classes: ${missing.join(', ')} (got add=${JSON.stringify(firstOp.add)})` }
+      return { pass: false, reason: `Missing expected classes: ${missing.join(', ')} (got add=${JSON.stringify(add)})` }
     }
   }
 
@@ -148,7 +164,7 @@ async function runCase(config, c) {
 }
 
 async function main() {
-  const config = { ...loadConfig(), projectRoot: PROJECT_ROOT }
+  const config: ResolvedConfig = { ...loadConfig(), projectRoot: PROJECT_ROOT }
 
   if (!config.azureEndpoint && !process.env.PATCHLY_AZURE_ENDPOINT) {
     console.error('No Azure credentials found. Add them to .patchlyrc.json or set env vars.')

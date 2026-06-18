@@ -1,4 +1,4 @@
-// agent/contextBuilder.js
+// agent/contextBuilder.ts
 // Builds supplementary context for the LLM: direct imports, global CSS, and
 // Tailwind design tokens. All reads are capped and safety-guarded — no path
 // traversal, no node_modules, nothing outside projectRoot.
@@ -14,15 +14,33 @@ const MAX_IMPORTS = 3
 
 const FORBIDDEN_SEGMENTS = ['node_modules', '.git', 'dist', 'build', '.next', 'out']
 
-function isSafe(absolutePath, projectRoot) {
+/** A single imported file's path (relative) and (capped) contents. */
+export interface ImportContext {
+  path: string
+  content: string
+}
+
+export interface ProjectContext {
+  imports: ImportContext[]
+  globalCss: string | null
+  tailwindTokens: string
+}
+
+/** Minimal shape the context builder needs from a resolved source. */
+interface SourceLike {
+  relativePath: string
+  fullContent: string
+}
+
+function isSafe(absolutePath: string, projectRoot: string): boolean {
   const resolved = path.resolve(absolutePath)
   const root = path.resolve(projectRoot)
   if (!resolved.startsWith(root + path.sep) && resolved !== root) return false
   const segments = resolved.replace(root, '').split(path.sep)
-  return !segments.some(s => FORBIDDEN_SEGMENTS.includes(s))
+  return !segments.some((s) => FORBIDDEN_SEGMENTS.includes(s))
 }
 
-function tryRead(filePath, maxChars) {
+function tryRead(filePath: string, maxChars: number): string | null {
   try {
     const content = fs.readFileSync(filePath, 'utf8')
     return content.length > maxChars ? content.slice(0, maxChars) + '\n/* ... truncated */' : content
@@ -33,10 +51,10 @@ function tryRead(filePath, maxChars) {
 
 // Parse static import paths from source text, resolve them relative to the
 // source file's directory, and return up to MAX_IMPORTS that exist on disk.
-function resolveImports(sourceContent, sourceAbsolutePath, projectRoot) {
+function resolveImports(sourceContent: string, sourceAbsolutePath: string, projectRoot: string): string[] {
   const dir = path.dirname(sourceAbsolutePath)
-  const results = []
-  let match
+  const results: string[] = []
+  let match: RegExpExecArray | null
 
   IMPORT_RE.lastIndex = 0
   while ((match = IMPORT_RE.exec(sourceContent)) !== null) {
@@ -62,7 +80,7 @@ function resolveImports(sourceContent, sourceAbsolutePath, projectRoot) {
 }
 
 // Find the project's global CSS file by probing common locations.
-function findGlobalCss(projectRoot) {
+function findGlobalCss(projectRoot: string): string | null {
   const probes = [
     'src/index.css',
     'src/globals.css',
@@ -78,7 +96,7 @@ function findGlobalCss(projectRoot) {
 }
 
 // Find tailwind.config.js or .ts in the project root.
-function findTailwindConfig(projectRoot) {
+function findTailwindConfig(projectRoot: string): string | null {
   for (const name of ['tailwind.config.js', 'tailwind.config.ts', 'tailwind.config.mjs']) {
     const abs = path.join(projectRoot, name)
     if (fs.existsSync(abs)) return abs
@@ -88,17 +106,17 @@ function findTailwindConfig(projectRoot) {
 
 // Extract custom theme keys from raw Tailwind config text.
 // Text-regex only — no require(), no eval. Returns a capped summary string.
-export function parseTailwindConfig(configText) {
-  const parts = []
+export function parseTailwindConfig(configText: string): string {
+  const parts: string[] = []
 
   // Pull top-level key names from theme.extend.colors / theme.colors blocks.
   const colorBlockRe = /colors\s*:\s*\{([^}]+)\}/gs
-  const colorKeys = []
-  let m
+  const colorKeys: string[] = []
+  let m: RegExpExecArray | null
   while ((m = colorBlockRe.exec(configText)) !== null) {
     const inner = m[1]
     const keyRe = /^\s*['"]?(\w[\w-]*)['"]?\s*:/gm
-    let km
+    let km: RegExpExecArray | null
     while ((km = keyRe.exec(inner)) !== null) {
       if (!colorKeys.includes(km[1])) colorKeys.push(km[1])
     }
@@ -107,11 +125,11 @@ export function parseTailwindConfig(configText) {
 
   // Pull spacing keys.
   const spacingBlockRe = /spacing\s*:\s*\{([^}]+)\}/gs
-  const spacingEntries = []
+  const spacingEntries: string[] = []
   while ((m = spacingBlockRe.exec(configText)) !== null) {
     const inner = m[1]
     const entryRe = /['"]?(\w[\w.-]*)['"]?\s*:\s*['"]([^'"]+)['"]/g
-    let em
+    let em: RegExpExecArray | null
     while ((em = entryRe.exec(inner)) !== null) {
       spacingEntries.push(`${em[1]}: '${em[2]}'`)
     }
@@ -123,16 +141,18 @@ export function parseTailwindConfig(configText) {
 }
 
 // Read import files + global CSS for the given source file.
-export function buildFileContext(sourceResult, projectRoot) {
+export function buildFileContext(sourceResult: SourceLike, projectRoot: string): { imports: ImportContext[]; globalCss: string | null } {
   const sourceAbsPath = path.resolve(projectRoot, sourceResult.relativePath)
   const importPaths = resolveImports(sourceResult.fullContent, sourceAbsPath, projectRoot)
 
-  const imports = importPaths.map(absPath => {
-    const content = tryRead(absPath, MAX_IMPORT_CHARS)
-    if (!content) return null
-    const rel = path.relative(projectRoot, absPath).replace(/\\/g, '/')
-    return { path: rel, content }
-  }).filter(Boolean)
+  const imports = importPaths
+    .map((absPath): ImportContext | null => {
+      const content = tryRead(absPath, MAX_IMPORT_CHARS)
+      if (!content) return null
+      const rel = path.relative(projectRoot, absPath).replace(/\\/g, '/')
+      return { path: rel, content }
+    })
+    .filter((x): x is ImportContext => x !== null)
 
   const cssPath = findGlobalCss(projectRoot)
   const globalCss = cssPath ? tryRead(cssPath, MAX_GLOBAL_CSS_CHARS) : null
@@ -141,7 +161,7 @@ export function buildFileContext(sourceResult, projectRoot) {
 }
 
 // Full context load: imports + global CSS + tailwind tokens.
-export function loadProjectContext(sourceResult, projectRoot) {
+export function loadProjectContext(sourceResult: SourceLike, projectRoot: string): ProjectContext {
   const { imports, globalCss } = buildFileContext(sourceResult, projectRoot)
 
   const twPath = findTailwindConfig(projectRoot)

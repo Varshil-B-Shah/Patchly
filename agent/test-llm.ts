@@ -1,5 +1,5 @@
-// agent/test-llm.js
-// Run: node agent/test-llm.js
+// agent/test-llm.ts
+// Run: npx tsx agent/test-llm.ts
 // Tests the Azure connection in isolation — no agent, no extension needed
 
 import fs from 'fs'
@@ -7,9 +7,9 @@ import path from 'path'
 
 const config = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), '.patchlyrc.json'), 'utf8'))
 
-const endpoint = config.azureEndpoint
-const apiKey = config.azureApiKey
-const modelName = config.model
+const endpoint: string = config.azureEndpoint
+const apiKey: string = config.azureApiKey
+const modelName: string = config.model
 
 const base = endpoint.replace(/\/+$/, '')
 const url = base.includes('/v1') || base.includes('cognitiveservices.azure.com')
@@ -55,8 +55,7 @@ try {
     const data = JSON.parse(text)
     console.log('LLM says:', data.choices?.[0]?.message?.content)
   }
-
 } catch (err) {
   clearTimeout(timeoutId)
-  console.log('Error:', err.name, err.message)
+  console.log('Error:', err instanceof Error ? `${err.name} ${err.message}` : String(err))
 }

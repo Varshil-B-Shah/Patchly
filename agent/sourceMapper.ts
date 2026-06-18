@@ -1,9 +1,32 @@
+// agent/sourceMapper.ts
 import fs from 'fs'
 import path from 'path'
+import type { ErrorCode } from '../shared/protocol.js'
 
 const MAX_FILE_SIZE_BYTES = 500 * 1024
 
-export function resolveSource(patchlySrc, projectRoot) {
+/** A successfully resolved source location with surrounding context. */
+export interface ResolvedSource {
+  success: true
+  absolutePath: string
+  relativePath: string
+  lineNumber: number
+  colNumber: number
+  targetLine: string
+  contextLines: string
+  fullContent: string
+  totalLines: number
+}
+
+export interface SourceFailure {
+  success: false
+  code: ErrorCode
+  message: string
+}
+
+export type SourceResult = ResolvedSource | SourceFailure
+
+export function resolveSource(patchlySrc: string | null | undefined, projectRoot: string): SourceResult {
   if (!patchlySrc) {
     return {
       success: false,

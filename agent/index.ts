@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// agent/index.js
+// agent/index.ts
+
+import type { ResolvedConfig } from './config.js'
 
 const PORT = 7842
 
@@ -16,7 +18,9 @@ async function main() {
     process.exit(1)
   }
 
-  await startServer(PORT, config)
+  const resolvedConfig: ResolvedConfig = { ...config, projectRoot: config.projectRoot }
+
+  await startServer(PORT, resolvedConfig)
   console.log(`Patchly agent running on ws://localhost:${PORT}`)
   console.log(`   Project root: ${config.projectRoot}`)
   console.log(`   Open your localhost app and activate Patchly with Alt+Shift+P`)
@@ -25,7 +29,7 @@ async function main() {
 if (process.argv[2] === 'init') {
   import('../bin/init.js')
 } else {
-  main().catch(err => {
+  main().catch((err) => {
     console.error('Fatal error:', err)
     process.exit(1)
   })

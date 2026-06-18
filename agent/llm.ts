@@ -1,17 +1,89 @@
-// agent/llm.js
+// agent/llm.ts
 // Calls Azure OpenAI and returns a structured EditRequest.
 // Sends a screenshot (vision), direct imports, global CSS, and Tailwind design
 // tokens alongside the component source so the model can see what it's editing.
 
-import { OPS } from '../shared/operations.js'
-import { loadProjectContext } from './contextBuilder.js'
+import { OPS, type EditOperation } from '../shared/operations.js'
+import type { ErrorCode, RedirectSuggestion } from '../shared/protocol.js'
+import { loadProjectContext, type ImportContext } from './contextBuilder.js'
+import type { ResolvedConfig } from './config.js'
 
-const VALID_OPS = new Set(Object.values(OPS))
+const VALID_OPS = new Set<string>(Object.values(OPS))
+
+// ─── Result + input types ─────────────────────────────────────────────────────
+
+/** Minimal source shape the LLM path needs (server passes the full ResolvedSource). */
+export interface LLMSourceInput {
+  relativePath: string
+  lineNumber: number
+  colNumber: number
+  fullContent: string
+}
+
+/** One element in a same-file batch edit. */
+export interface BatchItem {
+  lineNumber: number
+  colNumber: number
+  elementHtml: string
+  elementClasses: string
+}
+
+export type ProgressFn = (p: { stage?: string; text?: string }) => void
+
+export interface LLMSuccess {
+  ok: true
+  success: true
+  operations: EditOperation[]
+  explanation: string
+  confidence: number
+}
+export interface LLMRedirect {
+  ok: false
+  success: false
+  code: 'REDIRECT_SUGGESTED'
+  suggestions: RedirectSuggestion[]
+  explanation: string
+}
+export interface LLMFailure {
+  ok: false
+  success: false
+  code: ErrorCode
+  message: string
+}
+export type LLMResult = LLMSuccess | LLMRedirect | LLMFailure
+
+type CallLLMResult = { ok: true; rawContent: string } | LLMFailure
+
+/** OpenAI chat content: plain text, or a multimodal blocks array (text + image). */
+type UserContent =
+  | string
+  | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+
+interface PromptContext {
+  imports?: ImportContext[]
+  globalCss?: string | null
+}
 
 // Single-element edit (the interactive path): one target + optional screenshot.
-export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64, onProgress }) {
+export async function getEditInstruction({
+  sourceResult,
+  elementHtml,
+  elementClasses,
+  prompt,
+  config,
+  screenshot_base64,
+  onProgress,
+}: {
+  sourceResult: LLMSourceInput
+  elementHtml: string
+  elementClasses: string
+  prompt: string
+  config: ResolvedConfig
+  screenshot_base64?: string | null
+  onProgress?: ProgressFn
+}): Promise<LLMResult> {
   // Context (imports, global CSS, tailwind tokens). Best-effort — never blocks.
-  let context = { imports: [], globalCss: null, tailwindTokens: '' }
+  let context = { imports: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
   try {
     context = loadProjectContext(sourceResult, config.projectRoot)
   } catch {}
@@ -19,7 +91,7 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
   const systemPrompt = buildSystemPrompt(context.tailwindTokens)
   const userPrompt = buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context })
 
-  const userContent = screenshot_base64
+  const userContent: UserContent = screenshot_base64
     ? [
         { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshot_base64}` } },
         { type: 'text', text: userPrompt },
@@ -36,8 +108,20 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
 // coherent operations[] covering every target. This both avoids the per-op drift
 // of merging independent single-target responses AND sends the file once instead
 // of N times. No screenshot (batch is text-context only).
-export async function getBatchEditInstruction({ sourceResult, items, prompt, config, onProgress }) {
-  let context = { imports: [], globalCss: null, tailwindTokens: '' }
+export async function getBatchEditInstruction({
+  sourceResult,
+  items,
+  prompt,
+  config,
+  onProgress,
+}: {
+  sourceResult: LLMSourceInput
+  items: BatchItem[]
+  prompt: string
+  config: ResolvedConfig
+  onProgress?: ProgressFn
+}): Promise<LLMResult> {
+  let context = { imports: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
   try {
     context = loadProjectContext(sourceResult, config.projectRoot)
   } catch {}
@@ -52,7 +136,17 @@ export async function getBatchEditInstruction({ sourceResult, items, prompt, con
 
 // Shared LLM transport: credentials, streaming fetch, idle timeout, finish_reason
 // handling. Returns { ok:true, rawContent } or { ok:false, code, message }.
-async function callLLM({ config, systemPrompt, userContent, onProgress }) {
+async function callLLM({
+  config,
+  systemPrompt,
+  userContent,
+  onProgress,
+}: {
+  config: ResolvedConfig
+  systemPrompt: string
+  userContent: UserContent
+  onProgress?: ProgressFn
+}): Promise<CallLLMResult> {
   const { azureEndpoint, azureApiKey, model } = config
   const endpoint = azureEndpoint || process.env.PATCHLY_AZURE_ENDPOINT
   const apiKey = azureApiKey || process.env.PATCHLY_AZURE_KEY
@@ -75,7 +169,7 @@ async function callLLM({ config, systemPrompt, userContent, onProgress }) {
   // generation isn't killed, while a truly stalled request still times out.
   const IDLE_TIMEOUT_MS = 45000
   const controller = new AbortController()
-  let timeoutId
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   const armTimeout = () => {
     clearTimeout(timeoutId)
     timeoutId = setTimeout(() => {
@@ -118,7 +212,11 @@ async function callLLM({ config, systemPrompt, userContent, onProgress }) {
       }
     }
 
-    const { content: rawContent, finishReason } = await consumeStream(response.body, armTimeout, onProgress)
+    const { content: rawContent, finishReason } = await consumeStream(
+      response.body as ReadableStream<Uint8Array>,
+      armTimeout,
+      onProgress,
+    )
     clearTimeout(timeoutId)
     console.log('[LLM] finish_reason:', finishReason)
 
@@ -136,16 +234,15 @@ async function callLLM({ config, systemPrompt, userContent, onProgress }) {
     }
 
     return { ok: true, rawContent }
-
   } catch (err) {
     clearTimeout(timeoutId)
-    const isTimeout = err.name === 'AbortError'
+    const isTimeout = err instanceof Error && err.name === 'AbortError'
     return {
       ok: false, success: false,
       code: isTimeout ? 'LLM_TIMEOUT' : 'NETWORK_ERROR',
       message: isTimeout
         ? `Azure API request timed out (no data for ${IDLE_TIMEOUT_MS / 1000}s). Check your endpoint URL: ${url}`
-        : `Network error calling Azure: ${err.message}`,
+        : `Network error calling Azure: ${err instanceof Error ? err.message : String(err)}`,
     }
   }
 }
@@ -154,12 +251,16 @@ async function callLLM({ config, systemPrompt, userContent, onProgress }) {
 // content. Calls armTimeout() on each chunk (idle reset) and onProgress({ stage,
 // text }) with the explanation as soon as it can be extracted from the partial
 // JSON. Returns { content, finishReason }.
-async function consumeStream(body, armTimeout, onProgress) {
+async function consumeStream(
+  body: ReadableStream<Uint8Array>,
+  armTimeout: () => void,
+  onProgress?: ProgressFn,
+): Promise<{ content: string; finishReason: string | null }> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let content = ''
-  let finishReason = null
+  let finishReason: string | null = null
   let explanationSent = false
 
   const maybeEmitExplanation = () => {
@@ -168,7 +269,7 @@ async function consumeStream(body, armTimeout, onProgress) {
     const m = content.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/)
     if (m) {
       explanationSent = true
-      let text = m[1].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
+      const text = m[1].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
       onProgress({ stage: 'generating', text })
     }
   }
@@ -181,7 +282,7 @@ async function consumeStream(body, armTimeout, onProgress) {
 
     // SSE frames are separated by newlines; each data line is a JSON delta.
     const lines = buffer.split('\n')
-    buffer = lines.pop()  // keep the trailing partial line
+    buffer = lines.pop() ?? '' // keep the trailing partial line
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -205,7 +306,7 @@ async function consumeStream(body, armTimeout, onProgress) {
   return { content, finishReason }
 }
 
-function buildRequestConfig(endpoint, modelName) {
+function buildRequestConfig(endpoint: string, modelName: string): { url: string; includeModelInBody: boolean } {
   const base = endpoint.replace(/\/+$/, '')
 
   if (base.includes('/v1') || base.includes('cognitiveservices.azure.com')) {
@@ -218,7 +319,7 @@ function buildRequestConfig(endpoint, modelName) {
   }
 }
 
-function buildSystemPrompt(tailwindTokens = '') {
+function buildSystemPrompt(tailwindTokens = ''): string {
   const visualSection = `
 A screenshot of the selected element may be attached as an image. If present, use it to understand the current visual state — colours, layout, spacing — before deciding which classes to add or remove.`
 
@@ -323,7 +424,19 @@ User: "change the link destination to /about"
 }`
 }
 
-function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context = {} }) {
+function buildUserPrompt({
+  sourceResult,
+  elementHtml,
+  elementClasses,
+  prompt,
+  context = {},
+}: {
+  sourceResult: LLMSourceInput
+  elementHtml: string
+  elementClasses: string
+  prompt: string
+  context?: PromptContext
+}): string {
   const textSnippet = (elementHtml || '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
@@ -346,7 +459,7 @@ function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, co
     '```',
   ]
 
-  if (context.imports?.length > 0) {
+  if (context.imports && context.imports.length > 0) {
     lines.push('', '### Direct imports')
     for (const imp of context.imports) {
       lines.push(`/* ${imp.path} */`, '```jsx', imp.content, '```')
@@ -364,7 +477,17 @@ function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, co
 // Build a prompt that edits MULTIPLE elements in one file. The file body appears
 // exactly once; each target is listed with its line/column so the model can emit
 // one operation per change with correct positions.
-function buildBatchUserPrompt({ sourceResult, items, prompt, context = {} }) {
+function buildBatchUserPrompt({
+  sourceResult,
+  items,
+  prompt,
+  context = {},
+}: {
+  sourceResult: LLMSourceInput
+  items: BatchItem[]
+  prompt: string
+  context?: PromptContext
+}): string {
   const lines = [
     `File: ${sourceResult.relativePath}`,
     '',
@@ -388,7 +511,7 @@ function buildBatchUserPrompt({ sourceResult, items, prompt, context = {} }) {
 
   lines.push('', 'Full file contents:', '```jsx', sourceResult.fullContent, '```')
 
-  if (context.imports?.length > 0) {
+  if (context.imports && context.imports.length > 0) {
     lines.push('', '### Direct imports')
     for (const imp of context.imports) {
       lines.push(`/* ${imp.path} */`, '```jsx', imp.content, '```')
@@ -403,13 +526,13 @@ function buildBatchUserPrompt({ sourceResult, items, prompt, context = {} }) {
   return lines.join('\n')
 }
 
-function parseEditRequest(rawContent) {
+function parseEditRequest(rawContent: string): LLMResult {
   let cleaned = rawContent.trim()
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim()
   }
 
-  let parsed
+  let parsed: any
   try {
     parsed = JSON.parse(cleaned)
   } catch {
@@ -430,9 +553,9 @@ function parseEditRequest(rawContent) {
 
   // Cross-file redirect: the target lives in an imported child component.
   if (Array.isArray(parsed.redirect) && parsed.redirect.length > 0) {
-    const suggestions = parsed.redirect
-      .filter((r) => r && typeof r.file === 'string')
-      .map((r) => ({ file: r.file, reason: typeof r.reason === 'string' ? r.reason : '' }))
+    const suggestions: RedirectSuggestion[] = parsed.redirect
+      .filter((r: any) => r && typeof r.file === 'string')
+      .map((r: any) => ({ file: r.file, reason: typeof r.reason === 'string' ? r.reason : '' }))
     if (suggestions.length > 0) {
       return { ok: false, success: false, code: 'REDIRECT_SUGGESTED', suggestions, explanation: parsed.explanation }
     }
@@ -458,7 +581,7 @@ function parseEditRequest(rawContent) {
 
   return {
     ok: true, success: true,
-    operations: parsed.operations,
+    operations: parsed.operations as EditOperation[],
     explanation: parsed.explanation,
     confidence: parsed.confidence,
   }

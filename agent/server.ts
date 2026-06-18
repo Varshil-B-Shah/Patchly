@@ -1,20 +1,41 @@
-// agent/server.js
+// agent/server.ts
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
-import { resolveSource } from './sourceMapper.js'
-import { getEditInstruction, getBatchEditInstruction } from './llm.js'
+import type { BatchEditEntry } from '../shared/protocol.js'
+import type { EditOperation } from '../shared/operations.js'
+import { resolveSource, type ResolvedSource } from './sourceMapper.js'
+import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
 import { undoEdit } from './fileEditor.js'
 import { applyEditOperations } from './ast/applyEdit.js'
+import type { ResolvedConfig } from './config.js'
 
-const pendingEdits = new Map()  // sessionId → { operations }
-// editId → { absolutePath, snapshot, filePath, lineNumber, explanation }.
-// One entry per applied edit so the extension's history sidebar can undo any of
-// them individually. Note: undoing an older edit when a newer edit touched the
-// same file restores the older snapshot wholesale (last-write-wins) — acceptable
-// for v2, no per-hunk stacking.
-const editHistory = new Map()
+interface ApplyGroup {
+  filePath: string
+  operations: EditOperation[]
+  explanation: string
+  lineNumber: number
+}
 
-export async function startServer(port, config) {
+interface EditHistoryEntry {
+  absolutePath: string
+  snapshot: string
+  filePath: string
+  lineNumber: number
+  explanation: string
+}
+
+type PendingEdit =
+  | { batch: true; groups: ApplyGroup[] }
+  | { batch?: false; operations: EditOperation[]; explanation: string; lineNumber: number }
+
+const pendingEdits = new Map<string, PendingEdit>() // sessionId → pending edit
+// editId → snapshot entry. One per applied edit so the extension's history
+// sidebar can undo any of them individually. Note: undoing an older edit when a
+// newer edit touched the same file restores the older snapshot wholesale
+// (last-write-wins) — acceptable for v2, no per-hunk stacking.
+const editHistory = new Map<string, EditHistoryEntry>()
+
+export async function startServer(port: number, config: ResolvedConfig): Promise<WebSocketServer> {
   const wss = new WebSocketServer({ port })
 
   wss.on('connection', (ws) => {
@@ -27,7 +48,7 @@ export async function startServer(port, config) {
     }))
 
     ws.on('message', async (data) => {
-      let msg
+      let msg: any
       try {
         msg = JSON.parse(data.toString())
       } catch {
@@ -51,15 +72,15 @@ export async function startServer(port, config) {
         // independent single-target responses, and sends each file once instead
         // of once per target (big token saving for same-file selections).
         if (Array.isArray(targets) && targets.length > 1) {
-          const sendProgress = (stage, text) =>
+          const sendProgress = (stage: string, text?: string) =>
             ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
 
           console.log(`Batch edit request: "${prompt}" on ${targets.length} targets`)
           sendProgress('analyzing')
 
           // Resolve every target (cheap, local) and group by file.
-          const fileGroups = new Map()  // relativePath → { sourceResult, items: [...] }
-          const failed = []
+          const fileGroups = new Map<string, { sourceResult: ResolvedSource; items: BatchItem[] }>()
+          const failed: BatchEditEntry[] = []
           for (const t of targets) {
             const sr = resolveSource(t.patchlySrc, config.projectRoot)
             if (!sr.success) {
@@ -71,8 +92,8 @@ export async function startServer(port, config) {
             fileGroups.set(sr.relativePath, g)
           }
 
-          const edits = []
-          const applyGroups = []
+          const edits: BatchEditEntry[] = []
+          const applyGroups: ApplyGroup[] = []
           let fileIdx = 0
           const fileCount = fileGroups.size
 
@@ -90,18 +111,18 @@ export async function startServer(port, config) {
             })
 
             console.log(`  file [${relativePath}] ${g.items.length} target(s):`,
-              llm.ok ? `ok — ${llm.operations.length} op(s): ${llm.operations.map(o => o.op).join(', ')}` : `FAIL ${llm.code} — ${llm.message}`)
+              llm.ok ? `ok — ${llm.operations.length} op(s): ${llm.operations.map((o) => o.op).join(', ')}` : `FAIL ${llm.code} — ${'message' in llm ? llm.message : llm.explanation}`)
 
             if (!llm.ok) {
               // Treat "model declined" the same as any other per-file failure.
-              edits.push({ ok: false, filePath: relativePath, code: llm.code, message: llm.message })
+              edits.push({ ok: false, filePath: relativePath, code: llm.code, message: 'message' in llm ? llm.message : undefined })
               continue
             }
 
             // Pin file + apply bottom-to-top so a line-shifting op can't
             // invalidate the line numbers of not-yet-applied ops above it.
             const operations = llm.operations
-              .map((op) => ({ ...op, target: { ...op.target, file: relativePath } }))
+              .map((op) => ({ ...op, target: { ...op.target, file: relativePath } }) as EditOperation)
               .sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
 
             sendProgress('building')
@@ -142,13 +163,13 @@ export async function startServer(port, config) {
         console.log('Target line:', sourceResult.targetLine)
         console.log('Source resolved. Calling LLM...')
 
-        const sendProgress = (stage, text) => {
+        const sendProgress = (stage: string, text?: string) => {
           ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
         }
 
         sendProgress('analyzing')
 
-        const onProgress = (p) => sendProgress(p.stage || 'generating', p.text)
+        const onProgress = (p: { stage?: string; text?: string }) => sendProgress(p.stage || 'generating', p.text)
 
         sendProgress('generating')
         let llmResult = await getEditInstruction({
@@ -176,7 +197,7 @@ export async function startServer(port, config) {
         }
 
         if (!llmResult.ok) {
-          console.log('LLM error:', llmResult.code, '—', llmResult.message)
+          console.log('LLM error:', llmResult.code, '—', 'message' in llmResult ? llmResult.message : undefined)
 
           if (llmResult.code === 'LLM_CANNOT_EDIT') {
             ws.send(JSON.stringify({
@@ -190,7 +211,7 @@ export async function startServer(port, config) {
           // The change belongs to an imported child component — offer to retry
           // against that file instead of failing.
           if (llmResult.code === 'REDIRECT_SUGGESTED') {
-            console.log('Redirect suggested:', llmResult.suggestions.map(s => s.file).join(', '))
+            console.log('Redirect suggested:', llmResult.suggestions.map((s) => s.file).join(', '))
             ws.send(JSON.stringify({
               type: MSG.REDIRECT,
               sessionId,
@@ -210,14 +231,14 @@ export async function startServer(port, config) {
         }
 
         console.log('LLM response:', llmResult.explanation)
-        console.log('  operations:', llmResult.operations.map(o => o.op).join(', '))
+        console.log('  operations:', llmResult.operations.map((o) => o.op).join(', '))
 
         // The edit always lives in the selected element's file — pin every op's
         // target file to the resolved source so an LLM path slip can't misfire.
-        const operations = llmResult.operations.map(op => ({
+        const operations = llmResult.operations.map((op) => ({
           ...op,
           target: { ...op.target, file: sourceResult.relativePath },
-        }))
+        }) as EditOperation)
 
         sendProgress('building')
 

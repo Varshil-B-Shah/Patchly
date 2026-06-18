@@ -1,13 +1,17 @@
-// agent/fileEditor.js
+// agent/fileEditor.ts
 // In-memory undo: restore a file to a previously snapshotted content.
 // (The string find/replace edit path was removed in Phase 6.9 — all edits now
 // go through the AST pipeline in agent/ast/. Write-path safety rails live in
-// agent/ast/safety.js.)
+// agent/ast/safety.ts.)
 
 import fs from 'fs'
 import path from 'path'
 
-export function undoEdit({ absolutePath, previousContent }) {
+type UndoResult =
+  | { success: true }
+  | { success: false; code: 'UNDO_ERROR'; message: string }
+
+export function undoEdit({ absolutePath, previousContent }: { absolutePath: string; previousContent: string }): UndoResult {
   const resolvedPath = path.resolve(absolutePath)
 
   try {
@@ -15,7 +19,7 @@ export function undoEdit({ absolutePath, previousContent }) {
     console.log(`Undid edit to ${path.basename(resolvedPath)}`)
     return { success: true }
   } catch (err) {
-    console.log('[fileEditor] Undo error:', err.message)
+    console.log('[fileEditor] Undo error:', err instanceof Error ? err.message : String(err))
     return {
       success: false,
       code: 'UNDO_ERROR',
