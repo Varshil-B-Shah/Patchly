@@ -1,12 +1,12 @@
 // agent/server.js
-import path from 'path'
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import { resolveSource } from './sourceMapper.js'
 import { getEditInstruction } from './llm.js'
-import { applyEdit, undoEdit } from './fileEditor.js'
+import { undoEdit } from './fileEditor.js'
+import { applyEditOperations } from './ast/applyEdit.js'
 
-const pendingEdits = new Map()  // sessionId → { absolutePath, find, replace }
+const pendingEdits = new Map()  // sessionId → { operations }
 let lastEdit = null  // tracks the most recent applied edit for undo
 
 export async function startServer(port, config) {
@@ -65,7 +65,7 @@ export async function startServer(port, config) {
           config,
         })
 
-        if (!llmResult.success && llmResult.code === 'JSON_PARSE_FAILED') {
+        if (!llmResult.ok && llmResult.code === 'JSON_PARSE_FAILED') {
           console.log('LLM returned invalid JSON, retrying with stricter prompt...')
           llmResult = await getEditInstruction({
             sourceResult,
@@ -76,7 +76,7 @@ export async function startServer(port, config) {
           })
         }
 
-        if (!llmResult.success) {
+        if (!llmResult.ok) {
           console.log('LLM error:', llmResult.code, '—', llmResult.message)
 
           if (llmResult.code === 'LLM_CANNOT_EDIT') {
@@ -98,21 +98,41 @@ export async function startServer(port, config) {
         }
 
         console.log('LLM response:', llmResult.explanation)
-        console.log('  find:', llmResult.find.slice(0, 80))
-        console.log('  replace:', llmResult.replace.slice(0, 80))
+        console.log('  operations:', llmResult.operations.map(o => o.op).join(', '))
 
-        pendingEdits.set(sessionId, {
-          absolutePath: sourceResult.absolutePath,
-          find: llmResult.find,
-          replace: llmResult.replace,
+        // The edit always lives in the selected element's file — pin every op's
+        // target file to the resolved source so an LLM path slip can't misfire.
+        const operations = llmResult.operations.map(op => ({
+          ...op,
+          target: { ...op.target, file: sourceResult.relativePath },
+        }))
+
+        // Dry-run the pipeline to produce a preview diff without writing.
+        const preview = await applyEditOperations({
+          projectRoot: config.projectRoot,
+          operations,
+          dryRun: true,
         })
+
+        if (!preview.ok) {
+          console.log('Edit preview failed:', preview.code, '—', preview.message)
+          ws.send(JSON.stringify({
+            type: MSG.EDIT_ERROR,
+            sessionId,
+            code: preview.code,
+            message: preview.message,
+          }))
+          return
+        }
+
+        pendingEdits.set(sessionId, { operations })
 
         ws.send(JSON.stringify({
           type: MSG.PREVIEW,
           sessionId,
           explanation: llmResult.explanation,
-          find: llmResult.find,
-          replace: llmResult.replace,
+          confidence: llmResult.confidence,
+          diff: preview.diff,
           filePath: sourceResult.relativePath,
           lineNumber: sourceResult.lineNumber,
         }))
@@ -132,16 +152,14 @@ export async function startServer(port, config) {
           return
         }
 
-        const editResult = applyEdit({
-          absolutePath: pending.absolutePath,
-          find: pending.find,
-          replace: pending.replace,
+        const editResult = await applyEditOperations({
           projectRoot: config.projectRoot,
+          operations: pending.operations,
         })
 
         pendingEdits.delete(sessionId)
 
-        if (!editResult.success) {
+        if (!editResult.ok) {
           ws.send(JSON.stringify({
             type: MSG.EDIT_ERROR,
             sessionId,
@@ -151,12 +169,12 @@ export async function startServer(port, config) {
           return
         }
 
-        lastEdit = { absolutePath: editResult.absolutePath, previousContent: editResult.previousContent }
+        lastEdit = { absolutePath: editResult.absolutePath, previousContent: editResult.snapshot }
 
         ws.send(JSON.stringify({
           type: MSG.EDIT_DONE,
           sessionId,
-          filePath: path.relative(config.projectRoot, editResult.absolutePath),
+          filePath: editResult.filePath,
         }))
       }
 

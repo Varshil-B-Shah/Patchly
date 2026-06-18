@@ -13,9 +13,11 @@ import { formatEdited } from './format.js'
 import { makeDiff } from './diff.js'
 
 // Apply a batch of EditOperations (each carrying its own target) to one file.
+// With { dryRun: true } everything runs except the write — used to compute a
+// preview diff without touching disk.
 // Returns { ok:true, absolutePath, filePath, diff, snapshot, formatted }
 // or { ok:false, code, message }.
-export async function applyEditOperations({ projectRoot, operations }) {
+export async function applyEditOperations({ projectRoot, operations, dryRun = false }) {
   if (!operations || operations.length === 0) {
     return { ok: false, code: 'NO_OPERATIONS', message: 'No operations to apply.' }
   }
@@ -43,6 +45,12 @@ export async function applyEditOperations({ projectRoot, operations }) {
 
   const project = getProject(projectRoot)
 
+  // Disk is authoritative. refreshFromFileSystemSync() does NOT discard prior
+  // in-memory edits when the file is unchanged on disk (e.g. a preceding dry
+  // run), so force the AST back to the current disk content before editing.
+  const diskText = fs.readFileSync(absolutePath, 'utf8')
+  if (sourceFile.getFullText() !== diskText) sourceFile.replaceWithText(diskText)
+
   // ── Pre-edit syntax guard ──
   if (project.getProgram().getSyntacticDiagnostics(sourceFile).length > 0) {
     return {
@@ -52,7 +60,7 @@ export async function applyEditOperations({ projectRoot, operations }) {
     }
   }
 
-  const snapshot = sourceFile.getFullText()
+  const snapshot = diskText
 
   // ── Apply each operation (re-resolve per op so prior drift is handled) ──
   for (const op of operations) {
@@ -73,16 +81,25 @@ export async function applyEditOperations({ projectRoot, operations }) {
   }
 
   // ── Format ──
-  const formatted = await formatEdited(sourceFile, snapshot, absolutePath)
+  let formatted = await formatEdited(sourceFile, snapshot, absolutePath)
 
-  // ── Write ──
-  try {
-    fs.writeFileSync(absolutePath, formatted, 'utf8')
-  } catch (err) {
-    return {
-      ok: false,
-      code: 'WRITE_ERROR',
-      message: `Could not write to ${relativePath}. Check that the file isn't read-only or open elsewhere.`,
+  // Preserve the file's original line-ending style. ts-morph (replaceWithText)
+  // and Prettier (endOfLine: 'lf') both normalize to LF, which would silently
+  // rewrite every CRLF line. Match the snapshot so the diff stays minimal.
+  const eol = snapshot.includes('\r\n') ? '\r\n' : '\n'
+  formatted = formatted.replace(/\r\n/g, '\n')
+  if (eol === '\r\n') formatted = formatted.replace(/\n/g, '\r\n')
+
+  // ── Write (skipped on dry run) ──
+  if (!dryRun) {
+    try {
+      fs.writeFileSync(absolutePath, formatted, 'utf8')
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'WRITE_ERROR',
+        message: `Could not write to ${relativePath}. Check that the file isn't read-only or open elsewhere.`,
+      }
     }
   }
 

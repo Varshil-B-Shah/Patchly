@@ -20,10 +20,11 @@ export async function formatEdited(sourceFile, snapshot, filePath) {
       return await prettier.format(newText, options)
     }
   } catch {
-    // fall through to ts-morph
+    // fall through
   }
 
-  // Not Prettier-clean (or Prettier failed): gentle re-format via ts-morph.
-  sourceFile.formatText()
-  return sourceFile.getFullText()
+  // Not Prettier-clean (or Prettier failed): keep ts-morph's surgical output
+  // as-is. A whole-file reformat (Prettier or ts-morph formatText) would reflow
+  // unrelated lines on a file that isn't already formatter-clean.
+  return newText
 }

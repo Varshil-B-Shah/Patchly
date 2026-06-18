@@ -22,6 +22,56 @@ export const MSG = {
   REJECT:       'PATCHLY_REJECT',
 }
 
+// Canonical registry of error codes carried on EDIT_ERROR.code. Single source of
+// truth — the AMBIGUOUS_MATCH / NOT_FOUND codes from the old string find/replace
+// path are retired as of Phase 6.9.
+export const ERROR_CODES = Object.freeze({
+  // Source mapping (sourceMapper.js)
+  NO_SOURCE_ATTR:           'NO_SOURCE_ATTR',
+  INVALID_SRC_FORMAT:       'INVALID_SRC_FORMAT',
+  LINE_OUT_OF_RANGE:        'LINE_OUT_OF_RANGE',
+
+  // Target resolution / drift guard (ast/confirm.js)
+  TARGET_DRIFTED:           'TARGET_DRIFTED',
+
+  // Operation executors (ast/operations/)
+  DYNAMIC_CLASSNAME:        'DYNAMIC_CLASSNAME',
+  DYNAMIC_STYLE:            'DYNAMIC_STYLE',
+  MIXED_CHILDREN:           'MIXED_CHILDREN',
+  INVALID_JSX:              'INVALID_JSX',
+  UNSUPPORTED_TARGET:       'UNSUPPORTED_TARGET',
+  UNKNOWN_OP:               'UNKNOWN_OP',
+
+  // Edit pipeline / syntax guards (ast/applyEdit.js)
+  NO_OPERATIONS:            'NO_OPERATIONS',
+  UNSUPPORTED_MULTIFILE:    'UNSUPPORTED_MULTIFILE',
+  SYNTAX_ERROR_PREEXISTING: 'SYNTAX_ERROR_PREEXISTING',
+  WOULD_BREAK_SYNTAX:       'WOULD_BREAK_SYNTAX',
+
+  // Write-path safety rails (ast/safety.js)
+  PATH_TRAVERSAL:           'PATH_TRAVERSAL',
+  FORBIDDEN_PATH:           'FORBIDDEN_PATH',
+  FORBIDDEN_FILE:           'FORBIDDEN_FILE',
+  FILE_NOT_FOUND:           'FILE_NOT_FOUND',
+  FILE_TOO_LARGE:           'FILE_TOO_LARGE',
+  WRITE_ERROR:              'WRITE_ERROR',
+
+  // LLM (llm.js)
+  NO_CREDENTIALS:           'NO_CREDENTIALS',
+  LLM_API_ERROR:            'LLM_API_ERROR',
+  LLM_TIMEOUT:              'LLM_TIMEOUT',
+  NETWORK_ERROR:            'NETWORK_ERROR',
+  EMPTY_RESPONSE:           'EMPTY_RESPONSE',
+  JSON_PARSE_FAILED:        'JSON_PARSE_FAILED',
+  LLM_BAD_OUTPUT:           'LLM_BAD_OUTPUT',
+  LLM_CANNOT_EDIT:          'LLM_CANNOT_EDIT',
+
+  // Session / undo (server.js)
+  NO_PENDING_EDIT:          'NO_PENDING_EDIT',
+  NOTHING_TO_UNDO:          'NOTHING_TO_UNDO',
+  UNDO_ERROR:               'UNDO_ERROR',
+})
+
 // Message shape reference (not enforced in v1, just documentation)
 // EDIT_REQUEST payload:
 // {
@@ -33,20 +83,28 @@ export const MSG = {
 //   sessionId: string,         // random ID for this edit session
 // }
 
+// PREVIEW payload:
+// {
+//   type: MSG.PREVIEW,
+//   sessionId: string,
+//   explanation: string,       // one sentence from LLM
+//   confidence: number,        // 0..1, model self-rated
+//   diff: string,              // unified diff of the pending edit
+//   filePath: string,          // relative path of target file
+//   lineNumber: number,
+// }
+
 // EDIT_DONE payload:
 // {
 //   type: MSG.EDIT_DONE,
 //   sessionId: string,
-//   find: string,              // what was replaced
-//   replace: string,           // what it was replaced with
-//   filePath: string,          // absolute path of edited file
-//   explanation: string,       // one sentence from LLM
+//   filePath: string,          // relative path of edited file
 // }
 
 // EDIT_ERROR payload:
 // {
 //   type: MSG.EDIT_ERROR,
 //   sessionId: string,
-//   code: string,              // 'SOURCE_NOT_FOUND' | 'LLM_FAILED' | 'FILE_WRITE_FAILED' | 'AMBIGUOUS_MATCH'
+//   code: string,              // one of ERROR_CODES
 //   message: string,           // human readable
 // }
