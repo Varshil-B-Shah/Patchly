@@ -4,7 +4,15 @@ import generate from '@babel/generator'
 import * as t from '@babel/types'
 import path from 'path'
 
-export function patchlyPlugin() {
+// Minimal Vite plugin shape — avoids adding `vite` as a dependency just for types.
+interface MinimalVitePlugin {
+  name: string
+  enforce?: 'pre' | 'post'
+  configResolved?: (config: { root: string }) => void
+  transform?: (code: string, id: string) => { code: string; map: unknown } | null
+}
+
+export function patchlyPlugin(): MinimalVitePlugin {
   let projectRoot = process.cwd()
 
   return {
@@ -36,47 +44,50 @@ export function patchlyPlugin() {
             const { loc } = nodePath.node
             if (!loc) return
 
-            if (t.isJSXIdentifier(nodePath.node.name) &&
-                nodePath.node.name.name === '') return
+            if (
+              t.isJSXIdentifier(nodePath.node.name) &&
+              nodePath.node.name.name === ''
+            )
+              return
 
             const srcValue = `${relativePath}:${loc.start.line}:${loc.start.column}`
 
             const alreadyHas = nodePath.node.attributes.some(
-              attr => t.isJSXAttribute(attr) &&
-                      t.isJSXIdentifier(attr.name) &&
-                      attr.name.name === 'data-patchly-src'
+              (attr) =>
+                t.isJSXAttribute(attr) &&
+                t.isJSXIdentifier(attr.name) &&
+                attr.name.name === 'data-patchly-src',
             )
 
             if (alreadyHas) return
 
             const attr = t.jsxAttribute(
               t.jsxIdentifier('data-patchly-src'),
-              t.stringLiteral(srcValue)
+              t.stringLiteral(srcValue),
             )
 
             nodePath.node.attributes.push(attr)
             modified = true
-          }
+          },
         })
 
         if (!modified) return null
 
-        const output = generate.default(ast, {
-          retainLines: true,
-          sourceMaps: true,
-          sourceFileName: id,
-        }, code)
+        const output = generate.default(
+          ast,
+          { retainLines: true, sourceMaps: true, sourceFileName: id },
+          code,
+        )
 
-        return {
-          code: output.code,
-          map: output.map,
-        }
-
+        return { code: output.code, map: output.map }
       } catch (err) {
         const relativePath = path.relative(projectRoot, id).replace(/\\/g, '/')
-        console.warn(`[Patchly] Could not instrument ${relativePath}:`, err.message)
+        console.warn(
+          `[Patchly] Could not instrument ${relativePath}:`,
+          err instanceof Error ? err.message : String(err),
+        )
         return null
       }
-    }
+    },
   }
 }

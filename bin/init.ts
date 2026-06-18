@@ -5,12 +5,14 @@ import path from 'path'
 
 const CONFIG_FILE = '.patchlyrc.json'
 
-function detectFramework(projectRoot) {
+type Framework = 'nextjs' | 'react-vite' | 'vue-vite' | 'unknown'
+
+function detectFramework(projectRoot: string): Framework {
   const pkgPath = path.resolve(projectRoot, 'package.json')
   if (!fs.existsSync(pkgPath)) return 'unknown'
 
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-  const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+  const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies }
 
   if (deps['next']) return 'nextjs'
   if (deps['vite'] && deps['react']) return 'react-vite'
@@ -18,12 +20,12 @@ function detectFramework(projectRoot) {
   return 'unknown'
 }
 
-function detectDevPort(projectRoot) {
+function detectDevPort(projectRoot: string): number {
   const framework = detectFramework(projectRoot)
   return framework === 'nextjs' ? 3000 : 5173
 }
 
-function hasPatchlyPlugin(projectRoot) {
+function hasPatchlyPlugin(projectRoot: string): boolean {
   for (const fileName of ['vite.config.js', 'vite.config.ts']) {
     const configPath = path.resolve(projectRoot, fileName)
     if (!fs.existsSync(configPath)) continue
@@ -33,7 +35,7 @@ function hasPatchlyPlugin(projectRoot) {
   return false
 }
 
-function updateGitignore(projectRoot) {
+function updateGitignore(projectRoot: string): void {
   const gitignorePath = path.resolve(projectRoot, '.gitignore')
   if (!fs.existsSync(gitignorePath)) return
 
@@ -45,7 +47,7 @@ function updateGitignore(projectRoot) {
   console.log('Updated .gitignore')
 }
 
-async function init() {
+async function init(): Promise<void> {
   const projectRoot = process.cwd()
   const configPath = path.resolve(projectRoot, CONFIG_FILE)
 
