@@ -1,11 +1,19 @@
-// agent/ast/operations/setInlineStyle.js
+// agent/ast/operations/setInlineStyle.ts
 // Merge keys into the style={{ ... }} object literal (create it if absent).
 // This is the operation the future drag-drop layer calls most.
 
-import { SyntaxKind } from 'ts-morph'
+import {
+  SyntaxKind,
+  type JsxAttribute,
+  type JsxExpression,
+  type ObjectLiteralExpression,
+  type PropertyAssignment,
+} from 'ts-morph'
 import { getOpening, quoteAttr, propName } from './_util.js'
+import type { JsxNode, OpResult } from '../types.js'
+import type { SetInlineStyleOp } from '../../../shared/operations.js'
 
-export function setInlineStyle(node, op) {
+export function setInlineStyle(node: JsxNode, op: SetInlineStyleOp): OpResult {
   const styles = op.styles || {}
   const entries = Object.entries(styles)
   if (entries.length === 0) return { ok: true }
@@ -24,10 +32,11 @@ export function setInlineStyle(node, op) {
     return { ok: false, code: 'DYNAMIC_STYLE', message: 'style is a spread attribute.' }
   }
 
-  const initializer = attr.getInitializer()
-  const expr = initializer && initializer.getKind() === SyntaxKind.JsxExpression
-    ? initializer.getExpression()
-    : null
+  const initializer = (attr as JsxAttribute).getInitializer()
+  const expr =
+    initializer && initializer.getKind() === SyntaxKind.JsxExpression
+      ? (initializer as JsxExpression).getExpression()
+      : null
 
   if (!expr || expr.getKind() !== SyntaxKind.ObjectLiteralExpression) {
     return {
@@ -37,17 +46,19 @@ export function setInlineStyle(node, op) {
     }
   }
 
+  const objExpr = expr as ObjectLiteralExpression
+
   // Merge each key into the existing object literal.
   for (const [k, v] of entries) {
     const name = propName(k)
-    const existing = expr.getProperty(name)
+    const existing = objExpr.getProperty(name)
     if (existing && existing.getKind() === SyntaxKind.PropertyAssignment) {
-      existing.setInitializer(quoteAttr(v))
+      ;(existing as PropertyAssignment).setInitializer(quoteAttr(v))
     } else if (existing) {
       // shorthand / spread / accessor with this name — replace it.
       existing.replaceWithText(`${name}: ${quoteAttr(v)}`)
     } else {
-      expr.addPropertyAssignment({ name, initializer: quoteAttr(v) })
+      objExpr.addPropertyAssignment({ name, initializer: quoteAttr(v) })
     }
   }
   return { ok: true }

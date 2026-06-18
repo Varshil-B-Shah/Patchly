@@ -1,4 +1,4 @@
-// agent/ast/applyEdit.js
+// agent/ast/applyEdit.ts
 // The LLM-independent edit pipeline: resolve → confirm → mutate → syntax-guard →
 // format → write → diff. The same entry point the LLM path (6.9) and the future
 // drag-drop UI both call. Undo stays in the server (it keeps the returned snapshot).
@@ -11,13 +11,21 @@ import { applyOperation } from './operations/index.js'
 import { checkWritePath, checkFileSize } from './safety.js'
 import { formatEdited } from './format.js'
 import { makeDiff } from './diff.js'
+import type { ApplyResult } from './types.js'
+import type { EditOperation } from '../../shared/operations.js'
 
 // Apply a batch of EditOperations (each carrying its own target) to one file.
 // With { dryRun: true } everything runs except the write — used to compute a
 // preview diff without touching disk.
-// Returns { ok:true, absolutePath, filePath, diff, snapshot, formatted }
-// or { ok:false, code, message }.
-export async function applyEditOperations({ projectRoot, operations, dryRun = false }) {
+export async function applyEditOperations({
+  projectRoot,
+  operations,
+  dryRun = false,
+}: {
+  projectRoot: string
+  operations: EditOperation[]
+  dryRun?: boolean
+}): Promise<ApplyResult> {
   if (!operations || operations.length === 0) {
     return { ok: false, code: 'NO_OPERATIONS', message: 'No operations to apply.' }
   }
@@ -94,7 +102,7 @@ export async function applyEditOperations({ projectRoot, operations, dryRun = fa
   if (!dryRun) {
     try {
       fs.writeFileSync(absolutePath, formatted, 'utf8')
-    } catch (err) {
+    } catch {
       return {
         ok: false,
         code: 'WRITE_ERROR',

@@ -1,4 +1,4 @@
-// agent/ast/__tests__/property.test.js
+// agent/ast/__tests__/property.test.ts
 // "Never corrupts a file" invariant test.
 // For every fixture × a representative operation set: if the edit succeeds, the
 // output must parse as valid JSX/TSX with zero syntax errors. If it fails, the
@@ -6,17 +6,18 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'path'
 import fs from 'fs'
-import os from 'os'
-import { Project } from 'ts-morph'
+import { Project, ts } from 'ts-morph'
 import { applyEditOperations } from '../applyEdit.js'
-import { readFixture, makeTempProject, FIXTURES_DIR } from './helpers.js'
+import { readFixture, makeTempProject } from './helpers.js'
 import { ERROR_CODES } from '../../../shared/protocol.js'
 import { clearProjectCache } from '../project.js'
+import type { EditOperation, EditTarget } from '../../../shared/operations.js'
 
-// Every fixture paired with: { relPath, target (for root element), fileExt }
-const FIXTURES = [
+type FixtureTarget = Omit<EditTarget, 'file'>
+
+// Every fixture paired with: { name, relPath, target (for root element) }
+const FIXTURES: { name: string; relPath: string; target: FixtureTarget }[] = [
   {
     name: 'Button.jsx',
     relPath: 'src/Button.jsx',
@@ -82,7 +83,7 @@ const FIXTURES = [
 
 // Operations to probe. Some may fail (e.g. DYNAMIC_CLASSNAME) — that's expected.
 // The invariant is: ok=true ⟹ no syntax errors; ok=false ⟹ known error code.
-function probeOps(relPath, target) {
+function probeOps(relPath: string, target: FixtureTarget): EditOperation[] {
   return [
     { op: 'setClassName', target: { file: relPath, ...target }, add: ['__prop_test__'] },
     { op: 'setAttribute', target: { file: relPath, ...target }, name: 'data-prop-test', value: '1' },
@@ -90,16 +91,16 @@ function probeOps(relPath, target) {
 }
 
 // Parse text as a tsx file and return its syntactic diagnostics.
-function diagnosticsFor(text, ext) {
+function diagnosticsFor(text: string, ext: string) {
   const proj = new Project({
     useInMemoryFileSystem: true,
-    compilerOptions: { jsx: 2 /* React */, allowJs: true },
+    compilerOptions: { jsx: ts.JsxEmit.React, allowJs: true },
   })
   const sf = proj.createSourceFile(`__check__.${ext}`, text)
   return proj.getProgram().getSyntacticDiagnostics(sf)
 }
 
-const knownCodes = new Set(Object.values(ERROR_CODES))
+const knownCodes = new Set<string>(Object.values(ERROR_CODES))
 
 for (const fixture of FIXTURES) {
   const ext = fixture.name.endsWith('.tsx') ? 'tsx' : 'jsx'

@@ -1,4 +1,4 @@
-// agent/ast/project.js
+// agent/ast/project.ts
 // Thin wrapper around ts-morph: lazily creates and caches one Project per
 // projectRoot, and hands back fresh-from-disk source files on demand.
 // ts-morph is the locked editing engine for Phase 6 (Babel stays only for the
@@ -6,13 +6,13 @@
 
 import fs from 'fs'
 import path from 'path'
-import { Project, ts } from 'ts-morph'
+import { Project, ts, type SourceFile } from 'ts-morph'
 
 // resolved projectRoot → ts-morph Project
-const projectCache = new Map()
+const projectCache = new Map<string, Project>()
 
 // Get (or lazily create) the cached Project for a projectRoot.
-export function getProject(projectRoot) {
+export function getProject(projectRoot: string): Project {
   const root = path.resolve(projectRoot)
 
   const cached = projectCache.get(root)
@@ -20,7 +20,7 @@ export function getProject(projectRoot) {
 
   const tsConfigFilePath = path.join(root, 'tsconfig.json')
 
-  let project
+  let project: Project
   if (fs.existsSync(tsConfigFilePath)) {
     // Honor the project's own compiler options, but add files on demand
     // rather than eagerly loading the whole project.
@@ -45,7 +45,7 @@ export function getProject(projectRoot) {
 // Get a source file for editing, refreshed from disk so we never operate on a
 // stale in-memory AST (Vite or the user may have changed the file). Returns
 // null if the file does not exist on disk.
-export function getSourceFile(projectRoot, absPath) {
+export function getSourceFile(projectRoot: string, absPath: string): SourceFile | null {
   const project = getProject(projectRoot)
   const resolved = path.resolve(absPath)
 
@@ -60,6 +60,6 @@ export function getSourceFile(projectRoot, absPath) {
 }
 
 // Clear the Project cache (used by tests to reset state between runs).
-export function clearProjectCache() {
+export function clearProjectCache(): void {
   projectCache.clear()
 }

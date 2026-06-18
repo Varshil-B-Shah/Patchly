@@ -1,5 +1,5 @@
-// agent/ast/__tests__/drift.test.js
-// Tests for the drift guard and fingerprint re-resolution in ast/confirm.js.
+// agent/ast/__tests__/drift.test.ts
+// Tests for the drift guard and fingerprint re-resolution in ast/confirm.ts.
 // All four scenarios: exact hit, soft drift (line shift), hard drift (element gone),
 // and ambiguity (two elements share the same fingerprint).
 

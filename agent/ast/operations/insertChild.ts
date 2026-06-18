@@ -1,31 +1,34 @@
-// agent/ast/operations/insertChild.js
+// agent/ast/operations/insertChild.ts
 // Parse a jsx payload and insert it as a child at first / last / index.
 
-import { SyntaxKind } from 'ts-morph'
+import { SyntaxKind, type JsxElement } from 'ts-morph'
 import { validateJsxSnippet } from './_util.js'
+import type { JsxNode, OpResult } from '../types.js'
+import type { InsertChildOp } from '../../../shared/operations.js'
 
-export function insertChild(node, op) {
+export function insertChild(node: JsxNode, op: InsertChildOp): OpResult {
   if (node.getKind() === SyntaxKind.JsxSelfClosingElement) {
     return { ok: false, code: 'UNSUPPORTED_TARGET', message: 'Cannot insert children into a self-closing element.' }
   }
 
+  const el = node as JsxElement
   const { jsx, position } = op
 
-  if (!validateJsxSnippet(node.getSourceFile().getProject(), jsx, 'children')) {
+  if (!validateJsxSnippet(el.getSourceFile().getProject(), jsx, 'children')) {
     return { ok: false, code: 'INVALID_JSX', message: 'The inserted JSX is not valid.' }
   }
 
-  const opening = node.getOpeningElement()
-  const closing = node.getClosingElement()
+  const opening = el.getOpeningElement()
+  const closing = el.getClosingElement()
 
   // Meaningful children = elements, fragments and expressions (skip whitespace text).
-  const children = node.getJsxChildren().filter((c) => {
+  const children = el.getJsxChildren().filter((c) => {
     const kind = c.getKind()
     if (kind === SyntaxKind.JsxText) return c.getText().trim() !== ''
     return true
   })
 
-  let offset
+  let offset: number
   if (position === 'first' || children.length === 0) {
     offset = opening.getEnd()
   } else if (position === 'last') {
@@ -35,6 +38,6 @@ export function insertChild(node, op) {
     offset = idx >= children.length ? closing.getStart() : children[idx].getStart()
   }
 
-  node.getSourceFile().insertText(offset, jsx)
+  el.getSourceFile().insertText(offset, jsx)
   return { ok: true }
 }

@@ -29,8 +29,10 @@ export interface EditTarget {
 export interface SetClassNameOp {
   op: 'setClassName'
   target: EditTarget
-  add: string[]
-  remove: string[]
+  /** Classes to add (executor defaults to []). */
+  add?: string[]
+  /** Classes to remove (executor defaults to []). */
+  remove?: string[]
 }
 
 export interface SetAttributeOp {

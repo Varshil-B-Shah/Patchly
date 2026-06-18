@@ -1,10 +1,12 @@
-// agent/ast/operations/setAttribute.js
+// agent/ast/operations/setAttribute.ts
 // Add, update, or remove a JSX attribute. value === null removes it.
 
-import { SyntaxKind } from 'ts-morph'
+import { SyntaxKind, type JsxAttribute } from 'ts-morph'
 import { getOpening, quoteAttr } from './_util.js'
+import type { JsxNode, OpResult } from '../types.js'
+import type { SetAttributeOp } from '../../../shared/operations.js'
 
-export function setAttribute(node, op) {
+export function setAttribute(node: JsxNode, op: SetAttributeOp): OpResult {
   const { name, value } = op
   const opening = getOpening(node)
   const attr = opening.getAttribute(name)
@@ -20,7 +22,7 @@ export function setAttribute(node, op) {
     if (attr.getKind() !== SyntaxKind.JsxAttribute) {
       return { ok: false, code: 'UNSUPPORTED_TARGET', message: `Cannot set spread attribute ${name}.` }
     }
-    attr.setInitializer(quoteAttr(value))
+    ;(attr as JsxAttribute).setInitializer(quoteAttr(value))
     return { ok: true }
   }
 

@@ -1,4 +1,4 @@
-// agent/ast/__tests__/operations.test.js
+// agent/ast/__tests__/operations.test.ts
 // Golden-file regression tests for all 8 edit operations.
 // First run auto-generates goldens in __fixtures__/goldens/; subsequent runs compare.
 // To regenerate: UPDATE_GOLDEN=1 npm test
@@ -7,49 +7,50 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { applyEditOperations } from '../applyEdit.js'
 import { readFixture, withProject, assertGolden } from './helpers.js'
+import type { EditTarget } from '../../../shared/operations.js'
 
 // ─── Shared target descriptors (line 1-based, col 0-based, pointing at `<`) ──
 
-const BUTTON = {
+const BUTTON: EditTarget = {
   file: 'src/Button.jsx',
   line: 3, column: 4, tagName: 'button',
   textSnippet: 'Click me',
   identifyingAttrs: { 'data-testid': 'submit-btn' },
 }
-const HERO_SECTION = {
+const HERO_SECTION: EditTarget = {
   file: 'src/HeroSection.jsx',
   line: 3, column: 4, tagName: 'section',
 }
-const HERO_H1 = {
+const HERO_H1: EditTarget = {
   file: 'src/HeroSection.jsx',
   line: 4, column: 6, tagName: 'h1',
   textSnippet: 'Welcome',
 }
-const ITEM_UL = {
+const ITEM_UL: EditTarget = {
   file: 'src/ItemList.jsx',
   line: 3, column: 4, tagName: 'ul',
 }
-const IMG = {
+const IMG: EditTarget = {
   file: 'src/SelfClosingTags.jsx',
   line: 4, column: 6, tagName: 'img',
   identifyingAttrs: { src: '/hero.png' },
 }
-const DEEP_SPAN = {
+const DEEP_SPAN: EditTarget = {
   file: 'src/DeepNested.jsx',
   line: 8, column: 14, tagName: 'span',
   identifyingAttrs: { 'data-testid': 'deep-leaf' },
   textSnippet: 'Deep content',
 }
-const NAVBAR_A = {
+const NAVBAR_A: EditTarget = {
   file: 'src/NavBar.tsx',
   line: 9, column: 6, tagName: 'a',
   identifyingAttrs: { href: '/' },
 }
-const ODD_SECTION = {
+const ODD_SECTION: EditTarget = {
   file: 'src/OddWhitespace.jsx',
   line: 3, column: 8, tagName: 'section',
 }
-const CLSX_SPAN = {
+const CLSX_SPAN: EditTarget = {
   file: 'src/ClsxComponent.jsx',
   line: 5, column: 4, tagName: 'span',
 }

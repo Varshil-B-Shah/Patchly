@@ -1,10 +1,17 @@
-// agent/ast/operations/setClassName.js
+// agent/ast/operations/setClassName.ts
 // Add/remove className tokens surgically. Never mangles dynamic classNames.
 
-import { SyntaxKind } from 'ts-morph'
+import {
+  SyntaxKind,
+  type JsxAttribute,
+  type JsxExpression,
+  type StringLiteral,
+} from 'ts-morph'
 import { getOpening, tokenizeClasses, mergeClasses, quoteAttr } from './_util.js'
+import type { JsxNode, OpResult } from '../types.js'
+import type { SetClassNameOp } from '../../../shared/operations.js'
 
-export function setClassName(node, op) {
+export function setClassName(node: JsxNode, op: SetClassNameOp): OpResult {
   const { add = [], remove = [] } = op
   const opening = getOpening(node)
   const attr =
@@ -22,26 +29,27 @@ export function setClassName(node, op) {
     return { ok: false, code: 'DYNAMIC_CLASSNAME', message: 'className is not a plain attribute.' }
   }
 
-  const initializer = attr.getInitializer()
+  const initializer = (attr as JsxAttribute).getInitializer()
 
   // className="..."
   if (initializer && initializer.getKind() === SyntaxKind.StringLiteral) {
-    const merged = mergeClasses(tokenizeClasses(initializer.getLiteralValue()), add, remove)
-    initializer.setLiteralValue(merged.join(' '))
+    const lit = initializer as StringLiteral
+    const merged = mergeClasses(tokenizeClasses(lit.getLiteralValue()), add, remove)
+    lit.setLiteralValue(merged.join(' '))
     return { ok: true }
   }
 
   // className={ ... } — only safe if statically a plain string.
   if (initializer && initializer.getKind() === SyntaxKind.JsxExpression) {
-    const expr = initializer.getExpression()
+    const expr = (initializer as JsxExpression).getExpression()
     const exprKind = expr && expr.getKind()
     if (
       exprKind === SyntaxKind.StringLiteral ||
       exprKind === SyntaxKind.NoSubstitutionTemplateLiteral
     ) {
-      const merged = mergeClasses(tokenizeClasses(expr.getLiteralValue()), add, remove)
+      const merged = mergeClasses(tokenizeClasses((expr as StringLiteral).getLiteralValue()), add, remove)
       // Keep the expression-wrapped form: className={"..."}
-      expr.replaceWithText(quoteAttr(merged.join(' ')))
+      expr!.replaceWithText(quoteAttr(merged.join(' ')))
       return { ok: true }
     }
   }

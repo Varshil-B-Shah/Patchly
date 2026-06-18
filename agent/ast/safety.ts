@@ -1,15 +1,16 @@
-// agent/ast/safety.js
+// agent/ast/safety.ts
 // Reusable write-path safety rails for the AST editing pipeline. Ported from the
 // inline checks in agent/fileEditor.js so the new pipeline (and, after the 6.9
 // cutover, the server) share one canonical set of rails.
 
 import fs from 'fs'
 import path from 'path'
+import type { OpResult } from './types.js'
 
 const MAX_FILE_SIZE_BYTES = 500 * 1024
 
 // Directories that must never be written to.
-export const FORBIDDEN_PATHS = [
+export const FORBIDDEN_PATHS: string[] = [
   'node_modules',
   '.git',
   'dist',
@@ -19,7 +20,7 @@ export const FORBIDDEN_PATHS = [
 ]
 
 // Files that must never be written to.
-export const FORBIDDEN_FILES = [
+export const FORBIDDEN_FILES: string[] = [
   '.env',
   '.env.local',
   '.env.production',
@@ -35,8 +36,7 @@ export const FORBIDDEN_FILES = [
 ]
 
 // Validate that absolutePath is a safe target to write to inside projectRoot.
-// Returns { ok: true } or { ok: false, code, message }.
-export function checkWritePath({ absolutePath, projectRoot }) {
+export function checkWritePath({ absolutePath, projectRoot }: { absolutePath: string; projectRoot: string }): OpResult {
   const resolvedPath = path.resolve(absolutePath)
   const resolvedRoot = path.resolve(projectRoot)
 
@@ -75,7 +75,7 @@ export function checkWritePath({ absolutePath, projectRoot }) {
 }
 
 // Validate the file is not too large to safely edit.
-export function checkFileSize(absolutePath) {
+export function checkFileSize(absolutePath: string): OpResult {
   const stats = fs.statSync(path.resolve(absolutePath))
   if (stats.size > MAX_FILE_SIZE_BYTES) {
     return {

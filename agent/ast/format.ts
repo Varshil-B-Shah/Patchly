@@ -1,17 +1,18 @@
-// agent/ast/format.js
+// agent/ast/format.ts
 // Format an edited source file. Preferred path: Prettier with the project's own
 // resolved config — but only when the file was ALREADY formatter-clean, so we
 // never reflow unrelated lines. Otherwise fall back to ts-morph's gentle TS
 // formatter (fixes indentation of inserted nodes without rewriting the file).
 
 import prettier from 'prettier'
+import type { SourceFile } from 'ts-morph'
 
-export async function formatEdited(sourceFile, snapshot, filePath) {
+export async function formatEdited(sourceFile: SourceFile, snapshot: string, filePath: string): Promise<string> {
   const newText = sourceFile.getFullText()
 
   try {
     const config = await prettier.resolveConfig(filePath)
-    const options = { ...config, filepath: filePath }
+    const options: prettier.Options = { ...config, filepath: filePath }
 
     // Was the original file already Prettier-clean? Only then is whole-file
     // Prettier safe (it won't touch lines we didn't edit).
