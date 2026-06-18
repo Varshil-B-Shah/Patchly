@@ -39,6 +39,12 @@ function connect() {
         if (window.__patchlyShowPreview) window.__patchlyShowPreview(msg)
       }
 
+      if (msg.type === 'PATCHLY_PREVIEW_BATCH') {
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
+        if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
+        if (window.__patchlyShowPreviewBatch) window.__patchlyShowPreviewBatch(msg)
+      }
+
       if (msg.type === 'PATCHLY_EDIT_DONE') {
         if (window.__patchlyHideLoading) window.__patchlyHideLoading()
         recordEdit(msg)

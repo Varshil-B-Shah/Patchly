@@ -207,8 +207,6 @@ A screenshot of the selected element may be attached as an image. If present, us
 
 Respond with ONLY a valid JSON object — no markdown, no backticks, no explanation outside the JSON.
 
-Respond with ONLY a valid JSON object — no markdown, no backticks, no explanation outside the JSON.
-
 The response must match this schema exactly:
 {
   "explanation": "one short sentence describing what changed",

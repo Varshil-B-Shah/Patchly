@@ -14,6 +14,45 @@ const pendingEdits = new Map()  // sessionId → { operations }
 // for v2, no per-hunk stacking.
 const editHistory = new Map()
 
+// Resolve one target's source, call the LLM (with the JSON-retry), and pin every
+// operation's file to the resolved source. Returns a uniform result used by both
+// the single-edit and batch (fan-out) paths. Never throws on LLM/resolve failure.
+async function computeTargetEdit({ patchlySrc, elementHtml, elementClasses, screenshot_base64, prompt, config, onProgress }) {
+  const sourceResult = resolveSource(patchlySrc, config.projectRoot)
+  if (!sourceResult.success) {
+    return { ok: false, code: sourceResult.code, message: sourceResult.message, filePath: patchlySrc }
+  }
+
+  let llmResult = await getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64, onProgress })
+
+  if (!llmResult.ok && llmResult.code === 'JSON_PARSE_FAILED') {
+    llmResult = await getEditInstruction({
+      sourceResult, elementHtml, elementClasses,
+      prompt: prompt + ' — respond with ONLY the JSON object, nothing else',
+      config, screenshot_base64, onProgress,
+    })
+  }
+
+  if (!llmResult.ok) {
+    return { ok: false, code: llmResult.code, message: llmResult.message, filePath: sourceResult.relativePath, lineNumber: sourceResult.lineNumber }
+  }
+
+  // Pin every op's target file to the resolved source so an LLM path slip can't misfire.
+  const operations = llmResult.operations.map((op) => ({
+    ...op,
+    target: { ...op.target, file: sourceResult.relativePath },
+  }))
+
+  return {
+    ok: true,
+    operations,
+    explanation: llmResult.explanation,
+    confidence: llmResult.confidence,
+    filePath: sourceResult.relativePath,
+    lineNumber: sourceResult.lineNumber,
+  }
+}
+
 export async function startServer(port, config) {
   const wss = new WebSocketServer({ port })
 
@@ -42,7 +81,69 @@ export async function startServer(port, config) {
       }
 
       if (msg.type === MSG.EDIT_REQUEST) {
-        const { patchlySrc, elementHtml, elementClasses, prompt, sessionId, screenshot_base64 } = msg
+        const { patchlySrc, elementHtml, elementClasses, prompt, sessionId, screenshot_base64, targets } = msg
+
+        // ── Multi-select fan-out ────────────────────────────────────────────
+        // Each target runs the same single-file pipeline; operations are then
+        // grouped per file (a file is written once, atomically), so several
+        // targets in the same file never drift each other's line numbers.
+        if (Array.isArray(targets) && targets.length > 1) {
+          const sendProgress = (stage, text) =>
+            ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
+
+          console.log(`Batch edit request: "${prompt}" on ${targets.length} targets`)
+          sendProgress('analyzing')
+
+          const results = []
+          for (let i = 0; i < targets.length; i++) {
+            sendProgress('generating', `Editing ${i + 1} of ${targets.length}…`)
+            results.push(await computeTargetEdit({
+              ...targets[i],
+              prompt,
+              config,
+              onProgress: (p) => sendProgress('generating', p.text || `Editing ${i + 1} of ${targets.length}…`),
+            }))
+          }
+
+          sendProgress('building')
+
+          // Group successful operations by file.
+          const groups = new Map()
+          for (const r of results) {
+            if (!r.ok) continue
+            const g = groups.get(r.filePath) || { filePath: r.filePath, operations: [], explanations: [], confidences: [], lineNumber: r.lineNumber }
+            g.operations.push(...r.operations)
+            g.explanations.push(r.explanation)
+            g.confidences.push(r.confidence)
+            groups.set(r.filePath, g)
+          }
+
+          const edits = []
+          const applyGroups = []
+          for (const g of groups.values()) {
+            // Apply bottom-to-top so a line-shifting op (wrap/insert) can't
+            // invalidate the line numbers of not-yet-applied ops above it.
+            g.operations.sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
+            const preview = await applyEditOperations({ projectRoot: config.projectRoot, operations: g.operations, dryRun: true })
+            if (!preview.ok) {
+              edits.push({ ok: false, filePath: g.filePath, code: preview.code, message: preview.message })
+            } else {
+              const explanation = g.explanations.join('; ')
+              edits.push({ ok: true, filePath: g.filePath, lineNumber: g.lineNumber, explanation, confidence: Math.min(...g.confidences), diff: preview.diff })
+              applyGroups.push({ filePath: g.filePath, operations: g.operations, explanation, lineNumber: g.lineNumber })
+            }
+          }
+
+          // Surface targets that failed before grouping (resolve/LLM errors).
+          for (const r of results) {
+            if (!r.ok) edits.push({ ok: false, filePath: r.filePath, lineNumber: r.lineNumber, code: r.code, message: r.message })
+          }
+
+          pendingEdits.set(sessionId, { batch: true, groups: applyGroups })
+
+          ws.send(JSON.stringify({ type: MSG.PREVIEW_BATCH, sessionId, edits }))
+          return
+        }
 
         console.log(`Edit request: "${prompt}" on ${patchlySrc}`)
 
@@ -174,6 +275,29 @@ export async function startServer(port, config) {
             code: 'NO_PENDING_EDIT',
             message: 'No pending edit found for this session. It may have expired.',
           }))
+          return
+        }
+
+        // Batch confirm: apply each file group; emit EDIT_DONE per success (a
+        // history row each) and EDIT_ERROR per group that fails to write.
+        if (pending.batch) {
+          pendingEdits.delete(sessionId)
+          for (const g of pending.groups) {
+            const r = await applyEditOperations({ projectRoot: config.projectRoot, operations: g.operations })
+            if (!r.ok) {
+              ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: r.code, message: `${g.filePath}: ${r.message}` }))
+              continue
+            }
+            const editId = Math.random().toString(36).slice(2)
+            editHistory.set(editId, {
+              absolutePath: r.absolutePath, snapshot: r.snapshot,
+              filePath: r.filePath, lineNumber: g.lineNumber, explanation: g.explanation,
+            })
+            ws.send(JSON.stringify({
+              type: MSG.EDIT_DONE, sessionId, editId,
+              filePath: r.filePath, lineNumber: g.lineNumber, explanation: g.explanation,
+            }))
+          }
           return
         }
 

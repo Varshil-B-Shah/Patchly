@@ -250,6 +250,33 @@
 
 .patchly-picker-row:hover { background: #f4f4ff; }
 
+.patchly-picker-check { margin: 0; flex-shrink: 0; cursor: pointer; }
+
+.patchly-picker-hint { font-weight: 400; color: #aaa; font-size: 11px; }
+
+.patchly-picker-foot {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border-top: 1px solid #f0f0f0;
+  padding: 8px 12px;
+  display: flex;
+}
+
+.patchly-picker-apply {
+  flex: 1;
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 7px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.patchly-picker-apply:hover { background: #4f46e5; }
+
 .patchly-picker-tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
@@ -275,6 +302,43 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ─── Batch (multi-diff) preview ─────────────────────────────────────────── */
+
+#patchly-preview-panel.patchly-batch { width: 460px; }
+
+.patchly-bp-cards {
+  max-height: 360px;
+  overflow-y: auto;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.patchly-bp-card { border-bottom: 1px solid #f0f0f0; }
+.patchly-bp-card:last-child { border-bottom: none; }
+.patchly-bp-card.patchly-bp-fail { background: #fffafa; }
+
+.patchly-bp-cardhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px 4px;
+}
+
+.patchly-bp-file {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #6366f1;
+}
+
+.patchly-bp-expl {
+  padding: 0 14px 8px;
+  color: #444;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.patchly-bp-card .patchly-pp-diff { max-height: 160px; border-bottom: none; }
 
 /* ─── Loading / progress panel ───────────────────────────────────────────── */
 

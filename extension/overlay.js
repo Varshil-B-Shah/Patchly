@@ -10,6 +10,7 @@ let startX = 0, startY = 0
 let currentX = 0, currentY = 0
 let selectedElement = null
 let selectedPatchlySrc = null
+let selectedTargets = null  // array of elements when a multi-component batch edit is chosen
 
 // DOM elements (created once, reused)
 let root, selectionRect, elementHighlight, promptBar, promptInput, componentLabel
@@ -71,6 +72,7 @@ function cancel() {
   isDragging = false
   selectedElement = null
   selectedPatchlySrc = null
+  selectedTargets = null
 
   if (root) root.classList.remove('active')
   if (selectionRect) selectionRect.style.display = 'none'
@@ -288,6 +290,7 @@ function showComponentPicker(rect, candidates) {
       const text = (c.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48) || '(no text)'
       return `
         <div class="patchly-picker-row" data-idx="${i}">
+          <input type="checkbox" class="patchly-picker-check" data-idx="${i}" />
           <span class="patchly-picker-tag">${tag}</span>
           <span class="patchly-picker-main">
             <span class="patchly-picker-file">${fileLabel}</span>
@@ -298,13 +301,34 @@ function showComponentPicker(rect, candidates) {
     })
     .join('')
 
-  picker.innerHTML = `<div class="patchly-picker-head">Which component?</div>${rows}`
+  picker.innerHTML = `
+    <div class="patchly-picker-head">Which component? <span class="patchly-picker-hint">click one, or check several</span></div>
+    ${rows}
+    <div class="patchly-picker-foot" style="display:none">
+      <button class="patchly-picker-apply">Edit <span class="patchly-picker-count">0</span> selected</button>
+    </div>
+  `
 
   const px = Math.min(rect.x, window.innerWidth - 380)
   const py = Math.min(rect.y + 4, window.innerHeight - 340)
   picker.style.left = Math.max(8, px) + 'px'
   picker.style.top = Math.max(8, py) + 'px'
   picker.style.display = 'block'
+
+  const foot = picker.querySelector('.patchly-picker-foot')
+  const countEl = picker.querySelector('.patchly-picker-count')
+  const checked = () => [...picker.querySelectorAll('.patchly-picker-check:checked')].map((cb) => candidates[Number(cb.getAttribute('data-idx'))])
+
+  const refreshFoot = () => {
+    const n = picker.querySelectorAll('.patchly-picker-check:checked').length
+    countEl.textContent = String(n)
+    foot.style.display = n > 0 ? 'flex' : 'none'
+  }
+
+  picker.querySelectorAll('.patchly-picker-check').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation())  // don't trigger row single-select
+    cb.addEventListener('change', refreshFoot)
+  })
 
   picker.querySelectorAll('.patchly-picker-row').forEach((row) => {
     const c = candidates[Number(row.getAttribute('data-idx'))]
@@ -318,9 +342,41 @@ function showComponentPicker(rect, candidates) {
     })
     row.addEventListener('click', () => {
       hidePicker()
+      selectedTargets = null
       selectElement(c.el, rect)
     })
   })
+
+  picker.querySelector('.patchly-picker-apply').addEventListener('click', () => {
+    const chosen = checked()
+    if (chosen.length === 0) return
+    hidePicker()
+    if (chosen.length === 1) {
+      selectedTargets = null
+      selectElement(chosen[0].el, rect)
+    } else {
+      selectedTargets = chosen.map((c) => c.el)
+      openPromptForTargets(rect, chosen)
+    }
+  })
+}
+
+// Open the prompt bar for a multi-target (batch) edit, highlighting the group.
+function openPromptForTargets(rect, candidates) {
+  selectedElement = candidates[0].el  // anchor (used only for fallbacks)
+  selectedPatchlySrc = null
+  elementHighlight.style.display = 'none'
+
+  componentLabel.textContent = `${candidates.length} components`
+  componentLabel.style.left = rect.x + 'px'
+  componentLabel.style.top = Math.max(2, rect.y - 22) + 'px'
+  componentLabel.style.display = 'block'
+
+  const promptY = Math.min(rect.y + rect.height + 8, window.innerHeight - 60)
+  promptBar.style.left = rect.x + 'px'
+  promptBar.style.top = promptY + 'px'
+  promptBar.style.display = 'flex'
+  setTimeout(() => promptInput.focus(), 50)
 }
 
 function hidePicker() {
@@ -382,8 +438,39 @@ async function submitPrompt() {
     return
   }
 
-  if (!selectedElement) {
+  if (!selectedElement && !selectedTargets) {
     console.log('[Patchly] No element selected')
+    return
+  }
+
+  // ── Multi-select (batch / fan-out) ──────────────────────────────────────────
+  // Screenshots are skipped in batch mode: targets may be off-screen (the crop
+  // would be invalid) and N vision payloads are expensive. Text context only.
+  if (selectedTargets && selectedTargets.length > 1) {
+    const targets = selectedTargets
+      .filter((el) => el.dataset.patchlySrc)
+      .map((el) => ({
+        patchlySrc: el.dataset.patchlySrc,
+        elementHtml: el.outerHTML.slice(0, 500),
+        elementClasses: el.className || '',
+        screenshot_base64: null,
+      }))
+
+    const payload = {
+      prompt,
+      sessionId: Math.random().toString(36).slice(2),
+      targets,
+    }
+
+    console.log(`[Patchly] Batch edit request (${targets.length} targets)`)
+
+    if (window.__patchlySend) {
+      window.__patchlySend(payload)
+      if (promptBar) promptBar.style.display = 'none'
+      promptInput.value = ''
+      if (componentLabel) componentLabel.style.display = 'none'
+      showLoadingPanel()
+    }
     return
   }
 
@@ -626,6 +713,83 @@ function showPreviewPanel({ explanation, confidence, diff, filePath, lineNumber,
 }
 
 window.__patchlyShowPreview = showPreview
+
+// Multi-diff preview for a batch (fan-out) edit: one card per file, Apply all / Reject.
+function showPreviewBatch({ sessionId, edits }) {
+  closePreviewPanel()
+  const existingToast = document.getElementById('patchly-toast')
+  if (existingToast) existingToast.remove()
+
+  const okEdits = edits.filter((e) => e.ok)
+  const failEdits = edits.filter((e) => !e.ok)
+
+  const cards = edits
+    .map((e) => {
+      if (e.ok) {
+        const pct = Math.round((typeof e.confidence === 'number' ? e.confidence : 0) * 100)
+        return `
+          <div class="patchly-bp-card">
+            <div class="patchly-bp-cardhead">
+              <span class="patchly-bp-file">${escapeHtml(e.filePath)}${e.lineNumber ? ':' + e.lineNumber : ''}</span>
+              <span class="patchly-pp-conf ${confidenceClass(pct)}">${pct}%</span>
+            </div>
+            <div class="patchly-bp-expl">${escapeHtml(e.explanation || '')}</div>
+            <div class="patchly-pp-diff">${renderDiff(e.diff)}</div>
+          </div>
+        `
+      }
+      return `
+        <div class="patchly-bp-card patchly-bp-fail">
+          <div class="patchly-bp-cardhead">
+            <span class="patchly-bp-file">${escapeHtml(e.filePath || 'target')}${e.lineNumber ? ':' + e.lineNumber : ''}</span>
+            <span class="patchly-pp-conf low">skipped</span>
+          </div>
+          <div class="patchly-bp-expl">${escapeHtml(e.message || e.code || 'Could not edit this target.')}</div>
+        </div>
+      `
+    })
+    .join('')
+
+  const panel = document.createElement('div')
+  panel.id = 'patchly-preview-panel'
+  panel.classList.add('patchly-batch')
+  panel.innerHTML = `
+    <div class="patchly-pp-head">
+      <div class="patchly-pp-title">Review ${edits.length} changes${failEdits.length ? ` — ${failEdits.length} skipped` : ''}</div>
+    </div>
+    <div class="patchly-bp-cards">${cards}</div>
+    <div class="patchly-pp-actions">
+      <button class="patchly-pp-btn patchly-pp-apply" ${okEdits.length ? '' : 'disabled'}>Apply ${okEdits.length}<span class="patchly-pp-kbd">&crarr;</span></button>
+      <button class="patchly-pp-btn patchly-pp-reject">Reject<span class="patchly-pp-kbd">Esc</span></button>
+    </div>
+  `
+
+  document.body.appendChild(panel)
+
+  const apply = () => {
+    closePreviewPanel()
+    if (okEdits.length && window.__patchlySendToAgent) {
+      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId })
+    }
+  }
+  const reject = () => {
+    closePreviewPanel()
+    if (window.__patchlySendToAgent) {
+      window.__patchlySendToAgent({ type: 'PATCHLY_REJECT', sessionId })
+    }
+  }
+
+  panel.querySelector('.patchly-pp-apply').onclick = apply
+  panel.querySelector('.patchly-pp-reject').onclick = reject
+
+  previewKeyHandler = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); apply() }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); reject() }
+  }
+  document.addEventListener('keydown', previewKeyHandler, true)
+}
+
+window.__patchlyShowPreviewBatch = showPreviewBatch
 
 function showSuccessToast({ filePath, showUndo = true, editId = null }) {
   const existing = document.getElementById('patchly-toast')

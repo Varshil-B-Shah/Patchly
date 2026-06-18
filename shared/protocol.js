@@ -15,6 +15,7 @@ export const MSG = {
   STATUS:       'PATCHLY_STATUS',
   PROGRESS:     'PATCHLY_PROGRESS',
   PREVIEW:      'PATCHLY_PREVIEW',
+  PREVIEW_BATCH:'PATCHLY_PREVIEW_BATCH',
   UNDO_DONE:    'PATCHLY_UNDO_DONE',
   INFO:         'PATCHLY_INFO',
 
@@ -83,6 +84,21 @@ export const ERROR_CODES = Object.freeze({
 //   prompt: string,                 // user's natural language instruction
 //   sessionId: string,              // random ID for this edit session
 //   screenshot_base64?: string,     // base64 PNG of the cropped element (Phase 7); null if capture failed
+//   targets?: [{                    // MULTI-SELECT (fan-out). When present (len>1), batch mode.
+//     patchlySrc, elementHtml, elementClasses, screenshot_base64?
+//   }],                             // `prompt` is shared across all targets.
+// }
+
+// PREVIEW_BATCH payload (Agent → Extension): one entry per selected target.
+// {
+//   type: MSG.PREVIEW_BATCH,
+//   sessionId: string,
+//   edits: [{
+//     ok: boolean,
+//     filePath?: string, lineNumber?: number, explanation?: string,
+//     confidence?: number, diff?: string,   // present when ok
+//     code?: string, message?: string,      // present when !ok
+//   }],
 // }
 
 // PROGRESS payload (Agent → Extension): live status while an edit is being prepared.
