@@ -78,6 +78,7 @@ function cancel() {
   if (promptBar) promptBar.style.display = 'none'
   if (componentLabel) componentLabel.style.display = 'none'
   if (promptInput) promptInput.value = ''
+  hidePicker()
 }
 
 function onMouseDown(e) {
@@ -92,6 +93,7 @@ function onMouseDown(e) {
   promptBar.style.display = 'none'
   componentLabel.style.display = 'none'
   promptInput.value = ''
+  hidePicker()
 
   updateSelectionRect()
   selectionRect.style.display = 'block'
@@ -138,53 +140,114 @@ function getSelectionRect() {
 }
 
 function findTargetElement(rect) {
+  // Collect distinct mapped components whose source span the selection covers.
+  const srcCandidates = gatherSrcCandidates(rect)
+
+  // Ambiguous selection → let the user pick which component they meant, instead
+  // of guessing and risking a TARGET_DRIFTED on a container/component boundary.
+  if (srcCandidates.length > 1) {
+    showComponentPicker(rect, srcCandidates)
+    return
+  }
+
+  let el
+  if (srcCandidates.length === 1) {
+    el = srcCandidates[0].el
+  } else {
+    el = pickByCenter(rect)
+  }
+
+  if (!el) {
+    console.log('[Patchly] No element found in selection')
+    cancel()
+    return
+  }
+
+  selectElement(el, rect)
+}
+
+// Rect intersection area between the selection and an element's bounding box.
+function overlapArea(rect, elRect) {
+  const ox = Math.max(0, Math.min(rect.x + rect.width, elRect.right) - Math.max(rect.x, elRect.left))
+  const oy = Math.max(0, Math.min(rect.y + rect.height, elRect.bottom) - Math.max(rect.y, elRect.top))
+  return ox * oy
+}
+
+// Find elements carrying data-patchly-src that the selection box mostly contains
+// (≥50% of the element's own area), deduped by source and reduced to outermost
+// nodes so we list distinct components, not their nested children.
+function gatherSrcCandidates(rect) {
+  const found = []
+  const seen = new Set()
+
+  document.querySelectorAll('[data-patchly-src]').forEach((el) => {
+    if (el.id && el.id.startsWith('patchly-')) return
+    const elRect = el.getBoundingClientRect()
+    const elArea = elRect.width * elRect.height
+    if (elArea <= 0) return
+
+    const overlap = overlapArea(rect, elRect)
+    if (overlap <= 0) return
+    if (overlap / elArea < 0.5) return  // box must contain most of the element
+
+    const src = el.dataset.patchlySrc
+    if (seen.has(src)) return
+    seen.add(src)
+    found.push({ el, src, area: elArea })
+  })
+
+  // Drop any candidate that is a descendant of another candidate (keep outermost).
+  const outermost = found.filter(
+    (c) => !found.some((other) => other !== c && other.el.contains(c.el)),
+  )
+
+  // Largest first — the most prominent components at the top of the list.
+  outermost.sort((a, b) => b.area - a.area)
+  return outermost
+}
+
+// Fallback when no element cleanly fits the box: pick the deepest element under
+// the selection's center that covers ≥50% of the selection.
+function pickByCenter(rect) {
   root.style.display = 'none'
   selectionRect.style.display = 'none'
   elementHighlight.style.display = 'none'
 
   const centerX = rect.x + rect.width / 2
   const centerY = rect.y + rect.height / 2
-
   const elements = document.elementsFromPoint(centerX, centerY)
 
   root.style.display = ''
   selectionRect.style.display = 'block'
   elementHighlight.style.display = 'none'
 
-  const candidates = elements.filter(el => {
+  const candidates = elements.filter((el) => {
     const tag = el.tagName.toLowerCase()
     if (['html', 'body', 'script', 'style', 'head'].includes(tag)) return false
     if (el.id && el.id.startsWith('patchly-')) return false
     return true
   })
 
-  if (candidates.length === 0) {
-    console.log('[Patchly] No element found in selection')
-    cancel()
-    return
-  }
+  if (candidates.length === 0) return null
 
-  // Find the most specific element that covers at least 50% of the selection.
-  // candidates is ordered deepest-first, so the first qualifying match is the
-  // most specific element that actually "fits" the selection the user drew.
   const selectionArea = rect.width * rect.height
-  let bestCandidate = candidates[0]
-
+  let best = candidates[0]
   for (const el of candidates) {
-    const elRect = el.getBoundingClientRect()
-    const overlapX = Math.max(0, Math.min(rect.x + rect.width, elRect.right) - Math.max(rect.x, elRect.left))
-    const overlapY = Math.max(0, Math.min(rect.y + rect.height, elRect.bottom) - Math.max(rect.y, elRect.top))
-    const coverage = (overlapX * overlapY) / selectionArea
+    const coverage = overlapArea(rect, el.getBoundingClientRect()) / selectionArea
     if (coverage >= 0.5) {
-      bestCandidate = el
+      best = el
       break
     }
   }
+  return best
+}
 
-  selectedElement = bestCandidate
-  selectedPatchlySrc = selectedElement.dataset.patchlySrc || null
+// Commit a chosen element: highlight it, label it, and open the prompt bar.
+function selectElement(el, rect) {
+  selectedElement = el
+  selectedPatchlySrc = el.dataset.patchlySrc || null
 
-  const elRect = selectedElement.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
   elementHighlight.style.left = elRect.left + 'px'
   elementHighlight.style.top = elRect.top + 'px'
   elementHighlight.style.width = elRect.width + 'px'
@@ -192,19 +255,77 @@ function findTargetElement(rect) {
   elementHighlight.style.display = 'block'
 
   const srcParts = selectedPatchlySrc ? selectedPatchlySrc.split(':') : null
-  const fileName = srcParts ? srcParts[0].split('/').pop() : selectedElement.tagName.toLowerCase()
+  const fileName = srcParts ? srcParts[0].split('/').pop() : el.tagName.toLowerCase()
   componentLabel.textContent = fileName
   componentLabel.style.left = elRect.left + 'px'
   componentLabel.style.top = (elRect.top - 22) + 'px'
   componentLabel.style.display = 'block'
 
-  const selRect = getSelectionRect()
+  const selRect = rect || getSelectionRect()
   const promptY = Math.min(selRect.y + selRect.height + 8, window.innerHeight - 60)
   promptBar.style.left = selRect.x + 'px'
   promptBar.style.top = promptY + 'px'
   promptBar.style.display = 'flex'
 
   setTimeout(() => promptInput.focus(), 50)
+}
+
+// Show a small list of candidate components and let the user click the one they
+// meant. Hovering a row highlights that element on the page.
+function showComponentPicker(rect, candidates) {
+  let picker = document.getElementById('patchly-picker')
+  if (!picker) {
+    picker = document.createElement('div')
+    picker.id = 'patchly-picker'
+    document.body.appendChild(picker)
+  }
+
+  const rows = candidates
+    .map((c, i) => {
+      const tag = c.el.tagName.toLowerCase()
+      const srcParts = c.src.split(':')
+      const fileLabel = `${srcParts[0].split('/').pop()}:${srcParts[1] ?? '?'}`
+      const text = (c.el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48) || '(no text)'
+      return `
+        <div class="patchly-picker-row" data-idx="${i}">
+          <span class="patchly-picker-tag">${tag}</span>
+          <span class="patchly-picker-main">
+            <span class="patchly-picker-file">${fileLabel}</span>
+            <span class="patchly-picker-text">${escapeHtml(text)}</span>
+          </span>
+        </div>
+      `
+    })
+    .join('')
+
+  picker.innerHTML = `<div class="patchly-picker-head">Which component?</div>${rows}`
+
+  const px = Math.min(rect.x, window.innerWidth - 380)
+  const py = Math.min(rect.y + 4, window.innerHeight - 340)
+  picker.style.left = Math.max(8, px) + 'px'
+  picker.style.top = Math.max(8, py) + 'px'
+  picker.style.display = 'block'
+
+  picker.querySelectorAll('.patchly-picker-row').forEach((row) => {
+    const c = candidates[Number(row.getAttribute('data-idx'))]
+    row.addEventListener('mouseenter', () => {
+      const r = c.el.getBoundingClientRect()
+      elementHighlight.style.left = r.left + 'px'
+      elementHighlight.style.top = r.top + 'px'
+      elementHighlight.style.width = r.width + 'px'
+      elementHighlight.style.height = r.height + 'px'
+      elementHighlight.style.display = 'block'
+    })
+    row.addEventListener('click', () => {
+      hidePicker()
+      selectElement(c.el, rect)
+    })
+  })
+}
+
+function hidePicker() {
+  const picker = document.getElementById('patchly-picker')
+  if (picker) picker.style.display = 'none'
 }
 
 // Capture a cropped screenshot of `element` via the background service worker.
