@@ -282,5 +282,3 @@ Working today: AST-based editing engine, visual + design-token context, diff pre
 history, confidence-gated auto-apply, batch edits, and cross-file redirect.
 
 On the roadmap: multi-provider LLM support, Next.js, and Chrome Web Store distribution.
-
-[Report issues →](#)
