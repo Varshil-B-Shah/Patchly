@@ -305,10 +305,21 @@
 
 /* ─── Batch (multi-diff) preview ─────────────────────────────────────────── */
 
-#patchly-preview-panel.patchly-batch { width: 460px; }
+#patchly-preview-panel.patchly-batch {
+  width: 460px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Head and actions stay pinned; the cards area takes the remaining height and
+   scrolls, so every file's card is reachable no matter how many there are. */
+#patchly-preview-panel.patchly-batch .patchly-pp-head,
+#patchly-preview-panel.patchly-batch .patchly-pp-actions { flex-shrink: 0; }
 
 .patchly-bp-cards {
-  max-height: 360px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border-bottom: 1px solid #f0f0f0;
 }

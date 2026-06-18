@@ -97,12 +97,15 @@ export async function startServer(port, config) {
           const results = []
           for (let i = 0; i < targets.length; i++) {
             sendProgress('generating', `Editing ${i + 1} of ${targets.length}…`)
-            results.push(await computeTargetEdit({
+            const r = await computeTargetEdit({
               ...targets[i],
               prompt,
               config,
               onProgress: (p) => sendProgress('generating', p.text || `Editing ${i + 1} of ${targets.length}…`),
-            }))
+            })
+            console.log(`  target ${i + 1}/${targets.length} [${targets[i].patchlySrc}]:`,
+              r.ok ? `ok — ${r.operations.length} op(s): ${r.operations.map(o => o.op).join(', ')}` : `FAIL ${r.code} — ${r.message}`)
+            results.push(r)
           }
 
           sendProgress('building')
@@ -125,6 +128,8 @@ export async function startServer(port, config) {
             // invalidate the line numbers of not-yet-applied ops above it.
             g.operations.sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
             const preview = await applyEditOperations({ projectRoot: config.projectRoot, operations: g.operations, dryRun: true })
+            console.log(`  group [${g.filePath}] ${g.operations.length} op(s):`,
+              preview.ok ? 'preview ok' : `FAIL ${preview.code} — ${preview.message}`)
             if (!preview.ok) {
               edits.push({ ok: false, filePath: g.filePath, code: preview.code, message: preview.message })
             } else {
