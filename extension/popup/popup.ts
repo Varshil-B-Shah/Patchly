@@ -1,11 +1,11 @@
-// extension/popup/popup.js
+// extension/popup/popup.ts
 
-const dot = document.getElementById('status-dot')
-const statusText = document.getElementById('status-text')
-const hintText = document.getElementById('hint-text')
-const shortcut = document.getElementById('shortcut')
+const dot = document.getElementById('status-dot') as HTMLElement
+const statusText = document.getElementById('status-text') as HTMLElement
+const hintText = document.getElementById('hint-text') as HTMLElement
+const shortcut = document.getElementById('shortcut') as HTMLElement
 
-function setConnected(connected) {
+function setConnected(connected: boolean): void {
   if (connected) {
     dot.className = 'dot connected'
     statusText.textContent = 'Agent connected'
@@ -22,30 +22,31 @@ function setConnected(connected) {
 // Ask the active tab's content script for current status
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (!tabs[0]) return
-  chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_STATUS' }, (response) => {
+  chrome.tabs.sendMessage(tabs[0].id!, { type: 'GET_STATUS' }, (response) => {
     if (chrome.runtime.lastError) {
       setConnected(false)
       return
     }
-    setConnected(response?.connected ?? false)
+    setConnected((response as { connected?: boolean })?.connected ?? false)
   })
 })
 
 // Listen for real-time status updates from content script
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'AGENT_STATUS') {
-    setConnected(msg.connected)
+    setConnected((msg as { connected: boolean }).connected)
   }
 })
 
 // ─── Edit-application settings ────────────────────────────────────────────────
-const autoApplyEl = document.getElementById('auto-apply')
-const thresholdEl = document.getElementById('confidence-threshold')
+const autoApplyEl = document.getElementById('auto-apply') as HTMLInputElement
+const thresholdEl = document.getElementById('confidence-threshold') as HTMLSelectElement
 
 chrome.storage.local.get({ autoApply: false, confidenceThreshold: 0.9 }, (s) => {
-  autoApplyEl.checked = !!s.autoApply
-  thresholdEl.value = String(s.confidenceThreshold)
-  thresholdEl.disabled = !s.autoApply
+  const settings = s as { autoApply: boolean; confidenceThreshold: number }
+  autoApplyEl.checked = !!settings.autoApply
+  thresholdEl.value = String(settings.confidenceThreshold)
+  thresholdEl.disabled = !settings.autoApply
 })
 
 autoApplyEl.addEventListener('change', () => {

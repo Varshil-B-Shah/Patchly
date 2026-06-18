@@ -19,7 +19,8 @@
     "dev": "tsx watch agent/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "build:ext": "node -e \"console.log('build:ext is wired up in Phase 5')\"",
+    "build:ext": "node scripts/build-ext.mjs",
+    "watch:ext": "node scripts/build-ext.mjs --watch",
     "prepublishOnly": "npm run build",
     "test": "node --import tsx --test agent/ast/__tests__/operations.test.ts agent/ast/__tests__/drift.test.ts agent/ast/__tests__/property.test.ts"
   },

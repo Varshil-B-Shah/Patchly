@@ -1,21 +1,32 @@
-// extension/overlay.js
-// Handles all visual selection UI. No imports — injected as a plain script.
+// extension/overlay.ts
+// Handles all visual selection UI. Bundled as IIFE by esbuild.
 
 const PATCHLY_PORT = 7842
+
+interface SrcCandidate {
+  el: Element
+  src: string
+  area: number
+}
 
 // State
 let isActive = false
 let isDragging = false
 let startX = 0, startY = 0
 let currentX = 0, currentY = 0
-let selectedElement = null
-let selectedPatchlySrc = null
-let selectedTargets = null  // array of elements when a multi-component batch edit is chosen
+let selectedElement: Element | null = null
+let selectedPatchlySrc: string | null = null
+let selectedTargets: Element[] | null = null
 
 // DOM elements (created once, reused)
-let root, selectionRect, elementHighlight, promptBar, promptInput, componentLabel
+let root: HTMLDivElement | null = null
+let selectionRect: HTMLDivElement | null = null
+let elementHighlight: HTMLDivElement | null = null
+let promptBar: HTMLDivElement | null = null
+let promptInput: HTMLInputElement | null = null
+let componentLabel: HTMLDivElement | null = null
 
-function init() {
+function init(): void {
   if (document.getElementById('patchly-root')) return
 
   root = document.createElement('div')
@@ -43,38 +54,38 @@ function init() {
   `
   document.body.appendChild(promptBar)
 
-  promptInput = document.getElementById('patchly-prompt-input')
+  promptInput = document.getElementById('patchly-prompt-input') as HTMLInputElement
 
-  document.getElementById('patchly-prompt-submit').addEventListener('click', submitPrompt)
-  document.getElementById('patchly-prompt-cancel').addEventListener('click', cancel)
+  document.getElementById('patchly-prompt-submit')!.addEventListener('click', submitPrompt)
+  document.getElementById('patchly-prompt-cancel')!.addEventListener('click', cancel)
 
   root.addEventListener('mousedown', onMouseDown)
   root.addEventListener('mousemove', onMouseMove)
   root.addEventListener('mouseup', onMouseUp)
 
-  promptInput.addEventListener('keydown', (e) => {
+  promptInput.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') submitPrompt()
     if (e.key === 'Escape') cancel()
     e.stopPropagation()
   })
 }
 
-function activate() {
+function activate(): void {
   if (isActive) return
   isActive = true
   init()
-  root.classList.add('active')
+  root?.classList.add('active')
   console.log('[Patchly] Selection mode activated. Draw a box around what to change.')
 }
 
-function cancel() {
+function cancel(): void {
   isActive = false
   isDragging = false
   selectedElement = null
   selectedPatchlySrc = null
   selectedTargets = null
 
-  if (root) root.classList.remove('active')
+  root?.classList.remove('active')
   if (selectionRect) selectionRect.style.display = 'none'
   if (elementHighlight) elementHighlight.style.display = 'none'
   if (promptBar) promptBar.style.display = 'none'
@@ -83,7 +94,7 @@ function cancel() {
   hidePicker()
 }
 
-function onMouseDown(e) {
+function onMouseDown(e: MouseEvent): void {
   if (!isActive) return
   e.preventDefault()
   isDragging = true
@@ -92,23 +103,23 @@ function onMouseDown(e) {
   currentX = e.clientX
   currentY = e.clientY
 
-  promptBar.style.display = 'none'
-  componentLabel.style.display = 'none'
-  promptInput.value = ''
+  if (promptBar) promptBar.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
+  if (promptInput) promptInput.value = ''
   hidePicker()
 
   updateSelectionRect()
-  selectionRect.style.display = 'block'
+  if (selectionRect) selectionRect.style.display = 'block'
 }
 
-function onMouseMove(e) {
+function onMouseMove(e: MouseEvent): void {
   if (!isDragging) return
   currentX = e.clientX
   currentY = e.clientY
   updateSelectionRect()
 }
 
-function onMouseUp(e) {
+function onMouseUp(e: MouseEvent): void {
   if (!isDragging) return
   isDragging = false
   currentX = e.clientX
@@ -124,15 +135,23 @@ function onMouseUp(e) {
   findTargetElement(rect)
 }
 
-function updateSelectionRect() {
+function updateSelectionRect(): void {
   const rect = getSelectionRect()
+  if (!selectionRect) return
   selectionRect.style.left = rect.x + 'px'
   selectionRect.style.top = rect.y + 'px'
   selectionRect.style.width = rect.width + 'px'
   selectionRect.style.height = rect.height + 'px'
 }
 
-function getSelectionRect() {
+interface SelectionRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function getSelectionRect(): SelectionRect {
   return {
     x: Math.min(startX, currentX),
     y: Math.min(startY, currentY),
@@ -141,18 +160,15 @@ function getSelectionRect() {
   }
 }
 
-function findTargetElement(rect) {
-  // Collect distinct mapped components whose source span the selection covers.
+function findTargetElement(rect: SelectionRect): void {
   const srcCandidates = gatherSrcCandidates(rect)
 
-  // Ambiguous selection → let the user pick which component they meant, instead
-  // of guessing and risking a TARGET_DRIFTED on a container/component boundary.
   if (srcCandidates.length > 1) {
     showComponentPicker(rect, srcCandidates)
     return
   }
 
-  let el
+  let el: Element | null
   if (srcCandidates.length === 1) {
     el = srcCandidates[0].el
   } else {
@@ -168,19 +184,15 @@ function findTargetElement(rect) {
   selectElement(el, rect)
 }
 
-// Rect intersection area between the selection and an element's bounding box.
-function overlapArea(rect, elRect) {
+function overlapArea(rect: SelectionRect, elRect: DOMRect): number {
   const ox = Math.max(0, Math.min(rect.x + rect.width, elRect.right) - Math.max(rect.x, elRect.left))
   const oy = Math.max(0, Math.min(rect.y + rect.height, elRect.bottom) - Math.max(rect.y, elRect.top))
   return ox * oy
 }
 
-// Find elements carrying data-patchly-src that the selection box mostly contains
-// (≥50% of the element's own area), deduped by source and reduced to outermost
-// nodes so we list distinct components, not their nested children.
-function gatherSrcCandidates(rect) {
-  const found = []
-  const seen = new Set()
+function gatherSrcCandidates(rect: SelectionRect): SrcCandidate[] {
+  const found: SrcCandidate[] = []
+  const seen = new Set<string>()
 
   document.querySelectorAll('[data-patchly-src]').forEach((el) => {
     if (el.id && el.id.startsWith('patchly-')) return
@@ -190,38 +202,33 @@ function gatherSrcCandidates(rect) {
 
     const overlap = overlapArea(rect, elRect)
     if (overlap <= 0) return
-    if (overlap / elArea < 0.5) return  // box must contain most of the element
+    if (overlap / elArea < 0.5) return
 
-    const src = el.dataset.patchlySrc
+    const src = (el as HTMLElement).dataset.patchlySrc!
     if (seen.has(src)) return
     seen.add(src)
     found.push({ el, src, area: elArea })
   })
 
-  // Drop any candidate that is a descendant of another candidate (keep outermost).
   const outermost = found.filter(
     (c) => !found.some((other) => other !== c && other.el.contains(c.el)),
   )
-
-  // Largest first — the most prominent components at the top of the list.
   outermost.sort((a, b) => b.area - a.area)
   return outermost
 }
 
-// Fallback when no element cleanly fits the box: pick the deepest element under
-// the selection's center that covers ≥50% of the selection.
-function pickByCenter(rect) {
-  root.style.display = 'none'
-  selectionRect.style.display = 'none'
-  elementHighlight.style.display = 'none'
+function pickByCenter(rect: SelectionRect): Element | null {
+  if (root) root.style.display = 'none'
+  if (selectionRect) selectionRect.style.display = 'none'
+  if (elementHighlight) elementHighlight.style.display = 'none'
 
   const centerX = rect.x + rect.width / 2
   const centerY = rect.y + rect.height / 2
   const elements = document.elementsFromPoint(centerX, centerY)
 
-  root.style.display = ''
-  selectionRect.style.display = 'block'
-  elementHighlight.style.display = 'none'
+  if (root) root.style.display = ''
+  if (selectionRect) selectionRect.style.display = 'block'
+  if (elementHighlight) elementHighlight.style.display = 'none'
 
   const candidates = elements.filter((el) => {
     const tag = el.tagName.toLowerCase()
@@ -241,41 +248,44 @@ function pickByCenter(rect) {
       break
     }
   }
-  return best
+  return best ?? null
 }
 
-// Commit a chosen element: highlight it, label it, and open the prompt bar.
-function selectElement(el, rect) {
+function selectElement(el: Element, rect: SelectionRect): void {
   selectedElement = el
-  selectedPatchlySrc = el.dataset.patchlySrc || null
+  selectedPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
 
   const elRect = el.getBoundingClientRect()
-  elementHighlight.style.left = elRect.left + 'px'
-  elementHighlight.style.top = elRect.top + 'px'
-  elementHighlight.style.width = elRect.width + 'px'
-  elementHighlight.style.height = elRect.height + 'px'
-  elementHighlight.style.display = 'block'
+  if (elementHighlight) {
+    elementHighlight.style.left = elRect.left + 'px'
+    elementHighlight.style.top = elRect.top + 'px'
+    elementHighlight.style.width = elRect.width + 'px'
+    elementHighlight.style.height = elRect.height + 'px'
+    elementHighlight.style.display = 'block'
+  }
 
   const srcParts = selectedPatchlySrc ? selectedPatchlySrc.split(':') : null
   const fileName = srcParts ? srcParts[0].split('/').pop() : el.tagName.toLowerCase()
-  componentLabel.textContent = fileName
-  componentLabel.style.left = elRect.left + 'px'
-  componentLabel.style.top = (elRect.top - 22) + 'px'
-  componentLabel.style.display = 'block'
+  if (componentLabel) {
+    componentLabel.textContent = fileName ?? ''
+    componentLabel.style.left = elRect.left + 'px'
+    componentLabel.style.top = (elRect.top - 22) + 'px'
+    componentLabel.style.display = 'block'
+  }
 
   const selRect = rect || getSelectionRect()
   const promptY = Math.min(selRect.y + selRect.height + 8, window.innerHeight - 60)
-  promptBar.style.left = selRect.x + 'px'
-  promptBar.style.top = promptY + 'px'
-  promptBar.style.display = 'flex'
+  if (promptBar) {
+    promptBar.style.left = selRect.x + 'px'
+    promptBar.style.top = promptY + 'px'
+    promptBar.style.display = 'flex'
+  }
 
-  setTimeout(() => promptInput.focus(), 50)
+  setTimeout(() => promptInput?.focus(), 50)
 }
 
-// Show a small list of candidate components and let the user click the one they
-// meant. Hovering a row highlights that element on the page.
-function showComponentPicker(rect, candidates) {
-  let picker = document.getElementById('patchly-picker')
+function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): void {
+  let picker = document.getElementById('patchly-picker') as HTMLDivElement | null
   if (!picker) {
     picker = document.createElement('div')
     picker.id = 'patchly-picker'
@@ -315,30 +325,35 @@ function showComponentPicker(rect, candidates) {
   picker.style.top = Math.max(8, py) + 'px'
   picker.style.display = 'block'
 
-  const foot = picker.querySelector('.patchly-picker-foot')
-  const countEl = picker.querySelector('.patchly-picker-count')
-  const checked = () => [...picker.querySelectorAll('.patchly-picker-check:checked')].map((cb) => candidates[Number(cb.getAttribute('data-idx'))])
+  const foot = picker.querySelector('.patchly-picker-foot') as HTMLElement
+  const countEl = picker.querySelector('.patchly-picker-count')!
+  const checked = (): SrcCandidate[] =>
+    [...picker!.querySelectorAll<HTMLInputElement>('.patchly-picker-check:checked')]
+      .map((cb) => candidates[Number(cb.getAttribute('data-idx'))])
+      .filter(Boolean)
 
-  const refreshFoot = () => {
-    const n = picker.querySelectorAll('.patchly-picker-check:checked').length
+  const refreshFoot = (): void => {
+    const n = picker!.querySelectorAll('.patchly-picker-check:checked').length
     countEl.textContent = String(n)
     foot.style.display = n > 0 ? 'flex' : 'none'
   }
 
-  picker.querySelectorAll('.patchly-picker-check').forEach((cb) => {
-    cb.addEventListener('click', (e) => e.stopPropagation())  // don't trigger row single-select
+  picker.querySelectorAll<HTMLInputElement>('.patchly-picker-check').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation())
     cb.addEventListener('change', refreshFoot)
   })
 
-  picker.querySelectorAll('.patchly-picker-row').forEach((row) => {
+  picker.querySelectorAll<HTMLElement>('.patchly-picker-row').forEach((row) => {
     const c = candidates[Number(row.getAttribute('data-idx'))]
     row.addEventListener('mouseenter', () => {
       const r = c.el.getBoundingClientRect()
-      elementHighlight.style.left = r.left + 'px'
-      elementHighlight.style.top = r.top + 'px'
-      elementHighlight.style.width = r.width + 'px'
-      elementHighlight.style.height = r.height + 'px'
-      elementHighlight.style.display = 'block'
+      if (elementHighlight) {
+        elementHighlight.style.left = r.left + 'px'
+        elementHighlight.style.top = r.top + 'px'
+        elementHighlight.style.width = r.width + 'px'
+        elementHighlight.style.height = r.height + 'px'
+        elementHighlight.style.display = 'block'
+      }
     })
     row.addEventListener('click', () => {
       hidePicker()
@@ -347,7 +362,7 @@ function showComponentPicker(rect, candidates) {
     })
   })
 
-  picker.querySelector('.patchly-picker-apply').addEventListener('click', () => {
+  picker.querySelector('.patchly-picker-apply')!.addEventListener('click', () => {
     const chosen = checked()
     if (chosen.length === 0) return
     hidePicker()
@@ -361,43 +376,44 @@ function showComponentPicker(rect, candidates) {
   })
 }
 
-// Open the prompt bar for a multi-target (batch) edit, highlighting the group.
-function openPromptForTargets(rect, candidates) {
-  selectedElement = candidates[0].el  // anchor (used only for fallbacks)
+function openPromptForTargets(rect: SelectionRect, candidates: SrcCandidate[]): void {
+  selectedElement = candidates[0].el
   selectedPatchlySrc = null
-  elementHighlight.style.display = 'none'
+  if (elementHighlight) elementHighlight.style.display = 'none'
 
-  componentLabel.textContent = `${candidates.length} components`
-  componentLabel.style.left = rect.x + 'px'
-  componentLabel.style.top = Math.max(2, rect.y - 22) + 'px'
-  componentLabel.style.display = 'block'
+  if (componentLabel) {
+    componentLabel.textContent = `${candidates.length} components`
+    componentLabel.style.left = rect.x + 'px'
+    componentLabel.style.top = Math.max(2, rect.y - 22) + 'px'
+    componentLabel.style.display = 'block'
+  }
 
   const promptY = Math.min(rect.y + rect.height + 8, window.innerHeight - 60)
-  promptBar.style.left = rect.x + 'px'
-  promptBar.style.top = promptY + 'px'
-  promptBar.style.display = 'flex'
-  setTimeout(() => promptInput.focus(), 50)
+  if (promptBar) {
+    promptBar.style.left = rect.x + 'px'
+    promptBar.style.top = promptY + 'px'
+    promptBar.style.display = 'flex'
+  }
+  setTimeout(() => promptInput?.focus(), 50)
 }
 
-function hidePicker() {
+function hidePicker(): void {
   const picker = document.getElementById('patchly-picker')
   if (picker) picker.style.display = 'none'
 }
 
-// Capture a cropped screenshot of `element` via the background service worker.
-// Returns the raw base64 string (no data: prefix), or null on any failure.
-async function captureElementScreenshot(element) {
+async function captureElementScreenshot(element: Element): Promise<string | null> {
   try {
     const rect = element.getBoundingClientRect()
     const dpr = window.devicePixelRatio || 1
 
-    const response = await new Promise((resolve) => {
+    const response = await new Promise<{ ok: boolean; dataUrl?: string; error?: string } | null>((resolve) => {
       chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (res) => {
         if (chrome.runtime.lastError) {
           console.warn('[Patchly] Screenshot:', chrome.runtime.lastError.message)
           resolve(null)
         } else {
-          resolve(res)
+          resolve(res as { ok: boolean; dataUrl?: string; error?: string })
         }
       })
     })
@@ -408,10 +424,10 @@ async function captureElementScreenshot(element) {
     }
 
     const img = new Image()
-    await new Promise((resolve, reject) => {
-      img.onload = resolve
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
       img.onerror = reject
-      img.src = response.dataUrl
+      img.src = response.dataUrl!
     })
 
     const cropX = Math.round(rect.left * dpr)
@@ -422,16 +438,19 @@ async function captureElementScreenshot(element) {
     const canvas = document.createElement('canvas')
     canvas.width = cropW
     canvas.height = cropH
-    canvas.getContext('2d').drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
 
     return canvas.toDataURL('image/png').replace('data:image/png;base64,', '')
   } catch (err) {
-    console.warn('[Patchly] Screenshot exception:', err.message)
+    console.warn('[Patchly] Screenshot exception:', err instanceof Error ? err.message : String(err))
     return null
   }
 }
 
-async function submitPrompt() {
+async function submitPrompt(): Promise<void> {
+  if (!promptInput) return
   const prompt = promptInput.value.trim()
   if (!prompt) {
     promptInput.focus()
@@ -443,16 +462,13 @@ async function submitPrompt() {
     return
   }
 
-  // ── Multi-select (batch / fan-out) ──────────────────────────────────────────
-  // Screenshots are skipped in batch mode: targets may be off-screen (the crop
-  // would be invalid) and N vision payloads are expensive. Text context only.
   if (selectedTargets && selectedTargets.length > 1) {
     const targets = selectedTargets
-      .filter((el) => el.dataset.patchlySrc)
+      .filter((el) => (el as HTMLElement).dataset.patchlySrc)
       .map((el) => ({
-        patchlySrc: el.dataset.patchlySrc,
+        patchlySrc: (el as HTMLElement).dataset.patchlySrc,
         elementHtml: el.outerHTML.slice(0, 500),
-        elementClasses: el.className || '',
+        elementClasses: (el as HTMLElement).className || '',
         screenshot_base64: null,
       }))
 
@@ -465,7 +481,7 @@ async function submitPrompt() {
     console.log(`[Patchly] Batch edit request (${targets.length} targets)`)
 
     if (window.__patchlySend) {
-      window.__patchlySend(payload)
+      window.__patchlySend(payload as Record<string, unknown>)
       if (promptBar) promptBar.style.display = 'none'
       promptInput.value = ''
       if (componentLabel) componentLabel.style.display = 'none'
@@ -474,26 +490,24 @@ async function submitPrompt() {
     return
   }
 
-  await sendSingleEdit(selectedElement, selectedPatchlySrc, prompt)
+  if (selectedElement) {
+    await sendSingleEdit(selectedElement, selectedPatchlySrc, prompt)
+  }
 }
 
-// Build and send a single-element EDIT_REQUEST (with screenshot) for `el`, then
-// show the loading panel. Reused by submitPrompt and the cross-file redirect.
-async function sendSingleEdit(el, patchlySrc, prompt) {
-  // Hide patchly overlays before capturing so they don't appear in the screenshot.
+async function sendSingleEdit(el: Element, patchlySrc: string | null, prompt: string): Promise<void> {
   if (selectionRect) selectionRect.style.display = 'none'
   if (elementHighlight) elementHighlight.style.display = 'none'
   if (componentLabel) componentLabel.style.display = 'none'
 
-  // Let the browser repaint before capturing.
-  await new Promise((resolve) => requestAnimationFrame(resolve))
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
   const screenshot_base64 = await captureElementScreenshot(el)
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     patchlySrc,
     elementHtml: el.outerHTML.slice(0, 500),
-    elementClasses: el.className || '',
+    elementClasses: (el as HTMLElement).className || '',
     elementTag: el.tagName.toLowerCase(),
     prompt,
     sessionId: Math.random().toString(36).slice(2),
@@ -505,9 +519,11 @@ async function sendSingleEdit(el, patchlySrc, prompt) {
   if (window.__patchlySend) {
     window.__patchlySend(payload)
     if (promptBar) promptBar.style.display = 'none'
-    promptInput.value = ''
-    promptInput.disabled = false
-    const submitBtn = document.getElementById('patchly-prompt-submit')
+    if (promptInput) {
+      promptInput.value = ''
+      promptInput.disabled = false
+    }
+    const submitBtn = document.getElementById('patchly-prompt-submit') as HTMLButtonElement | null
     if (submitBtn) {
       submitBtn.textContent = 'Apply'
       submitBtn.disabled = false
@@ -519,8 +535,8 @@ async function sendSingleEdit(el, patchlySrc, prompt) {
   }
 }
 
-function resetPromptBar() {
-  const submitBtn = document.getElementById('patchly-prompt-submit')
+function resetPromptBar(): void {
+  const submitBtn = document.getElementById('patchly-prompt-submit') as HTMLButtonElement | null
   if (submitBtn) {
     submitBtn.textContent = 'Apply'
     submitBtn.disabled = false
@@ -535,20 +551,17 @@ function resetPromptBar() {
 }
 
 window.__patchlyResetPromptBar = resetPromptBar
-
 window.__patchlyActivate = activate
 window.__patchlyCancel = cancel
 
-// Escape user/LLM-provided text before injecting into innerHTML.
-function escapeHtml(s) {
+function escapeHtml(s: string): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
 
-// Render a unified diff string into color-coded <span> rows.
-function renderDiff(diff) {
+function renderDiff(diff: string): string {
   return (diff || '')
     .split('\n')
     .map((line) => {
@@ -562,15 +575,15 @@ function renderDiff(diff) {
     .join('')
 }
 
-function confidenceClass(pct) {
+function confidenceClass(pct: number): string {
   if (pct >= 90) return 'high'
   if (pct >= 70) return 'medium'
   return 'low'
 }
 
-let previewKeyHandler = null
+let previewKeyHandler: ((e: KeyboardEvent) => void) | null = null
 
-function closePreviewPanel() {
+function closePreviewPanel(): void {
   const panel = document.getElementById('patchly-preview-panel')
   if (panel) panel.remove()
   if (previewKeyHandler) {
@@ -579,13 +592,12 @@ function closePreviewPanel() {
   }
 }
 
-// Decide whether to auto-apply (high confidence + opt-in) or show the diff panel.
-async function showPreview(msg) {
-  const settings = await new Promise((resolve) => {
+async function showPreview(msg: Record<string, unknown>): Promise<void> {
+  const settings = await new Promise<{ autoApply: boolean; confidenceThreshold: number }>((resolve) => {
     try {
       chrome.storage.local.get(
         { autoApply: false, confidenceThreshold: 0.9 },
-        (s) => resolve(chrome.runtime.lastError ? { autoApply: false, confidenceThreshold: 0.9 } : s),
+        (s) => resolve(chrome.runtime.lastError ? { autoApply: false, confidenceThreshold: 0.9 } : s as { autoApply: boolean; confidenceThreshold: number }),
       )
     } catch {
       resolve({ autoApply: false, confidenceThreshold: 0.9 })
@@ -595,9 +607,7 @@ async function showPreview(msg) {
   const confidence = typeof msg.confidence === 'number' ? msg.confidence : 0
 
   if (settings.autoApply && confidence >= settings.confidenceThreshold) {
-    if (window.__patchlySendToAgent) {
-      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId: msg.sessionId })
-    }
+    window.__patchlySendToAgent?.({ type: 'PATCHLY_CONFIRM', sessionId: msg.sessionId as string })
     showInfoToast(`Auto-applied (${Math.round(confidence * 100)}% confidence): ${msg.explanation}`)
     return
   }
@@ -605,16 +615,16 @@ async function showPreview(msg) {
   showPreviewPanel(msg)
 }
 
-// ─── Loading / progress panel ────────────────────────────────────────────────
-const STAGE_LABELS = {
+// ─── Loading / progress panel ─────────────────────────────────────────────────
+const STAGE_LABELS: Record<string, string> = {
   analyzing: 'Analyzing component…',
   generating: 'Asking the model…',
   building: 'Building preview…',
 }
-let loadingTimer = null
+let loadingTimer: ReturnType<typeof setInterval> | null = null
 let loadingStart = 0
 
-function showLoadingPanel() {
+function showLoadingPanel(): void {
   hideLoadingPanel()
   const panel = document.createElement('div')
   panel.id = 'patchly-loading'
@@ -629,26 +639,26 @@ function showLoadingPanel() {
   document.body.appendChild(panel)
 
   loadingStart = Date.now()
-  const timeEl = panel.querySelector('.patchly-ld-time')
+  const timeEl = panel.querySelector('.patchly-ld-time')!
   loadingTimer = setInterval(() => {
     timeEl.textContent = `${Math.round((Date.now() - loadingStart) / 1000)}s`
   }, 250)
 }
 
-function updateLoadingPanel({ stage, text }) {
+function updateLoadingPanel({ stage, text }: { stage?: string; text?: string }): void {
   const panel = document.getElementById('patchly-loading')
   if (!panel) return
   if (stage && STAGE_LABELS[stage]) {
-    panel.querySelector('.patchly-ld-stage').textContent = STAGE_LABELS[stage]
+    panel.querySelector('.patchly-ld-stage')!.textContent = STAGE_LABELS[stage]
   }
   if (text) {
-    const textEl = panel.querySelector('.patchly-ld-text')
+    const textEl = panel.querySelector('.patchly-ld-text') as HTMLElement
     textEl.textContent = text
     textEl.style.display = 'block'
   }
 }
 
-function hideLoadingPanel() {
+function hideLoadingPanel(): void {
   if (loadingTimer) {
     clearInterval(loadingTimer)
     loadingTimer = null
@@ -661,7 +671,8 @@ window.__patchlyShowLoading = showLoadingPanel
 window.__patchlyUpdateLoading = updateLoadingPanel
 window.__patchlyHideLoading = hideLoadingPanel
 
-function showPreviewPanel({ explanation, confidence, diff, filePath, lineNumber, sessionId }) {
+function showPreviewPanel(msg: Record<string, unknown>): void {
+  const { explanation, confidence, diff, filePath, lineNumber, sessionId } = msg
   closePreviewPanel()
   const existingToast = document.getElementById('patchly-toast')
   if (existingToast) existingToast.remove()
@@ -673,12 +684,12 @@ function showPreviewPanel({ explanation, confidence, diff, filePath, lineNumber,
   panel.innerHTML = `
     <div class="patchly-pp-head">
       <div class="patchly-pp-title-row">
-        <div class="patchly-pp-title">${escapeHtml(explanation)}</div>
+        <div class="patchly-pp-title">${escapeHtml(String(explanation ?? ''))}</div>
         <span class="patchly-pp-conf ${confidenceClass(pct)}">${pct}%</span>
       </div>
-      <div class="patchly-pp-meta">${escapeHtml(filePath)} &middot; line ${lineNumber}</div>
+      <div class="patchly-pp-meta">${escapeHtml(String(filePath ?? ''))} &middot; line ${lineNumber}</div>
     </div>
-    <div class="patchly-pp-diff">${renderDiff(diff)}</div>
+    <div class="patchly-pp-diff">${renderDiff(String(diff ?? ''))}</div>
     <div class="patchly-pp-actions">
       <button class="patchly-pp-btn patchly-pp-apply">Apply<span class="patchly-pp-kbd">&crarr;</span></button>
       <button class="patchly-pp-btn patchly-pp-reject">Reject<span class="patchly-pp-kbd">Esc</span></button>
@@ -687,42 +698,29 @@ function showPreviewPanel({ explanation, confidence, diff, filePath, lineNumber,
 
   document.body.appendChild(panel)
 
-  const apply = () => {
+  const apply = (): void => {
     closePreviewPanel()
-    if (window.__patchlySendToAgent) {
-      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId })
-    }
+    window.__patchlySendToAgent?.({ type: 'PATCHLY_CONFIRM', sessionId: sessionId as string })
   }
-  const reject = () => {
+  const reject = (): void => {
     closePreviewPanel()
-    if (window.__patchlySendToAgent) {
-      window.__patchlySendToAgent({ type: 'PATCHLY_REJECT', sessionId })
-    }
+    window.__patchlySendToAgent?.({ type: 'PATCHLY_REJECT', sessionId: sessionId as string })
   }
 
-  panel.querySelector('.patchly-pp-apply').onclick = apply
-  panel.querySelector('.patchly-pp-reject').onclick = reject
+  ;(panel.querySelector('.patchly-pp-apply') as HTMLButtonElement).onclick = apply
+  ;(panel.querySelector('.patchly-pp-reject') as HTMLButtonElement).onclick = reject
 
-  // Scoped key handling: Enter applies, Esc rejects. Capture phase + stopPropagation
-  // so the global Esc handler in content.js doesn't also fire selection-cancel.
-  previewKeyHandler = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      e.stopPropagation()
-      apply()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation()
-      reject()
-    }
+  previewKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); apply() }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); reject() }
   }
   document.addEventListener('keydown', previewKeyHandler, true)
 }
 
 window.__patchlyShowPreview = showPreview
 
-// Multi-diff preview for a batch (fan-out) edit: one card per file, Apply all / Reject.
-function showPreviewBatch({ sessionId, edits }) {
+function showPreviewBatch(msg: Record<string, unknown>): void {
+  const { sessionId, edits } = msg as { sessionId: string; edits: Record<string, unknown>[] }
   closePreviewPanel()
   const existingToast = document.getElementById('patchly-toast')
   if (existingToast) existingToast.remove()
@@ -737,21 +735,21 @@ function showPreviewBatch({ sessionId, edits }) {
         return `
           <div class="patchly-bp-card">
             <div class="patchly-bp-cardhead">
-              <span class="patchly-bp-file">${escapeHtml(e.filePath)}${e.lineNumber ? ':' + e.lineNumber : ''}${e.targetCount > 1 ? ` · ${e.targetCount} components` : ''}</span>
+              <span class="patchly-bp-file">${escapeHtml(String(e.filePath ?? ''))}${e.lineNumber ? ':' + e.lineNumber : ''}${Number(e.targetCount) > 1 ? ` · ${e.targetCount} components` : ''}</span>
               <span class="patchly-pp-conf ${confidenceClass(pct)}">${pct}%</span>
             </div>
-            <div class="patchly-bp-expl">${escapeHtml(e.explanation || '')}</div>
-            <div class="patchly-pp-diff">${renderDiff(e.diff)}</div>
+            <div class="patchly-bp-expl">${escapeHtml(String(e.explanation || ''))}</div>
+            <div class="patchly-pp-diff">${renderDiff(String(e.diff ?? ''))}</div>
           </div>
         `
       }
       return `
         <div class="patchly-bp-card patchly-bp-fail">
           <div class="patchly-bp-cardhead">
-            <span class="patchly-bp-file">${escapeHtml(e.filePath || 'target')}${e.lineNumber ? ':' + e.lineNumber : ''}</span>
+            <span class="patchly-bp-file">${escapeHtml(String(e.filePath || 'target'))}${e.lineNumber ? ':' + e.lineNumber : ''}</span>
             <span class="patchly-pp-conf low">skipped</span>
           </div>
-          <div class="patchly-bp-expl">${escapeHtml(e.message || e.code || 'Could not edit this target.')}</div>
+          <div class="patchly-bp-expl">${escapeHtml(String(e.message || e.code || 'Could not edit this target.'))}</div>
         </div>
       `
     })
@@ -773,23 +771,21 @@ function showPreviewBatch({ sessionId, edits }) {
 
   document.body.appendChild(panel)
 
-  const apply = () => {
+  const apply = (): void => {
     closePreviewPanel()
-    if (okEdits.length && window.__patchlySendToAgent) {
-      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId })
+    if (okEdits.length) {
+      window.__patchlySendToAgent?.({ type: 'PATCHLY_CONFIRM', sessionId })
     }
   }
-  const reject = () => {
+  const reject = (): void => {
     closePreviewPanel()
-    if (window.__patchlySendToAgent) {
-      window.__patchlySendToAgent({ type: 'PATCHLY_REJECT', sessionId })
-    }
+    window.__patchlySendToAgent?.({ type: 'PATCHLY_REJECT', sessionId })
   }
 
-  panel.querySelector('.patchly-pp-apply').onclick = apply
-  panel.querySelector('.patchly-pp-reject').onclick = reject
+  ;(panel.querySelector('.patchly-pp-apply') as HTMLButtonElement).onclick = apply
+  ;(panel.querySelector('.patchly-pp-reject') as HTMLButtonElement).onclick = reject
 
-  previewKeyHandler = (e) => {
+  previewKeyHandler = (e: KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); apply() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); reject() }
   }
@@ -798,29 +794,18 @@ function showPreviewBatch({ sessionId, edits }) {
 
 window.__patchlyShowPreviewBatch = showPreviewBatch
 
-function showSuccessToast({ filePath, showUndo = true, editId = null }) {
+function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePath: string; showUndo?: boolean; editId?: string | null }): void {
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
 
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #fff;
-    border: 1px solid #d1fae5;
-    border-left: 4px solid #22c55e;
-    border-radius: 10px;
-    padding: 12px 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
-    z-index: 2147483647;
-    max-width: 360px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    position: fixed; bottom: 24px; right: 24px; background: #fff;
+    border: 1px solid #d1fae5; border-left: 4px solid #22c55e; border-radius: 10px;
+    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
+    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; display: flex; align-items: center; gap: 12px;
   `
 
   toast.innerHTML = `
@@ -838,10 +823,11 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }) {
   document.body.appendChild(toast)
 
   if (showUndo) {
-    document.getElementById('patchly-undo-btn').onclick = () => {
-      toast.remove()
-      if (window.__patchlySendToAgent) {
-        window.__patchlySendToAgent({ type: 'PATCHLY_UNDO', editId })
+    const undoBtn = document.getElementById('patchly-undo-btn')
+    if (undoBtn) {
+      undoBtn.onclick = () => {
+        toast.remove()
+        window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO', editId })
       }
     }
   }
@@ -851,25 +837,17 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }) {
   }, 6000)
 }
 
-function showErrorToast(message) {
+function showErrorToast(message: string): void {
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
 
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #fff;
-    border: 1px solid #fee2e2;
-    border-left: 4px solid #ef4444;
-    border-radius: 10px;
-    padding: 12px 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
-    z-index: 2147483647;
-    max-width: 360px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    position: fixed; bottom: 24px; right: 24px; background: #fff;
+    border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 10px;
+    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
+    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px;
   `
 
@@ -879,31 +857,22 @@ function showErrorToast(message) {
   `
 
   document.body.appendChild(toast)
-
   setTimeout(() => {
     if (document.getElementById('patchly-toast') === toast) toast.remove()
   }, 8000)
 }
 
-function showInfoToast(message) {
+function showInfoToast(message: string): void {
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
 
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #fff;
-    border: 1px solid #e0e7ff;
-    border-left: 4px solid #6366f1;
-    border-radius: 10px;
-    padding: 12px 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
-    z-index: 2147483647;
-    max-width: 360px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    position: fixed; bottom: 24px; right: 24px; background: #fff;
+    border: 1px solid #e0e7ff; border-left: 4px solid #6366f1; border-radius: 10px;
+    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
+    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px;
   `
 
@@ -913,7 +882,6 @@ function showInfoToast(message) {
   `
 
   document.body.appendChild(toast)
-
   setTimeout(() => {
     if (document.getElementById('patchly-toast') === toast) toast.remove()
   }, 8000)
@@ -924,41 +892,30 @@ window.__patchlyShowError = showErrorToast
 window.__patchlyShowInfo = showInfoToast
 
 // ─── Cross-file redirect ──────────────────────────────────────────────────────
-// The model decided the change belongs to an imported child component. Ask the
-// user, then replay the edit against that child's actual element in the DOM.
 
-function srcFileStem(src) {
+function srcFileStem(src: string): string {
   const file = (src || '').split(':')[0]
   const base = file.split('/').pop() || file
   return base.replace(/\.(jsx?|tsx?)$/i, '')
 }
 
-// Find an element whose data-patchly-src file matches the suggested file (by
-// basename, so "./components/StatsCard" ≈ "StatsCard.jsx").
-//
-// The redirected FILE is already constrained — the LLM can only suggest a file
-// the selected component imports — so this search just locates an anchor element
-// to read its source line. We keep it scoped to the selection: search the
-// selection's subtree, then climb to the NEAREST ancestor that contains a match
-// (e.g. from a table header up to the table, finding the row cells). The whole
-// page is only reached as a last resort. All instances of a component share one
-// source location, so the nearest match anchors to the right file.
-function findElementByFile(root, fileHint) {
+function findElementByFile(anchorEl: Element | null, fileHint: string): Element | null {
   const wantStem = srcFileStem(fileHint)
 
-  const pick = (scope) => {
+  const pick = (scope: Element | null): Element | null => {
     if (!scope) return null
-    const all = [...scope.querySelectorAll('[data-patchly-src]')]
-    if (scope.dataset && scope.dataset.patchlySrc) all.unshift(scope)
-    const matches = all.filter(
-      (el) => el.dataset && el.dataset.patchlySrc && srcFileStem(el.dataset.patchlySrc) === wantStem,
-    )
+    const all: Element[] = [...scope.querySelectorAll('[data-patchly-src]')]
+    const scopeDataset = (scope as HTMLElement).dataset
+    if (scopeDataset?.patchlySrc) all.unshift(scope)
+    const matches = all.filter((el) => {
+      const ds = (el as HTMLElement).dataset
+      return ds?.patchlySrc && srcFileStem(ds.patchlySrc) === wantStem
+    })
     if (matches.length === 0) return null
-    return matches.find((el) => !matches.some((o) => o !== el && o.contains(el))) || matches[0]
+    return matches.find((el) => !matches.some((o) => o !== el && o.contains(el))) ?? matches[0] ?? null
   }
 
-  // Subtree first, then widen one ancestor at a time (closest region wins).
-  let scope = root
+  let scope: Element | null = anchorEl
   while (scope) {
     const found = pick(scope)
     if (found) return found
@@ -967,14 +924,20 @@ function findElementByFile(root, fileHint) {
   return null
 }
 
-function showRedirectToast({ sessionId, prompt, suggestions }) {
+function showRedirectToast(msg: Record<string, unknown>): void {
+  const { sessionId, prompt, suggestions } = msg as {
+    sessionId: string
+    prompt: string
+    suggestions: Array<{ file: string; reason: string }>
+  }
+
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
 
-  const root = selectedElement
+  const anchorEl = selectedElement
   const buttons = suggestions
     .map((s, i) => {
-      const found = findElementByFile(root, s.file)
+      const found = findElementByFile(anchorEl, s.file)
       const stem = srcFileStem(s.file)
       return `
         <button class="patchly-rd-btn" data-idx="${i}" ${found ? '' : 'disabled'}>
@@ -984,7 +947,9 @@ function showRedirectToast({ sessionId, prompt, suggestions }) {
     })
     .join('')
 
-  const reasons = suggestions[0]?.reason ? `<div style="color:#666;margin-bottom:10px;line-height:1.4">${suggestions[0].reason}</div>` : ''
+  const reasons = suggestions[0]?.reason
+    ? `<div style="color:#666;margin-bottom:10px;line-height:1.4">${suggestions[0].reason}</div>`
+    : ''
 
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
@@ -1006,32 +971,39 @@ function showRedirectToast({ sessionId, prompt, suggestions }) {
 
   document.body.appendChild(toast)
 
-  toast.querySelectorAll('.patchly-rd-btn').forEach((btn) => {
+  toast.querySelectorAll<HTMLButtonElement>('.patchly-rd-btn').forEach((btn) => {
     if (btn.disabled) return
     btn.onclick = () => {
       const s = suggestions[Number(btn.getAttribute('data-idx'))]
-      const el = findElementByFile(root, s.file)
+      const el = findElementByFile(anchorEl, s.file)
       toast.remove()
-      if (el) sendSingleEdit(el, el.dataset.patchlySrc, prompt)
+      if (el) sendSingleEdit(el, (el as HTMLElement).dataset.patchlySrc ?? null, prompt)
     }
   })
-  toast.querySelector('.patchly-rd-cancel').onclick = () => toast.remove()
+  ;(toast.querySelector('.patchly-rd-cancel') as HTMLButtonElement).onclick = () => toast.remove()
 }
 
 window.__patchlyShowRedirect = showRedirectToast
 
 // ─── Edit history sidebar ─────────────────────────────────────────────────────
-// Source of truth is chrome.storage.session ('patchly_edits'); content.js writes
-// it on EDIT_DONE / UNDO_DONE. This module only renders and wires per-row undo.
 
 const PATCHLY_HISTORY_KEY = 'patchly_edits'
 let historyInited = false
 
-function readHistory() {
+interface HistoryEntry {
+  editId: string
+  filePath: string
+  lineNumber?: number
+  explanation?: string
+  ts: number
+  undone?: boolean
+}
+
+function readHistory(): Promise<HistoryEntry[]> {
   return new Promise((resolve) => {
     try {
       chrome.storage.session.get({ [PATCHLY_HISTORY_KEY]: [] }, (res) => {
-        resolve(chrome.runtime.lastError ? [] : (res[PATCHLY_HISTORY_KEY] || []))
+        resolve(chrome.runtime.lastError ? [] : ((res[PATCHLY_HISTORY_KEY] as HistoryEntry[]) || []))
       })
     } catch {
       resolve([])
@@ -1039,7 +1011,7 @@ function readHistory() {
   })
 }
 
-function ensureHistoryUI() {
+function ensureHistoryUI(): void {
   if (historyInited) return
   historyInited = true
 
@@ -1059,10 +1031,10 @@ function ensureHistoryUI() {
     <div class="patchly-hist-list"></div>
   `
   document.body.appendChild(panel)
-  panel.querySelector('.patchly-hist-close').onclick = closeHistory
+  ;(panel.querySelector('.patchly-hist-close') as HTMLButtonElement).onclick = closeHistory
 }
 
-function relativeTime(ts) {
+function relativeTime(ts: number): string {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
   if (s < 60) return 'just now'
   const m = Math.round(s / 60)
@@ -1072,7 +1044,7 @@ function relativeTime(ts) {
   return `${Math.round(h / 24)}d ago`
 }
 
-async function renderHistory() {
+async function renderHistory(): Promise<void> {
   ensureHistoryUI()
   const edits = await readHistory()
   const tab = document.getElementById('patchly-history-tab')
@@ -1086,7 +1058,6 @@ async function renderHistory() {
     return
   }
 
-  // Newest first.
   list.innerHTML = edits
     .slice()
     .reverse()
@@ -1105,27 +1076,25 @@ async function renderHistory() {
     })
     .join('')
 
-  list.querySelectorAll('.patchly-hist-row').forEach((row) => {
+  list.querySelectorAll<HTMLElement>('.patchly-hist-row').forEach((row) => {
     const editId = row.getAttribute('data-edit-id')
-    const btn = row.querySelector('.patchly-hist-undo')
+    const btn = row.querySelector('.patchly-hist-undo') as HTMLButtonElement | null
     if (btn && !btn.disabled) {
       btn.onclick = () => {
-        if (window.__patchlySendToAgent) {
-          window.__patchlySendToAgent({ type: 'PATCHLY_UNDO', editId })
-        }
+        window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO', editId })
       }
     }
   })
 }
 
-function openHistory() {
+function openHistory(): void {
   ensureHistoryUI()
   const panel = document.getElementById('patchly-history')
   if (panel) panel.classList.add('open')
-  renderHistory()
+  void renderHistory()
 }
 
-function closeHistory() {
+function closeHistory(): void {
   const panel = document.getElementById('patchly-history')
   if (panel) panel.classList.remove('open')
 }
