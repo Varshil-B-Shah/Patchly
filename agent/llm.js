@@ -1,14 +1,14 @@
 // agent/llm.js
-// Calls Azure OpenAI and returns a structured EditRequest (Phase 6.8).
-// The LLM now emits operations (setClassName / setAttribute / etc.) instead of
-// the old {find, replace} pair. The executor pipeline (applyEditOperations) does
-// the actual file mutation — this module only handles HTTP + parse/validate.
+// Calls Azure OpenAI and returns a structured EditRequest.
+// Sends a screenshot (vision), direct imports, global CSS, and Tailwind design
+// tokens alongside the component source so the model can see what it's editing.
 
 import { OPS } from '../shared/operations.js'
+import { loadProjectContext } from './contextBuilder.js'
 
 const VALID_OPS = new Set(Object.values(OPS))
 
-export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config }) {
+export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64 }) {
   const { azureEndpoint, azureApiKey, model } = config
 
   const endpoint = azureEndpoint || process.env.PATCHLY_AZURE_ENDPOINT
@@ -23,8 +23,16 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
     }
   }
 
-  const systemPrompt = buildSystemPrompt()
-  const userPrompt = buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt })
+  // Load file context (imports, global CSS, tailwind tokens). Failures are silent.
+  let context = { imports: [], globalCss: null, tailwindTokens: '' }
+  try {
+    context = loadProjectContext(sourceResult, config.projectRoot)
+  } catch {
+    // Context enrichment is best-effort — never block an edit.
+  }
+
+  const systemPrompt = buildSystemPrompt(context.tailwindTokens)
+  const userPrompt = buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context })
 
   const { url, includeModelInBody } = buildRequestConfig(endpoint, modelName)
 
@@ -47,7 +55,15 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       body: JSON.stringify({
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          {
+            role: 'user',
+            content: screenshot_base64
+              ? [
+                  { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshot_base64}` } },
+                  { type: 'text', text: userPrompt },
+                ]
+              : userPrompt,
+          },
         ],
         max_completion_tokens: 800,
         temperature: 0.1,
@@ -104,8 +120,17 @@ function buildRequestConfig(endpoint, modelName) {
   }
 }
 
-function buildSystemPrompt() {
-  return `You are a React JSX code editor. You make surgical edits by emitting structured operations.
+function buildSystemPrompt(tailwindTokens = '') {
+  const visualSection = `
+A screenshot of the selected element may be attached as an image. If present, use it to understand the current visual state — colours, layout, spacing — before deciding which classes to add or remove.`
+
+  const designSection = tailwindTokens
+    ? `\nProject design tokens (use ONLY these custom tokens — do not invent classes that aren't in this list):\n${tailwindTokens}`
+    : ''
+
+  return `You are a React JSX code editor. You make surgical edits by emitting structured operations.${visualSection}${designSection}
+
+Respond with ONLY a valid JSON object — no markdown, no backticks, no explanation outside the JSON.
 
 Respond with ONLY a valid JSON object — no markdown, no backticks, no explanation outside the JSON.
 
@@ -192,29 +217,42 @@ User: "change the link destination to /about"
 }`
 }
 
-function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt }) {
-  // Extract a short text snippet from elementHtml for the target hint.
+function buildUserPrompt({ sourceResult, elementHtml, elementClasses, prompt, context = {} }) {
   const textSnippet = (elementHtml || '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 40)
 
-  return `File: ${sourceResult.relativePath}
-Line: ${sourceResult.lineNumber}  Column: ${sourceResult.colNumber ?? 0}
+  const lines = [
+    `File: ${sourceResult.relativePath}`,
+    `Line: ${sourceResult.lineNumber}  Column: ${sourceResult.colNumber ?? 0}`,
+    '',
+    `Selected element classes: ${elementClasses || '(none)'}`,
+    `Text snippet: ${textSnippet || '(none)'}`,
+    '',
+    'Selected element HTML:',
+    elementHtml.slice(0, 400),
+    '',
+    'Full file contents:',
+    '```jsx',
+    sourceResult.fullContent,
+    '```',
+  ]
 
-Selected element classes: ${elementClasses || '(none)'}
-Text snippet: ${textSnippet || '(none)'}
+  if (context.imports?.length > 0) {
+    lines.push('', '### Direct imports')
+    for (const imp of context.imports) {
+      lines.push(`/* ${imp.path} */`, '```jsx', imp.content, '```')
+    }
+  }
 
-Selected element HTML:
-${elementHtml.slice(0, 400)}
+  if (context.globalCss) {
+    lines.push('', '### Global CSS (excerpt)', '```css', context.globalCss, '```')
+  }
 
-Full file contents:
-\`\`\`jsx
-${sourceResult.fullContent}
-\`\`\`
-
-User instruction: ${prompt}`
+  lines.push('', `User instruction: ${prompt}`)
+  return lines.join('\n')
 }
 
 function parseEditRequest(rawContent) {

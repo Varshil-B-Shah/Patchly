@@ -37,7 +37,7 @@ export async function startServer(port, config) {
       }
 
       if (msg.type === MSG.EDIT_REQUEST) {
-        const { patchlySrc, elementHtml, elementClasses, prompt, sessionId } = msg
+        const { patchlySrc, elementHtml, elementClasses, prompt, sessionId, screenshot_base64 } = msg
 
         console.log(`Edit request: "${prompt}" on ${patchlySrc}`)
 
@@ -63,6 +63,7 @@ export async function startServer(port, config) {
           elementClasses,
           prompt,
           config,
+          screenshot_base64,
         })
 
         if (!llmResult.ok && llmResult.code === 'JSON_PARSE_FAILED') {
@@ -73,6 +74,7 @@ export async function startServer(port, config) {
             elementClasses,
             prompt: prompt + ' — respond with ONLY the JSON object, nothing else',
             config,
+            screenshot_base64,
           })
         }
 

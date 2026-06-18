@@ -207,7 +207,54 @@ function findTargetElement(rect) {
   setTimeout(() => promptInput.focus(), 50)
 }
 
-function submitPrompt() {
+// Capture a cropped screenshot of `element` via the background service worker.
+// Returns the raw base64 string (no data: prefix), or null on any failure.
+async function captureElementScreenshot(element) {
+  try {
+    const rect = element.getBoundingClientRect()
+    const dpr = window.devicePixelRatio || 1
+
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (res) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Patchly] Screenshot:', chrome.runtime.lastError.message)
+          resolve(null)
+        } else {
+          resolve(res)
+        }
+      })
+    })
+
+    if (!response?.ok || !response.dataUrl) {
+      if (response?.error) console.warn('[Patchly] Screenshot failed:', response.error)
+      return null
+    }
+
+    const img = new Image()
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+      img.src = response.dataUrl
+    })
+
+    const cropX = Math.round(rect.left * dpr)
+    const cropY = Math.round(rect.top * dpr)
+    const cropW = Math.max(1, Math.round(rect.width * dpr))
+    const cropH = Math.max(1, Math.round(rect.height * dpr))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = cropW
+    canvas.height = cropH
+    canvas.getContext('2d').drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+
+    return canvas.toDataURL('image/png').replace('data:image/png;base64,', '')
+  } catch (err) {
+    console.warn('[Patchly] Screenshot exception:', err.message)
+    return null
+  }
+}
+
+async function submitPrompt() {
   const prompt = promptInput.value.trim()
   if (!prompt) {
     promptInput.focus()
@@ -219,16 +266,27 @@ function submitPrompt() {
     return
   }
 
+  // Hide patchly overlays before capturing so they don't appear in the screenshot.
+  if (selectionRect) selectionRect.style.display = 'none'
+  if (elementHighlight) elementHighlight.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
+
+  // Let the browser repaint before capturing.
+  await new Promise(resolve => requestAnimationFrame(resolve))
+
+  const screenshot_base64 = await captureElementScreenshot(selectedElement)
+
   const payload = {
     patchlySrc: selectedPatchlySrc,
     elementHtml: selectedElement.outerHTML.slice(0, 500),
     elementClasses: selectedElement.className || '',
     elementTag: selectedElement.tagName.toLowerCase(),
-    prompt: prompt,
+    prompt,
     sessionId: Math.random().toString(36).slice(2),
+    screenshot_base64,
   }
 
-  console.log('[Patchly] Edit request payload:', payload)
+  console.log('[Patchly] Edit request (screenshot:', screenshot_base64 ? 'captured' : 'none', ')')
 
   if (window.__patchlySend) {
     window.__patchlySend(payload)
@@ -240,10 +298,6 @@ function submitPrompt() {
   } else {
     console.warn('[Patchly] __patchlySend not available')
   }
-
-  if (selectionRect) selectionRect.style.display = 'none'
-  if (elementHighlight) elementHighlight.style.display = 'none'
-  if (componentLabel) componentLabel.style.display = 'none'
 }
 
 function resetPromptBar() {

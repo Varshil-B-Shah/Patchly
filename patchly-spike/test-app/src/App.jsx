@@ -32,13 +32,13 @@ export default function App() {
 
       <section className="px-8 py-6">
         <h2 className="text-2xl font-semibold text-gray-800">Edge Case: Mapped List</h2>
-        <ul className="mt-4 space-y-2">
+        <ol className="mt-4 space-y-2 list-decimal list-inside">
           {items.map(item => (
             <li key={item.id} className="px-4 py-2 bg-blue-50 rounded">
               {item.name}
             </li>
           ))}
-        </ul>
+        </ol>
       </section>
 
       <section className="px-8 py-6">

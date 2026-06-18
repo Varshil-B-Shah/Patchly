@@ -76,11 +76,12 @@ export const ERROR_CODES = Object.freeze({
 // EDIT_REQUEST payload:
 // {
 //   type: MSG.EDIT_REQUEST,
-//   patchlySrc: string,        // "src/components/Hero.jsx:5:4"
-//   elementHtml: string,       // outerHTML of selected element (max 500 chars)
-//   elementClasses: string,    // className string
-//   prompt: string,            // user's natural language instruction
-//   sessionId: string,         // random ID for this edit session
+//   patchlySrc: string,             // "src/components/Hero.jsx:5:4"
+//   elementHtml: string,            // outerHTML of selected element (max 500 chars)
+//   elementClasses: string,         // className string
+//   prompt: string,                 // user's natural language instruction
+//   sessionId: string,              // random ID for this edit session
+//   screenshot_base64?: string,     // base64 PNG of the cropped element (Phase 7); null if capture failed
 // }
 
 // PREVIEW payload:
