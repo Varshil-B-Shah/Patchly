@@ -1,50 +1,55 @@
 import { useState } from 'react'
-import { Hero } from './components/Hero.jsx'
-import { StatsCard } from './features/dashboard/components/StatsCard.jsx'
-
-const items = [
-  { id: 1, name: 'Alpha' },
-  { id: 2, name: 'Beta' },
-  { id: 3, name: 'Gamma' },
-]
+import { Navbar } from './components/Navbar.jsx'
+import { Sidebar } from './components/Sidebar.jsx'
+import { Footer } from './components/Footer.jsx'
+import { Card } from './components/Card.jsx'
+import { StatsGrid } from './features/dashboard/components/StatsGrid.jsx'
+import { ActivityFeed } from './features/dashboard/components/ActivityFeed.jsx'
+import { UserTable } from './features/users/components/UserTable.jsx'
+import { SettingsPanel } from './features/settings/components/SettingsPanel.jsx'
 
 export default function App() {
-  const [isVisible, setIsVisible] = useState(true)
+  const [showBanner, setShowBanner] = useState(true)
 
   return (
-    <div className="min-h-screen bg-white">
-      <Hero />
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      <Navbar />
 
-      <section className="px-8 py-6 md:block">
-        <h2 className="text-2xl font-semibold text-gray-800">Edge Case: Conditional</h2>
-        <button
-          className="mt-2 px-4 py-1 rounded bg-gradient-to-r from-red-600 to-blue-700 text-white font-bold shadow-md hover:shadow-lg hover:from-red-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200"
-          onClick={() => setIsVisible(v => !v)}
-        >
-          Toggle
-        </button>
-        {isVisible && (
-          <div className="mt-4 p-4 bg-yellow-100 rounded">
-            Conditional content — this div should have data-patchly-src
+      <div className="flex flex-1">
+        <Sidebar />
+
+        <main className="flex-1 p-8 space-y-8">
+          {/* Conditional render — should still carry data-patchly-src */}
+          {showBanner && (
+            <div className="flex items-center justify-between rounded-xl bg-brand-light px-4 py-3 text-sm text-brand-dark">
+              <span>Welcome back — you have 3 new reports to review.</span>
+              <button onClick={() => setShowBanner(false)} className="font-medium hover:underline">
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <Card title="Overview" action="View all">
+            <StatsGrid />
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <Card title="Activity">
+              <ActivityFeed />
+            </Card>
+
+            <Card title="Settings">
+              <SettingsPanel />
+            </Card>
           </div>
-        )}
-      </section>
 
-      <section className="px-8 py-6 md:block">
-        <h2 className="text-2xl font-semibold text-gray-800">Edge Case: Mapped List</h2>
-        <ol className="mt-4 space-y-2 list-decimal list-inside">
-          {items.map(item => (
-            <li key={item.id} className="px-4 py-2 bg-blue-50 rounded">
-              {item.name}
-            </li>
-          ))}
-        </ol>
-      </section>
+          <Card title="Team Members" action="Invite">
+            <UserTable />
+          </Card>
+        </main>
+      </div>
 
-      <section className="px-8 py-6 md:block">
-        <h2 className="text-2xl font-semibold text-gray-800">Edge Case: Deep Path Component</h2>
-        <StatsCard title="Revenue" value="$12,400" />
-      </section>
+      <Footer />
     </div>
   )
 }
