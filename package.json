@@ -16,7 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "build:ext": "node -e \"console.log('build:ext is wired up in Phase 5')\"",
-    "test": "node --test agent/ast/__tests__/operations.test.js agent/ast/__tests__/drift.test.js agent/ast/__tests__/property.test.js"
+    "test": "node --import tsx --test agent/ast/__tests__/operations.test.js agent/ast/__tests__/drift.test.js agent/ast/__tests__/property.test.js"
   },
   "dependencies": {
     "@babel/generator": "^7.24.0",
