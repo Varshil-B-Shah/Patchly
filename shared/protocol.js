@@ -14,6 +14,7 @@ export const MSG = {
   EDIT_ERROR:   'PATCHLY_EDIT_ERROR',
   STATUS:       'PATCHLY_STATUS',
   PROGRESS:     'PATCHLY_PROGRESS',
+  REDIRECT:     'PATCHLY_REDIRECT',
   PREVIEW:      'PATCHLY_PREVIEW',
   PREVIEW_BATCH:'PATCHLY_PREVIEW_BATCH',
   UNDO_DONE:    'PATCHLY_UNDO_DONE',
@@ -107,6 +108,16 @@ export const ERROR_CODES = Object.freeze({
 //   sessionId: string,
 //   stage: 'analyzing' | 'generating' | 'building',
 //   text?: string,             // streamed explanation (during 'generating'), if available
+// }
+
+// REDIRECT payload (Agent → Extension): the change belongs to an imported child
+// component, not the selected file. The extension asks the user, then re-runs the
+// edit against the chosen child (targeting that child's element in the DOM).
+// {
+//   type: MSG.REDIRECT,
+//   sessionId: string,
+//   prompt: string,                 // the original instruction, to replay
+//   suggestions: [{ file: string, reason: string }],
 // }
 
 // PREVIEW payload:

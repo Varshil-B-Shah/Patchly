@@ -65,6 +65,11 @@ function connect() {
         if (window.__patchlyShowInfo) window.__patchlyShowInfo(msg.message)
       }
 
+      if (msg.type === 'PATCHLY_REDIRECT') {
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
+        if (window.__patchlyShowRedirect) window.__patchlyShowRedirect(msg)
+      }
+
       if (msg.type === 'PATCHLY_UNDO_DONE') {
         removeEdit(msg.editId)
         if (window.__patchlyShowSuccess) window.__patchlyShowSuccess({ filePath: 'Undone', showUndo: false })

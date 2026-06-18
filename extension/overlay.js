@@ -474,21 +474,27 @@ async function submitPrompt() {
     return
   }
 
+  await sendSingleEdit(selectedElement, selectedPatchlySrc, prompt)
+}
+
+// Build and send a single-element EDIT_REQUEST (with screenshot) for `el`, then
+// show the loading panel. Reused by submitPrompt and the cross-file redirect.
+async function sendSingleEdit(el, patchlySrc, prompt) {
   // Hide patchly overlays before capturing so they don't appear in the screenshot.
   if (selectionRect) selectionRect.style.display = 'none'
   if (elementHighlight) elementHighlight.style.display = 'none'
   if (componentLabel) componentLabel.style.display = 'none'
 
   // Let the browser repaint before capturing.
-  await new Promise(resolve => requestAnimationFrame(resolve))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
 
-  const screenshot_base64 = await captureElementScreenshot(selectedElement)
+  const screenshot_base64 = await captureElementScreenshot(el)
 
   const payload = {
-    patchlySrc: selectedPatchlySrc,
-    elementHtml: selectedElement.outerHTML.slice(0, 500),
-    elementClasses: selectedElement.className || '',
-    elementTag: selectedElement.tagName.toLowerCase(),
+    patchlySrc,
+    elementHtml: el.outerHTML.slice(0, 500),
+    elementClasses: el.className || '',
+    elementTag: el.tagName.toLowerCase(),
     prompt,
     sessionId: Math.random().toString(36).slice(2),
     screenshot_base64,
@@ -498,14 +504,15 @@ async function submitPrompt() {
 
   if (window.__patchlySend) {
     window.__patchlySend(payload)
-    // Replace the prompt bar with a live progress panel so the wait feels active.
     if (promptBar) promptBar.style.display = 'none'
     promptInput.value = ''
     promptInput.disabled = false
     const submitBtn = document.getElementById('patchly-prompt-submit')
-    submitBtn.textContent = 'Apply'
-    submitBtn.disabled = false
-    submitBtn.style.background = ''
+    if (submitBtn) {
+      submitBtn.textContent = 'Apply'
+      submitBtn.disabled = false
+      submitBtn.style.background = ''
+    }
     showLoadingPanel()
   } else {
     console.warn('[Patchly] __patchlySend not available')
@@ -915,6 +922,82 @@ function showInfoToast(message) {
 window.__patchlyShowSuccess = showSuccessToast
 window.__patchlyShowError = showErrorToast
 window.__patchlyShowInfo = showInfoToast
+
+// ─── Cross-file redirect ──────────────────────────────────────────────────────
+// The model decided the change belongs to an imported child component. Ask the
+// user, then replay the edit against that child's actual element in the DOM.
+
+function srcFileStem(src) {
+  const file = (src || '').split(':')[0]
+  const base = file.split('/').pop() || file
+  return base.replace(/\.(jsx?|tsx?)$/i, '')
+}
+
+// Find the outermost element under `root` whose data-patchly-src file matches the
+// suggested file (by basename, so "./components/StatsCard" ≈ "StatsCard.jsx").
+function findDescendantByFile(root, fileHint) {
+  if (!root) return null
+  const wantStem = srcFileStem(fileHint)
+  const all = [root, ...root.querySelectorAll('[data-patchly-src]')]
+  const matches = all.filter(
+    (el) => el.dataset && el.dataset.patchlySrc && srcFileStem(el.dataset.patchlySrc) === wantStem,
+  )
+  if (matches.length === 0) return null
+  return matches.find((el) => !matches.some((o) => o !== el && o.contains(el))) || matches[0]
+}
+
+function showRedirectToast({ sessionId, prompt, suggestions }) {
+  const existing = document.getElementById('patchly-toast')
+  if (existing) existing.remove()
+
+  const root = selectedElement
+  const buttons = suggestions
+    .map((s, i) => {
+      const found = findDescendantByFile(root, s.file)
+      const stem = srcFileStem(s.file)
+      return `
+        <button class="patchly-rd-btn" data-idx="${i}" ${found ? '' : 'disabled'}>
+          Edit <strong>${stem}</strong>${found ? '' : ' (not on page)'}
+        </button>
+      `
+    })
+    .join('')
+
+  const reasons = suggestions[0]?.reason ? `<div style="color:#666;margin-bottom:10px;line-height:1.4">${suggestions[0].reason}</div>` : ''
+
+  const toast = document.createElement('div')
+  toast.id = 'patchly-toast'
+  toast.style.cssText = `
+    position: fixed; bottom: 24px; right: 24px; background: #fff;
+    border: 1px solid #e0e7ff; border-left: 4px solid #6366f1; border-radius: 10px;
+    padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 2147483647;
+    max-width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; pointer-events: all;
+  `
+  toast.innerHTML = `
+    <div style="font-weight:600;margin-bottom:6px;color:#1a1a1a">This change lives in another component</div>
+    ${reasons}
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${buttons}
+      <button class="patchly-rd-cancel" style="background:none;border:none;color:#999;font-size:12px;cursor:pointer;padding:4px 0">Cancel</button>
+    </div>
+  `
+
+  document.body.appendChild(toast)
+
+  toast.querySelectorAll('.patchly-rd-btn').forEach((btn) => {
+    if (btn.disabled) return
+    btn.onclick = () => {
+      const s = suggestions[Number(btn.getAttribute('data-idx'))]
+      const el = findDescendantByFile(root, s.file)
+      toast.remove()
+      if (el) sendSingleEdit(el, el.dataset.patchlySrc, prompt)
+    }
+  })
+  toast.querySelector('.patchly-rd-cancel').onclick = () => toast.remove()
+}
+
+window.__patchlyShowRedirect = showRedirectToast
 
 // ─── Edit history sidebar ─────────────────────────────────────────────────────
 // Source of truth is chrome.storage.session ('patchly_edits'); content.js writes

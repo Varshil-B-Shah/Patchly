@@ -286,6 +286,11 @@ Decision rules:
 - Multiple operations are allowed for compound edits (e.g. setClassName + setText together).
 - If you cannot make the edit, return "operations": [] and explain in "explanation".
 
+Cross-file redirect:
+- If the element the instruction refers to is NOT in this file but is clearly rendered by one of the imported child components (see the "Direct imports" section), do NOT force an edit and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s):
+  "redirect": [ { "file": "src/components/StatsCard.jsx", "reason": "the revenue card and its border live in StatsCard" } ]
+  Use the import paths you were given to pick the file. List multiple only if genuinely unsure. Only use redirect when the target truly isn't in this file.
+
 Examples:
 
 User: "make the heading bold and blue"
@@ -416,6 +421,16 @@ function parseEditRequest(rawContent) {
   ) {
     console.log('[LLM] Bad schema:', JSON.stringify(parsed).slice(0, 200))
     return { ok: false, success: false, code: 'LLM_BAD_OUTPUT', message: 'LLM response does not match EditRequest schema.' }
+  }
+
+  // Cross-file redirect: the target lives in an imported child component.
+  if (Array.isArray(parsed.redirect) && parsed.redirect.length > 0) {
+    const suggestions = parsed.redirect
+      .filter((r) => r && typeof r.file === 'string')
+      .map((r) => ({ file: r.file, reason: typeof r.reason === 'string' ? r.reason : '' }))
+    if (suggestions.length > 0) {
+      return { ok: false, success: false, code: 'REDIRECT_SUGGESTED', suggestions, explanation: parsed.explanation }
+    }
   }
 
   // Cannot edit.

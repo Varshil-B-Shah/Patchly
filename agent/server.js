@@ -187,6 +187,19 @@ export async function startServer(port, config) {
             return
           }
 
+          // The change belongs to an imported child component — offer to retry
+          // against that file instead of failing.
+          if (llmResult.code === 'REDIRECT_SUGGESTED') {
+            console.log('Redirect suggested:', llmResult.suggestions.map(s => s.file).join(', '))
+            ws.send(JSON.stringify({
+              type: MSG.REDIRECT,
+              sessionId,
+              prompt,
+              suggestions: llmResult.suggestions,
+            }))
+            return
+          }
+
           ws.send(JSON.stringify({
             type: MSG.EDIT_ERROR,
             sessionId,

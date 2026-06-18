@@ -351,6 +351,23 @@
 
 .patchly-bp-card .patchly-pp-diff { max-height: 160px; border-bottom: none; }
 
+/* ─── Cross-file redirect toast ──────────────────────────────────────────── */
+
+.patchly-rd-btn {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.patchly-rd-btn:hover:not(:disabled) { background: #4f46e5; }
+.patchly-rd-btn:disabled { background: #e5e7eb; color: #999; cursor: default; }
+
 /* ─── Loading / progress panel ───────────────────────────────────────────── */
 
 #patchly-loading {
