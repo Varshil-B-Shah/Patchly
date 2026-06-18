@@ -8,7 +8,7 @@ import { loadProjectContext } from './contextBuilder.js'
 
 const VALID_OPS = new Set(Object.values(OPS))
 
-export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64 }) {
+export async function getEditInstruction({ sourceResult, elementHtml, elementClasses, prompt, config, screenshot_base64, onProgress }) {
   const { azureEndpoint, azureApiKey, model } = config
 
   const endpoint = azureEndpoint || process.env.PATCHLY_AZURE_ENDPOINT
@@ -39,11 +39,19 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
   console.log('[LLM] Calling:', url)
   console.log('[LLM] Model:', modelName, '| includeModelInBody:', includeModelInBody)
 
+  // Idle-based abort: reset on every streamed chunk so a long (but progressing)
+  // generation isn't killed, while a truly stalled request still times out.
+  const IDLE_TIMEOUT_MS = 45000
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => {
-    console.log('[LLM] Timeout fired — aborting fetch')
-    controller.abort()
-  }, 30000)
+  let timeoutId
+  const armTimeout = () => {
+    clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => {
+      console.log('[LLM] Idle timeout fired — aborting fetch')
+      controller.abort()
+    }, IDLE_TIMEOUT_MS)
+  }
+  armTimeout()
 
   try {
     const response = await fetch(url, {
@@ -65,17 +73,18 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
               : userPrompt,
           },
         ],
-        max_completion_tokens: 800,
+        max_completion_tokens: 4000,
         temperature: 0.1,
+        stream: true,
         ...(includeModelInBody ? { model: modelName } : {}),
       }),
       signal: controller.signal,
     })
 
-    clearTimeout(timeoutId)
     console.log('[LLM] Response status:', response.status)
 
     if (!response.ok) {
+      clearTimeout(timeoutId)
       const errorText = await response.text()
       console.log('[LLM] Error body:', errorText.slice(0, 300))
       return {
@@ -85,11 +94,22 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       }
     }
 
-    const data = await response.json()
-    const rawContent = data.choices?.[0]?.message?.content
+    const { content: rawContent, finishReason } = await consumeStream(response.body, armTimeout, onProgress)
+    clearTimeout(timeoutId)
+    console.log('[LLM] finish_reason:', finishReason)
 
     if (!rawContent) {
       return { ok: false, success: false, code: 'EMPTY_RESPONSE', message: 'LLM returned empty response' }
+    }
+
+    // The model hit the token ceiling mid-response — the JSON is truncated, so
+    // parsing would fail with a confusing error. Report the real cause instead.
+    if (finishReason === 'length') {
+      return {
+        ok: false, success: false,
+        code: 'LLM_BAD_OUTPUT',
+        message: 'The edit was too large for the AI to return in one response. Try a simpler or more specific change.',
+      }
     }
 
     return parseEditRequest(rawContent)
@@ -101,10 +121,65 @@ export async function getEditInstruction({ sourceResult, elementHtml, elementCla
       ok: false, success: false,
       code: isTimeout ? 'LLM_TIMEOUT' : 'NETWORK_ERROR',
       message: isTimeout
-        ? `Azure API request timed out after 30 seconds. Check your endpoint URL: ${url}`
+        ? `Azure API request timed out (no data for ${IDLE_TIMEOUT_MS / 1000}s). Check your endpoint URL: ${url}`
         : `Network error calling Azure: ${err.message}`,
     }
   }
+}
+
+// Read an OpenAI/Azure SSE stream to completion, accumulating the assistant
+// content. Calls armTimeout() on each chunk (idle reset) and onProgress({ stage,
+// text }) with the explanation as soon as it can be extracted from the partial
+// JSON. Returns { content, finishReason }.
+async function consumeStream(body, armTimeout, onProgress) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let content = ''
+  let finishReason = null
+  let explanationSent = false
+
+  const maybeEmitExplanation = () => {
+    if (explanationSent || !onProgress) return
+    // explanation is the first JSON field; capture it once its closing quote lands.
+    const m = content.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    if (m) {
+      explanationSent = true
+      let text = m[1].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
+      onProgress({ stage: 'generating', text })
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    armTimeout()
+    buffer += decoder.decode(value, { stream: true })
+
+    // SSE frames are separated by newlines; each data line is a JSON delta.
+    const lines = buffer.split('\n')
+    buffer = lines.pop()  // keep the trailing partial line
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.slice(5).trim()
+      if (payload === '[DONE]') continue
+      try {
+        const json = JSON.parse(payload)
+        const choice = json.choices?.[0]
+        const delta = choice?.delta?.content
+        if (delta) content += delta
+        if (choice?.finish_reason) finishReason = choice.finish_reason
+      } catch {
+        // Ignore keep-alive / non-JSON frames.
+      }
+    }
+
+    maybeEmitExplanation()
+  }
+
+  return { content, finishReason }
 }
 
 function buildRequestConfig(endpoint, modelName) {
@@ -265,7 +340,8 @@ function parseEditRequest(rawContent) {
   try {
     parsed = JSON.parse(cleaned)
   } catch {
-    console.log('[LLM] Could not parse response as JSON. Raw:', cleaned.slice(0, 200))
+    console.log(`[LLM] Could not parse response as JSON (length ${cleaned.length}). Head:`, cleaned.slice(0, 200))
+    console.log('[LLM] Tail:', cleaned.slice(-120))
     return { ok: false, success: false, code: 'JSON_PARSE_FAILED', message: "Patchly couldn't understand the AI's response. Please try again." }
   }
 

@@ -102,3 +102,283 @@
   pointer-events: none;
   white-space: nowrap;
 }
+
+/* ─── Diff preview panel ─────────────────────────────────────────────────── */
+
+#patchly-preview-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  pointer-events: all;
+  overflow: hidden;
+}
+
+.patchly-pp-head {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.patchly-pp-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.patchly-pp-title {
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #1a1a1a;
+}
+
+.patchly-pp-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.patchly-pp-conf {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.patchly-pp-conf.high   { background: #dcfce7; color: #16a34a; }
+.patchly-pp-conf.medium { background: #fef3c7; color: #b45309; }
+.patchly-pp-conf.low    { background: #fee2e2; color: #dc2626; }
+
+.patchly-pp-diff {
+  max-height: 240px;
+  overflow: auto;
+  background: #fbfbfd;
+  border-bottom: 1px solid #f0f0f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.patchly-diff-line {
+  display: block;
+  padding: 0 12px;
+}
+
+.patchly-diff-add  { background: #e6ffed; color: #176f2c; }
+.patchly-diff-del  { background: #ffeef0; color: #b31d28; }
+.patchly-diff-ctx  { color: #6e7781; }
+.patchly-diff-hunk { background: #f1f0ff; color: #6f42c1; }
+
+.patchly-pp-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.patchly-pp-btn {
+  flex: 1;
+  border: none;
+  border-radius: 7px;
+  padding: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.patchly-pp-apply  { background: #6366f1; color: #fff; }
+.patchly-pp-apply:hover { background: #4f46e5; }
+.patchly-pp-reject { background: #f5f5f5; color: #444; }
+.patchly-pp-reject:hover { background: #ebebeb; }
+
+.patchly-pp-kbd {
+  opacity: 0.7;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* ─── Loading / progress panel ───────────────────────────────────────────── */
+
+#patchly-loading {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  padding: 14px 16px;
+  pointer-events: all;
+}
+
+.patchly-ld-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.patchly-ld-spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid #e0e0ff;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: patchly-spin 0.7s linear infinite;
+}
+
+@keyframes patchly-spin { to { transform: rotate(360deg); } }
+
+.patchly-ld-stage { flex: 1; font-weight: 600; color: #1a1a1a; }
+.patchly-ld-time { font-size: 11px; color: #999; font-variant-numeric: tabular-nums; }
+
+.patchly-ld-text {
+  margin-top: 8px;
+  color: #555;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow: hidden;
+}
+
+/* ─── Edit history sidebar ───────────────────────────────────────────────── */
+
+#patchly-history {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 300px;
+  max-width: 85vw;
+  background: #ffffff;
+  border-left: 1px solid #e0e0e0;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.10);
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  pointer-events: all;
+}
+
+#patchly-history.open {
+  transform: translateX(0);
+}
+
+.patchly-hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 600;
+}
+
+.patchly-hist-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: #999;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.patchly-hist-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.patchly-hist-empty {
+  color: #aaa;
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 12px;
+}
+
+.patchly-hist-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.patchly-hist-row:hover { background: #f7f7fb; }
+.patchly-hist-row.undone { opacity: 0.45; }
+
+.patchly-hist-main { flex: 1; min-width: 0; }
+
+.patchly-hist-file {
+  font-size: 11px;
+  color: #6366f1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin-bottom: 2px;
+}
+
+.patchly-hist-expl {
+  color: #333;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.patchly-hist-ts {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+}
+
+.patchly-hist-undo {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #555;
+  font-family: inherit;
+}
+
+.patchly-hist-undo:hover { background: #f0f0f0; }
+.patchly-hist-undo:disabled { opacity: 0.4; cursor: default; }
+
+#patchly-history-tab {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 8px 0 0 8px;
+  padding: 8px 6px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  z-index: 2147483645;
+  writing-mode: vertical-rl;
+  letter-spacing: 0.5px;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.12);
+  display: none;
+}

@@ -7,7 +7,12 @@ import { undoEdit } from './fileEditor.js'
 import { applyEditOperations } from './ast/applyEdit.js'
 
 const pendingEdits = new Map()  // sessionId → { operations }
-let lastEdit = null  // tracks the most recent applied edit for undo
+// editId → { absolutePath, snapshot, filePath, lineNumber, explanation }.
+// One entry per applied edit so the extension's history sidebar can undo any of
+// them individually. Note: undoing an older edit when a newer edit touched the
+// same file restores the older snapshot wholesale (last-write-wins) — acceptable
+// for v2, no per-hunk stacking.
+const editHistory = new Map()
 
 export async function startServer(port, config) {
   const wss = new WebSocketServer({ port })
@@ -57,6 +62,15 @@ export async function startServer(port, config) {
         console.log('Target line:', sourceResult.targetLine)
         console.log('Source resolved. Calling LLM...')
 
+        const sendProgress = (stage, text) => {
+          ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
+        }
+
+        sendProgress('analyzing')
+
+        const onProgress = (p) => sendProgress(p.stage || 'generating', p.text)
+
+        sendProgress('generating')
         let llmResult = await getEditInstruction({
           sourceResult,
           elementHtml,
@@ -64,10 +78,12 @@ export async function startServer(port, config) {
           prompt,
           config,
           screenshot_base64,
+          onProgress,
         })
 
         if (!llmResult.ok && llmResult.code === 'JSON_PARSE_FAILED') {
           console.log('LLM returned invalid JSON, retrying with stricter prompt...')
+          sendProgress('generating')
           llmResult = await getEditInstruction({
             sourceResult,
             elementHtml,
@@ -75,6 +91,7 @@ export async function startServer(port, config) {
             prompt: prompt + ' — respond with ONLY the JSON object, nothing else',
             config,
             screenshot_base64,
+            onProgress,
           })
         }
 
@@ -109,6 +126,8 @@ export async function startServer(port, config) {
           target: { ...op.target, file: sourceResult.relativePath },
         }))
 
+        sendProgress('building')
+
         // Dry-run the pipeline to produce a preview diff without writing.
         const preview = await applyEditOperations({
           projectRoot: config.projectRoot,
@@ -127,7 +146,11 @@ export async function startServer(port, config) {
           return
         }
 
-        pendingEdits.set(sessionId, { operations })
+        pendingEdits.set(sessionId, {
+          operations,
+          explanation: llmResult.explanation,
+          lineNumber: sourceResult.lineNumber,
+        })
 
         ws.send(JSON.stringify({
           type: MSG.PREVIEW,
@@ -171,12 +194,22 @@ export async function startServer(port, config) {
           return
         }
 
-        lastEdit = { absolutePath: editResult.absolutePath, previousContent: editResult.snapshot }
+        const editId = Math.random().toString(36).slice(2)
+        editHistory.set(editId, {
+          absolutePath: editResult.absolutePath,
+          snapshot: editResult.snapshot,
+          filePath: editResult.filePath,
+          lineNumber: pending.lineNumber,
+          explanation: pending.explanation,
+        })
 
         ws.send(JSON.stringify({
           type: MSG.EDIT_DONE,
           sessionId,
+          editId,
           filePath: editResult.filePath,
+          lineNumber: pending.lineNumber,
+          explanation: pending.explanation,
         }))
       }
 
@@ -185,7 +218,16 @@ export async function startServer(port, config) {
       }
 
       if (msg.type === MSG.UNDO) {
-        if (!lastEdit) {
+        // Resolve the target edit: explicit editId, else the most recent entry.
+        let editId = msg.editId
+        if (!editId) {
+          const ids = [...editHistory.keys()]
+          editId = ids[ids.length - 1]
+        }
+
+        const entry = editId ? editHistory.get(editId) : null
+
+        if (!entry) {
           ws.send(JSON.stringify({
             type: MSG.EDIT_ERROR,
             code: 'NOTHING_TO_UNDO',
@@ -194,8 +236,7 @@ export async function startServer(port, config) {
           return
         }
 
-        const undoResult = undoEdit({ absolutePath: lastEdit.absolutePath, previousContent: lastEdit.previousContent })
-        lastEdit = null
+        const undoResult = undoEdit({ absolutePath: entry.absolutePath, previousContent: entry.snapshot })
 
         if (!undoResult.success) {
           ws.send(JSON.stringify({
@@ -206,7 +247,9 @@ export async function startServer(port, config) {
           return
         }
 
-        ws.send(JSON.stringify({ type: MSG.UNDO_DONE }))
+        editHistory.delete(editId)
+
+        ws.send(JSON.stringify({ type: MSG.UNDO_DONE, editId }))
       }
     })
 

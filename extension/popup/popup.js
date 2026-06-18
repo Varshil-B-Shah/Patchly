@@ -37,3 +37,22 @@ chrome.runtime.onMessage.addListener((msg) => {
     setConnected(msg.connected)
   }
 })
+
+// ─── Edit-application settings ────────────────────────────────────────────────
+const autoApplyEl = document.getElementById('auto-apply')
+const thresholdEl = document.getElementById('confidence-threshold')
+
+chrome.storage.local.get({ autoApply: false, confidenceThreshold: 0.9 }, (s) => {
+  autoApplyEl.checked = !!s.autoApply
+  thresholdEl.value = String(s.confidenceThreshold)
+  thresholdEl.disabled = !s.autoApply
+})
+
+autoApplyEl.addEventListener('change', () => {
+  chrome.storage.local.set({ autoApply: autoApplyEl.checked })
+  thresholdEl.disabled = !autoApplyEl.checked
+})
+
+thresholdEl.addEventListener('change', () => {
+  chrome.storage.local.set({ confidenceThreshold: parseFloat(thresholdEl.value) })
+})

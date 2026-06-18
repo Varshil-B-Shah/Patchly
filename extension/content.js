@@ -29,26 +29,38 @@ function connect() {
         } catch (e) { return }
       }
 
+      if (msg.type === 'PATCHLY_PROGRESS') {
+        if (window.__patchlyUpdateLoading) window.__patchlyUpdateLoading(msg)
+      }
+
       if (msg.type === 'PATCHLY_PREVIEW') {
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
         if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowPreview) window.__patchlyShowPreview(msg)
       }
 
       if (msg.type === 'PATCHLY_EDIT_DONE') {
-        if (window.__patchlyShowSuccess) window.__patchlyShowSuccess({ filePath: msg.filePath })
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
+        recordEdit(msg)
+        if (window.__patchlyShowSuccess) {
+          window.__patchlyShowSuccess({ filePath: msg.filePath, editId: msg.editId })
+        }
       }
 
       if (msg.type === 'PATCHLY_EDIT_ERROR') {
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
         if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowError) window.__patchlyShowError(msg.message)
       }
 
       if (msg.type === 'PATCHLY_INFO') {
+        if (window.__patchlyHideLoading) window.__patchlyHideLoading()
         if (window.__patchlyResetPromptBar) window.__patchlyResetPromptBar()
         if (window.__patchlyShowInfo) window.__patchlyShowInfo(msg.message)
       }
 
       if (msg.type === 'PATCHLY_UNDO_DONE') {
+        removeEdit(msg.editId)
         if (window.__patchlyShowSuccess) window.__patchlyShowSuccess({ filePath: 'Undone', showUndo: false })
       }
     }
@@ -83,6 +95,68 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (window.__patchlyActivate) window.__patchlyActivate()
   }
 })
+
+// ─── Edit history persistence (chrome.storage.session) ───────────────────────
+const HISTORY_KEY = 'patchly_edits'
+let firstEditThisLoad = true
+
+function getEdits(cb) {
+  try {
+    chrome.storage.session.get({ [HISTORY_KEY]: [] }, (res) => {
+      cb(chrome.runtime.lastError ? [] : (res[HISTORY_KEY] || []))
+    })
+  } catch {
+    cb([])
+  }
+}
+
+function setEdits(edits, done) {
+  try {
+    chrome.storage.session.set({ [HISTORY_KEY]: edits }, () => done && done())
+  } catch {
+    done && done()
+  }
+}
+
+function recordEdit(msg) {
+  getEdits((edits) => {
+    edits.push({
+      editId: msg.editId,
+      filePath: msg.filePath,
+      lineNumber: msg.lineNumber,
+      explanation: msg.explanation,
+      ts: Date.now(),
+    })
+    setEdits(edits, () => {
+      if (window.__patchlyRenderHistory) window.__patchlyRenderHistory()
+      // Auto-open the sidebar on the first edit of this page load.
+      if (firstEditThisLoad && window.__patchlyOpenHistory) {
+        firstEditThisLoad = false
+        window.__patchlyOpenHistory()
+      }
+    })
+  })
+}
+
+function removeEdit(editId) {
+  getEdits((edits) => {
+    const next = editId ? edits.filter((e) => e.editId !== editId) : edits.slice(0, -1)
+    setEdits(next, () => {
+      if (window.__patchlyRenderHistory) window.__patchlyRenderHistory()
+    })
+  })
+}
+
+// Hydrate the sidebar from any edits persisted earlier this session. Deferred so
+// overlay.js (loaded after content.js) has registered __patchlyRenderHistory.
+setTimeout(() => {
+  getEdits((edits) => {
+    if (edits.length) {
+      firstEditThisLoad = false  // don't auto-open just for rehydration
+      if (window.__patchlyRenderHistory) window.__patchlyRenderHistory()
+    }
+  })
+}, 0)
 
 // Send an EDIT_REQUEST to the agent over the existing WebSocket
 function sendEditRequest(payload) {

@@ -13,6 +13,7 @@ export const MSG = {
   EDIT_DONE:    'PATCHLY_EDIT_DONE',
   EDIT_ERROR:   'PATCHLY_EDIT_ERROR',
   STATUS:       'PATCHLY_STATUS',
+  PROGRESS:     'PATCHLY_PROGRESS',
   PREVIEW:      'PATCHLY_PREVIEW',
   UNDO_DONE:    'PATCHLY_UNDO_DONE',
   INFO:         'PATCHLY_INFO',
@@ -84,6 +85,14 @@ export const ERROR_CODES = Object.freeze({
 //   screenshot_base64?: string,     // base64 PNG of the cropped element (Phase 7); null if capture failed
 // }
 
+// PROGRESS payload (Agent → Extension): live status while an edit is being prepared.
+// {
+//   type: MSG.PROGRESS,
+//   sessionId: string,
+//   stage: 'analyzing' | 'generating' | 'building',
+//   text?: string,             // streamed explanation (during 'generating'), if available
+// }
+
 // PREVIEW payload:
 // {
 //   type: MSG.PREVIEW,
@@ -99,7 +108,22 @@ export const ERROR_CODES = Object.freeze({
 // {
 //   type: MSG.EDIT_DONE,
 //   sessionId: string,
+//   editId: string,            // id for this applied edit (used by per-edit undo + history)
 //   filePath: string,          // relative path of edited file
+//   lineNumber: number,
+//   explanation: string,       // one-sentence summary, shown in the history sidebar
+// }
+
+// UNDO payload (Extension → Agent):
+// {
+//   type: MSG.UNDO,
+//   editId?: string,           // undo this specific edit; if omitted, undo the most recent
+// }
+
+// UNDO_DONE payload:
+// {
+//   type: MSG.UNDO_DONE,
+//   editId: string,            // the edit that was reverted
 // }
 
 // EDIT_ERROR payload:

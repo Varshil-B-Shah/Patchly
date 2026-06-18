@@ -1,6 +1,11 @@
 // background.js
 // MV3 service worker — handles screenshot capture requests from content scripts.
 
+// chrome.storage.session defaults to TRUSTED_CONTEXTS only, which excludes
+// content scripts. The edit-history sidebar (in overlay.js, a content script)
+// reads/writes session storage, so grant untrusted contexts access.
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' })
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'CAPTURE_SCREENSHOT') {
     // Use callback form — Promise + return true can drop the response if the

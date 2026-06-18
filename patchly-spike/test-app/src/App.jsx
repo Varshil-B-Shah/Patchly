@@ -18,7 +18,7 @@ export default function App() {
       <section className="px-8 py-6">
         <h2 className="text-2xl font-semibold text-gray-800">Edge Case: Conditional</h2>
         <button
-          className="mt-2 px-4 py-1 bg-gray-200 rounded"
+          className="mt-2 px-4 py-1 rounded bg-gradient-to-r from-red-600 to-blue-700 text-white font-bold shadow-md hover:shadow-lg hover:from-red-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200"
           onClick={() => setIsVisible(v => !v)}
         >
           Toggle

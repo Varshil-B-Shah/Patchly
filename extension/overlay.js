@@ -290,11 +290,15 @@ async function submitPrompt() {
 
   if (window.__patchlySend) {
     window.__patchlySend(payload)
+    // Replace the prompt bar with a live progress panel so the wait feels active.
+    if (promptBar) promptBar.style.display = 'none'
+    promptInput.value = ''
+    promptInput.disabled = false
     const submitBtn = document.getElementById('patchly-prompt-submit')
-    submitBtn.textContent = '...'
-    submitBtn.disabled = true
-    submitBtn.style.background = '#818cf8'
-    promptInput.disabled = true
+    submitBtn.textContent = 'Apply'
+    submitBtn.disabled = false
+    submitBtn.style.background = ''
+    showLoadingPanel()
   } else {
     console.warn('[Patchly] __patchlySend not available')
   }
@@ -320,76 +324,189 @@ window.__patchlyResetPromptBar = resetPromptBar
 window.__patchlyActivate = activate
 window.__patchlyCancel = cancel
 
-function showPreviewToast({ explanation, find, replace, filePath, lineNumber, sessionId }) {
-  const existing = document.getElementById('patchly-toast')
-  if (existing) existing.remove()
+// Escape user/LLM-provided text before injecting into innerHTML.
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
 
-  const toast = document.createElement('div')
-  toast.id = 'patchly-toast'
-  toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 14px 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-    z-index: 2147483647;
-    max-width: 380px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 13px;
-    pointer-events: all;
+// Render a unified diff string into color-coded <span> rows.
+function renderDiff(diff) {
+  return (diff || '')
+    .split('\n')
+    .map((line) => {
+      let cls = 'patchly-diff-ctx'
+      if (line.startsWith('@@')) cls = 'patchly-diff-hunk'
+      else if (line.startsWith('+++') || line.startsWith('---')) cls = 'patchly-diff-ctx'
+      else if (line.startsWith('+')) cls = 'patchly-diff-add'
+      else if (line.startsWith('-')) cls = 'patchly-diff-del'
+      return `<span class="patchly-diff-line ${cls}">${escapeHtml(line) || ' '}</span>`
+    })
+    .join('')
+}
+
+function confidenceClass(pct) {
+  if (pct >= 90) return 'high'
+  if (pct >= 70) return 'medium'
+  return 'low'
+}
+
+let previewKeyHandler = null
+
+function closePreviewPanel() {
+  const panel = document.getElementById('patchly-preview-panel')
+  if (panel) panel.remove()
+  if (previewKeyHandler) {
+    document.removeEventListener('keydown', previewKeyHandler, true)
+    previewKeyHandler = null
+  }
+}
+
+// Decide whether to auto-apply (high confidence + opt-in) or show the diff panel.
+async function showPreview(msg) {
+  const settings = await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(
+        { autoApply: false, confidenceThreshold: 0.9 },
+        (s) => resolve(chrome.runtime.lastError ? { autoApply: false, confidenceThreshold: 0.9 } : s),
+      )
+    } catch {
+      resolve({ autoApply: false, confidenceThreshold: 0.9 })
+    }
+  })
+
+  const confidence = typeof msg.confidence === 'number' ? msg.confidence : 0
+
+  if (settings.autoApply && confidence >= settings.confidenceThreshold) {
+    if (window.__patchlySendToAgent) {
+      window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId: msg.sessionId })
+    }
+    showInfoToast(`Auto-applied (${Math.round(confidence * 100)}% confidence): ${msg.explanation}`)
+    return
+  }
+
+  showPreviewPanel(msg)
+}
+
+// ─── Loading / progress panel ────────────────────────────────────────────────
+const STAGE_LABELS = {
+  analyzing: 'Analyzing component…',
+  generating: 'Asking the model…',
+  building: 'Building preview…',
+}
+let loadingTimer = null
+let loadingStart = 0
+
+function showLoadingPanel() {
+  hideLoadingPanel()
+  const panel = document.createElement('div')
+  panel.id = 'patchly-loading'
+  panel.innerHTML = `
+    <div class="patchly-ld-row">
+      <div class="patchly-ld-spinner"></div>
+      <div class="patchly-ld-stage">${STAGE_LABELS.analyzing}</div>
+      <div class="patchly-ld-time">0s</div>
+    </div>
+    <div class="patchly-ld-text" style="display:none"></div>
+  `
+  document.body.appendChild(panel)
+
+  loadingStart = Date.now()
+  const timeEl = panel.querySelector('.patchly-ld-time')
+  loadingTimer = setInterval(() => {
+    timeEl.textContent = `${Math.round((Date.now() - loadingStart) / 1000)}s`
+  }, 250)
+}
+
+function updateLoadingPanel({ stage, text }) {
+  const panel = document.getElementById('patchly-loading')
+  if (!panel) return
+  if (stage && STAGE_LABELS[stage]) {
+    panel.querySelector('.patchly-ld-stage').textContent = STAGE_LABELS[stage]
+  }
+  if (text) {
+    const textEl = panel.querySelector('.patchly-ld-text')
+    textEl.textContent = text
+    textEl.style.display = 'block'
+  }
+}
+
+function hideLoadingPanel() {
+  if (loadingTimer) {
+    clearInterval(loadingTimer)
+    loadingTimer = null
+  }
+  const panel = document.getElementById('patchly-loading')
+  if (panel) panel.remove()
+}
+
+window.__patchlyShowLoading = showLoadingPanel
+window.__patchlyUpdateLoading = updateLoadingPanel
+window.__patchlyHideLoading = hideLoadingPanel
+
+function showPreviewPanel({ explanation, confidence, diff, filePath, lineNumber, sessionId }) {
+  closePreviewPanel()
+  const existingToast = document.getElementById('patchly-toast')
+  if (existingToast) existingToast.remove()
+
+  const pct = Math.round((typeof confidence === 'number' ? confidence : 0) * 100)
+
+  const panel = document.createElement('div')
+  panel.id = 'patchly-preview-panel'
+  panel.innerHTML = `
+    <div class="patchly-pp-head">
+      <div class="patchly-pp-title-row">
+        <div class="patchly-pp-title">${escapeHtml(explanation)}</div>
+        <span class="patchly-pp-conf ${confidenceClass(pct)}">${pct}%</span>
+      </div>
+      <div class="patchly-pp-meta">${escapeHtml(filePath)} &middot; line ${lineNumber}</div>
+    </div>
+    <div class="patchly-pp-diff">${renderDiff(diff)}</div>
+    <div class="patchly-pp-actions">
+      <button class="patchly-pp-btn patchly-pp-apply">Apply<span class="patchly-pp-kbd">&crarr;</span></button>
+      <button class="patchly-pp-btn patchly-pp-reject">Reject<span class="patchly-pp-kbd">Esc</span></button>
+    </div>
   `
 
-  toast.innerHTML = `
-    <div style="font-weight:600;margin-bottom:6px;color:#1a1a1a">
-      Patchly will:
-    </div>
-    <div style="color:#444;margin-bottom:10px;line-height:1.4">
-      ${explanation}
-    </div>
-    <div style="font-size:11px;color:#888;margin-bottom:12px">
-      ${filePath} &middot; line ${lineNumber}
-    </div>
-    <div style="display:flex;gap:8px">
-      <button id="patchly-confirm" style="
-        flex:1;background:#6366f1;color:#fff;border:none;
-        border-radius:7px;padding:7px;font-size:13px;cursor:pointer;
-        font-family:inherit;
-      ">Apply</button>
-      <button id="patchly-reject" style="
-        flex:1;background:#f5f5f5;color:#444;border:none;
-        border-radius:7px;padding:7px;font-size:13px;cursor:pointer;
-        font-family:inherit;
-      ">Cancel</button>
-    </div>
-  `
+  document.body.appendChild(panel)
 
-  document.body.appendChild(toast)
-
-  document.getElementById('patchly-confirm').onclick = () => {
-    toast.remove()
+  const apply = () => {
+    closePreviewPanel()
     if (window.__patchlySendToAgent) {
       window.__patchlySendToAgent({ type: 'PATCHLY_CONFIRM', sessionId })
     }
   }
-
-  document.getElementById('patchly-reject').onclick = () => {
-    toast.remove()
+  const reject = () => {
+    closePreviewPanel()
     if (window.__patchlySendToAgent) {
       window.__patchlySendToAgent({ type: 'PATCHLY_REJECT', sessionId })
     }
   }
 
-  setTimeout(() => {
-    if (document.getElementById('patchly-toast') === toast) toast.remove()
-  }, 30000)
+  panel.querySelector('.patchly-pp-apply').onclick = apply
+  panel.querySelector('.patchly-pp-reject').onclick = reject
+
+  // Scoped key handling: Enter applies, Esc rejects. Capture phase + stopPropagation
+  // so the global Esc handler in content.js doesn't also fire selection-cancel.
+  previewKeyHandler = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      apply()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      reject()
+    }
+  }
+  document.addEventListener('keydown', previewKeyHandler, true)
 }
 
-window.__patchlyShowPreview = showPreviewToast
+window.__patchlyShowPreview = showPreview
 
-function showSuccessToast({ filePath, showUndo = true }) {
+function showSuccessToast({ filePath, showUndo = true, editId = null }) {
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
 
@@ -432,7 +549,7 @@ function showSuccessToast({ filePath, showUndo = true }) {
     document.getElementById('patchly-undo-btn').onclick = () => {
       toast.remove()
       if (window.__patchlySendToAgent) {
-        window.__patchlySendToAgent({ type: 'PATCHLY_UNDO' })
+        window.__patchlySendToAgent({ type: 'PATCHLY_UNDO', editId })
       }
     }
   }
@@ -513,3 +630,116 @@ function showInfoToast(message) {
 window.__patchlyShowSuccess = showSuccessToast
 window.__patchlyShowError = showErrorToast
 window.__patchlyShowInfo = showInfoToast
+
+// ─── Edit history sidebar ─────────────────────────────────────────────────────
+// Source of truth is chrome.storage.session ('patchly_edits'); content.js writes
+// it on EDIT_DONE / UNDO_DONE. This module only renders and wires per-row undo.
+
+const PATCHLY_HISTORY_KEY = 'patchly_edits'
+let historyInited = false
+
+function readHistory() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.session.get({ [PATCHLY_HISTORY_KEY]: [] }, (res) => {
+        resolve(chrome.runtime.lastError ? [] : (res[PATCHLY_HISTORY_KEY] || []))
+      })
+    } catch {
+      resolve([])
+    }
+  })
+}
+
+function ensureHistoryUI() {
+  if (historyInited) return
+  historyInited = true
+
+  const tab = document.createElement('button')
+  tab.id = 'patchly-history-tab'
+  tab.textContent = 'Patchly edits'
+  tab.onclick = openHistory
+  document.body.appendChild(tab)
+
+  const panel = document.createElement('div')
+  panel.id = 'patchly-history'
+  panel.innerHTML = `
+    <div class="patchly-hist-head">
+      <span>Patchly edits</span>
+      <button class="patchly-hist-close" title="Close">&times;</button>
+    </div>
+    <div class="patchly-hist-list"></div>
+  `
+  document.body.appendChild(panel)
+  panel.querySelector('.patchly-hist-close').onclick = closeHistory
+}
+
+function relativeTime(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.round(h / 24)}d ago`
+}
+
+async function renderHistory() {
+  ensureHistoryUI()
+  const edits = await readHistory()
+  const tab = document.getElementById('patchly-history-tab')
+  if (tab) tab.style.display = edits.length ? 'block' : 'none'
+
+  const list = document.querySelector('#patchly-history .patchly-hist-list')
+  if (!list) return
+
+  if (!edits.length) {
+    list.innerHTML = '<div class="patchly-hist-empty">No edits yet this session.</div>'
+    return
+  }
+
+  // Newest first.
+  list.innerHTML = edits
+    .slice()
+    .reverse()
+    .map((e) => {
+      const undone = e.undone
+      return `
+        <div class="patchly-hist-row${undone ? ' undone' : ''}" data-edit-id="${escapeHtml(e.editId)}">
+          <div class="patchly-hist-main">
+            <div class="patchly-hist-file">${escapeHtml(e.filePath)}:${e.lineNumber ?? '?'}</div>
+            <div class="patchly-hist-expl">${escapeHtml(e.explanation || 'Edit')}</div>
+            <div class="patchly-hist-ts">${relativeTime(e.ts)}${undone ? ' · undone' : ''}</div>
+          </div>
+          <button class="patchly-hist-undo" ${undone ? 'disabled' : ''}>&#8624;</button>
+        </div>
+      `
+    })
+    .join('')
+
+  list.querySelectorAll('.patchly-hist-row').forEach((row) => {
+    const editId = row.getAttribute('data-edit-id')
+    const btn = row.querySelector('.patchly-hist-undo')
+    if (btn && !btn.disabled) {
+      btn.onclick = () => {
+        if (window.__patchlySendToAgent) {
+          window.__patchlySendToAgent({ type: 'PATCHLY_UNDO', editId })
+        }
+      }
+    }
+  })
+}
+
+function openHistory() {
+  ensureHistoryUI()
+  const panel = document.getElementById('patchly-history')
+  if (panel) panel.classList.add('open')
+  renderHistory()
+}
+
+function closeHistory() {
+  const panel = document.getElementById('patchly-history')
+  if (panel) panel.classList.remove('open')
+}
+
+window.__patchlyRenderHistory = renderHistory
+window.__patchlyOpenHistory = openHistory

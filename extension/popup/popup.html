@@ -58,6 +58,50 @@
       font-size: 12px;
       color: #4f46e5;
     }
+    .settings {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+    .settings-title {
+      font-weight: 600;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .setting-label {
+      color: #444;
+      font-size: 12px;
+    }
+    .setting-sub {
+      color: #999;
+      font-size: 11px;
+      margin-top: 1px;
+    }
+    /* toggle switch */
+    .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; cursor: pointer;
+      background: #ccc; border-radius: 20px; transition: .2s;
+    }
+    .slider:before {
+      content: ""; position: absolute; height: 16px; width: 16px;
+      left: 2px; bottom: 2px; background: #fff; border-radius: 50%; transition: .2s;
+    }
+    .switch input:checked + .slider { background: #6366f1; }
+    .switch input:checked + .slider:before { transform: translateX(16px); }
+    select {
+      font-size: 12px; padding: 3px 6px; border: 1px solid #ddd;
+      border-radius: 6px; color: #444; background: #fff; font-family: inherit;
+    }
+    select:disabled { opacity: 0.5; }
   </style>
 </head>
 <body>
@@ -76,6 +120,32 @@
 
   <div class="shortcut" id="shortcut" style="display:none">
     Press <strong>Alt+Shift+P</strong> to select an area
+  </div>
+
+  <div class="settings">
+    <div class="settings-title">Edit application</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Auto-apply trusted edits</div>
+        <div class="setting-sub">Skip the preview when confidence is high</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="auto-apply" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Confidence threshold</div>
+        <div class="setting-sub">Minimum to auto-apply</div>
+      </div>
+      <select id="confidence-threshold">
+        <option value="0.7">70%</option>
+        <option value="0.8">80%</option>
+        <option value="0.9">90%</option>
+        <option value="0.95">95%</option>
+      </select>
+    </div>
   </div>
 
   <script src="popup.js"></script>
