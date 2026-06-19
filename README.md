@@ -63,6 +63,13 @@ Made a mistake? Open the **edit history** sidebar and click **Undo** on any past
   one-click "Edit that component instead".
 - **Design-token aware** — the model is fed your Tailwind config tokens, global CSS, and a
   screenshot of the selection, so edits use *your* brand colors and spacing, not generic guesses.
+- **Direct class panel (no AI)** — switch the selection to the **Classes** tab to open a docked,
+  Figma-style inspector sidebar. See an element's Tailwind classes as devtools-style toggle rows,
+  flip them on/off, remove them, or search a built-in catalog (`items-center`, `hover:bg-…`, your
+  theme colors) and click to add. Works across a **multi-select** (changes apply to every selected
+  element; classes present on only some show as "mixed"). Edits write instantly with Tailwind
+  conflict resolution, and the panel has its **own** undo/redo buttons — separate from the AI edit
+  history below.
 
 ---
 
