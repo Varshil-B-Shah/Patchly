@@ -198,6 +198,11 @@ export function extractThemeTokens(configText: string): ThemeTokens {
   return { colors }
 }
 
+/** Best-effort check: does the project have a tailwind.config.*? Gates Tailwind mode. */
+export function isTailwindConfigured(projectRoot: string): boolean {
+  return findTailwindConfig(projectRoot) !== null
+}
+
 /** Load theme tokens from the project's Tailwind config (or return empty). */
 export function loadThemeTokens(projectRoot: string): ThemeTokens {
   const twPath = findTailwindConfig(projectRoot)

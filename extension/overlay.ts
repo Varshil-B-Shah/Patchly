@@ -1,35 +1,51 @@
 // extension/overlay.ts
-// Handles all visual selection UI. Bundled as IIFE by esbuild.
+// All in-page editing UI: the floating toolbar, element selection (AI + Tailwind
+// modes), the AI prompt bar, preview/toast panels. Bundled as an IIFE by esbuild.
 
-import { initClassPanel, showClassPanel, hideClassPanel, classEditError, classEditApplied } from './classPanel.js'
+import {
+  initClassPanel, showClassPanel, hideClassPanel, classEditError, classEditApplied,
+  undo as classUndo, redo as classRedo, canUndo as classCanUndo, canRedo as classCanRedo,
+} from './classPanel.js'
 import type { ClassInfo, ThemeTokens } from '../shared/protocol.js'
 
-const PATCHLY_PORT = 7842
+const DRAG_THRESHOLD = 5 // px of movement that turns a click into an area drag
 
 interface SrcCandidate {
   el: Element
   src: string
   area: number
 }
+interface SelectionRect { x: number; y: number; width: number; height: number }
 
-// State
-let isActive = false
+// ─── State ──────────────────────────────────────────────────────────────────────
+let isActive = false            // editing mode on/off
+let activeMode: 'ai' | 'tailwind' = 'ai'
+let mouseDown = false
 let isDragging = false
 let startX = 0, startY = 0
 let currentX = 0, currentY = 0
-let selectedElement: Element | null = null
+
+let selectedElement: Element | null = null   // AI single / batch anchor
 let selectedPatchlySrc: string | null = null
-let selectedTargets: Element[] | null = null
-let activeMode: 'ai' | 'classes' = 'ai'
+let selectedTargets: Element[] | null = null // AI batch (from picker)
+let selectedSet: Element[] = []              // Tailwind multi-select (Ctrl+Click)
 let pendingInspectSessionId: string | null = null
 
-// DOM elements (created once, reused)
+// DOM (created once)
 let root: HTMLDivElement | null = null
+let toolbar: HTMLDivElement | null = null
 let selectionRect: HTMLDivElement | null = null
 let elementHighlight: HTMLDivElement | null = null
-let promptBar: HTMLDivElement | null = null
-let promptInput: HTMLInputElement | null = null
 let componentLabel: HTMLDivElement | null = null
+let promptBar: HTMLDivElement | null = null
+let promptInput: HTMLTextAreaElement | null = null
+let selHighlights: HTMLDivElement[] = []     // Tailwind multi-select outline pool
+
+function escapeHtml(s: string): string {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
 function init(): void {
   if (document.getElementById('patchly-root')) return
@@ -50,64 +66,232 @@ function init(): void {
   componentLabel.id = 'patchly-component-label'
   document.body.appendChild(componentLabel)
 
+  buildToolbar()
+
   promptBar = document.createElement('div')
   promptBar.id = 'patchly-prompt-bar'
   promptBar.innerHTML = `
-    <div class="patchly-pb-tabs">
-      <button class="patchly-pb-tab active" data-mode="ai">AI</button>
-      <button class="patchly-pb-tab" data-mode="classes">Classes</button>
-      <button id="patchly-prompt-cancel" class="patchly-pb-close">×</button>
-    </div>
-    <div class="patchly-pb-ai-body">
-      <input id="patchly-prompt-input" type="text" placeholder="Describe what to change..." autocomplete="off" />
-      <button id="patchly-prompt-submit">Apply</button>
-    </div>
+    <textarea id="patchly-prompt-input" rows="1" placeholder="Describe what to change…" autocomplete="off"></textarea>
+    <button id="patchly-prompt-submit">Apply</button>
+    <button id="patchly-prompt-cancel" title="Dismiss">×</button>
   `
   document.body.appendChild(promptBar)
 
-  promptInput = document.getElementById('patchly-prompt-input') as HTMLInputElement
-
+  promptInput = document.getElementById('patchly-prompt-input') as HTMLTextAreaElement
   document.getElementById('patchly-prompt-submit')!.addEventListener('click', submitPrompt)
-  document.getElementById('patchly-prompt-cancel')!.addEventListener('click', cancel)
+  document.getElementById('patchly-prompt-cancel')!.addEventListener('click', dismissSelection)
 
-  promptBar.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      const mode = tab.getAttribute('data-mode') as 'ai' | 'classes'
-      setMode(mode)
-    })
+  promptInput.addEventListener('input', autoGrowPrompt)
+  promptInput.addEventListener('keydown', (e: KeyboardEvent) => {
+    e.stopPropagation()
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitPrompt() }
+    if (e.key === 'Escape') dismissSelection()
   })
 
   root.addEventListener('mousedown', onMouseDown)
   root.addEventListener('mousemove', onMouseMove)
   root.addEventListener('mouseup', onMouseUp)
 
-  promptInput.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter') submitPrompt()
-    if (e.key === 'Escape') cancel()
-    e.stopPropagation()
-  })
-
   initClassPanel()
 }
 
-function setMode(mode: 'ai' | 'classes'): void {
-  activeMode = mode
-  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
-  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
-    t.classList.toggle('active', t.getAttribute('data-mode') === mode)
-  })
+// ─── Floating toolbar ────────────────────────────────────────────────────────
 
-  if (mode === 'ai') {
-    if (aiBody) aiBody.style.display = 'flex'
-    hideClassPanel()
-    setTimeout(() => promptInput?.focus(), 50)
+function buildToolbar(): void {
+  toolbar = document.createElement('div')
+  toolbar.id = 'patchly-toolbar'
+  toolbar.innerHTML = `
+    <div class="patchly-tb-tabs">
+      <button class="patchly-tb-tab active" data-mode="ai">AI Mode</button>
+      <button class="patchly-tb-tab" data-mode="tailwind">Tailwind Mode</button>
+    </div>
+    <span class="patchly-tb-sep"></span>
+    <button class="patchly-tb-undo" title="Undo">↶</button>
+    <button class="patchly-tb-redo" title="Redo">↷</button>
+    <span class="patchly-tb-sep"></span>
+    <button class="patchly-tb-settings" title="Settings">⚙</button>
+    <span class="patchly-tb-dot" title="Agent status"></span>
+    <button class="patchly-tb-close" title="Exit editing (Esc)">×</button>
+    <div class="patchly-tb-settings-pop" style="display:none">
+      <label class="patchly-tb-set-row">
+        <span>Auto-apply trusted edits</span>
+        <input type="checkbox" id="patchly-set-autoapply" />
+      </label>
+      <label class="patchly-tb-set-row">
+        <span>Confidence threshold</span>
+        <select id="patchly-set-threshold">
+          <option value="0.7">70%</option>
+          <option value="0.8">80%</option>
+          <option value="0.9">90%</option>
+          <option value="0.95">95%</option>
+        </select>
+      </label>
+    </div>
+  `
+  document.body.appendChild(toolbar)
+
+  toolbar.querySelectorAll<HTMLButtonElement>('.patchly-tb-tab').forEach((tab) => {
+    tab.addEventListener('click', () => setMode(tab.getAttribute('data-mode') as 'ai' | 'tailwind'))
+  })
+  ;(toolbar.querySelector('.patchly-tb-undo') as HTMLButtonElement).addEventListener('click', onUndo)
+  ;(toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement).addEventListener('click', onRedo)
+  ;(toolbar.querySelector('.patchly-tb-close') as HTMLButtonElement).addEventListener('click', exitEditing)
+  ;(toolbar.querySelector('.patchly-tb-settings') as HTMLButtonElement).addEventListener('click', toggleSettings)
+
+  // Settings popover wiring (same chrome.storage.local keys the preview reads).
+  const autoEl = toolbar.querySelector('#patchly-set-autoapply') as HTMLInputElement
+  const thrEl = toolbar.querySelector('#patchly-set-threshold') as HTMLSelectElement
+  try {
+    chrome.storage.local.get({ autoApply: false, confidenceThreshold: 0.9 }, (s) => {
+      const v = s as { autoApply: boolean; confidenceThreshold: number }
+      autoEl.checked = !!v.autoApply
+      thrEl.value = String(v.confidenceThreshold)
+      thrEl.disabled = !v.autoApply
+    })
+  } catch { /* storage unavailable */ }
+  autoEl.addEventListener('change', () => {
+    chrome.storage.local.set({ autoApply: autoEl.checked })
+    thrEl.disabled = !autoEl.checked
+  })
+  thrEl.addEventListener('change', () => {
+    chrome.storage.local.set({ confidenceThreshold: parseFloat(thrEl.value) })
+  })
+}
+
+function toggleSettings(): void {
+  const pop = toolbar?.querySelector('.patchly-tb-settings-pop') as HTMLElement | null
+  if (pop) pop.style.display = pop.style.display === 'none' ? 'block' : 'none'
+}
+
+// Refresh tab active state + undo/redo availability for the current mode.
+function updateToolbar(): void {
+  if (!toolbar) return
+  toolbar.querySelectorAll<HTMLButtonElement>('.patchly-tb-tab').forEach((t) => {
+    t.classList.toggle('active', t.getAttribute('data-mode') === activeMode)
+  })
+  const undoBtn = toolbar.querySelector('.patchly-tb-undo') as HTMLButtonElement
+  const redoBtn = toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement
+  if (activeMode === 'ai') {
+    // AI is undo-only; redo is hidden.
+    undoBtn.style.display = ''
+    undoBtn.disabled = false
+    redoBtn.style.display = 'none'
   } else {
-    if (aiBody) aiBody.style.display = 'none'
-    inspectCurrentSelection()
+    undoBtn.style.display = ''
+    redoBtn.style.display = ''
+    undoBtn.disabled = !classCanUndo()
+    redoBtn.disabled = !classCanRedo()
   }
 }
 
-// The data-patchly-src pointers of whatever is currently selected (1 or many).
+function setConnectedDot(connected: boolean): void {
+  const dot = toolbar?.querySelector('.patchly-tb-dot') as HTMLElement | null
+  if (dot) dot.classList.toggle('connected', connected)
+}
+
+function onUndo(): void {
+  if (activeMode === 'ai') {
+    window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO' })
+  } else {
+    classUndo()
+  }
+}
+function onRedo(): void {
+  if (activeMode === 'tailwind') classRedo()
+}
+
+// ─── Editing-mode lifecycle ──────────────────────────────────────────────────
+
+function toggle(): void {
+  if (isActive) exitEditing()
+  else activate()
+}
+
+function activate(): void {
+  if (isActive) return
+  isActive = true
+  init()
+  root?.classList.add('active')
+  if (toolbar) toolbar.style.display = 'flex'
+  setConnectedDot(window.__patchlyIsConnected?.() ?? false)
+  updateToolbar()
+  window.addEventListener('scroll', onViewportChange, true)
+  window.addEventListener('resize', onViewportChange)
+}
+
+function exitEditing(): void {
+  isActive = false
+  mouseDown = false
+  isDragging = false
+  clearSelectionState()
+
+  root?.classList.remove('active')
+  if (toolbar) toolbar.style.display = 'none'
+  if (selectionRect) selectionRect.style.display = 'none'
+  if (elementHighlight) elementHighlight.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
+  if (promptBar) promptBar.style.display = 'none'
+  if (promptInput) promptInput.value = ''
+  hidePicker()
+  hideClassPanel()
+  clearSelHighlights()
+  window.removeEventListener('scroll', onViewportChange, true)
+  window.removeEventListener('resize', onViewportChange)
+}
+
+function clearSelectionState(): void {
+  selectedElement = null
+  selectedPatchlySrc = null
+  selectedTargets = null
+  selectedSet = []
+  pendingInspectSessionId = null
+}
+
+// Esc / dismiss → drop the current selection but stay in editing mode.
+function dismissSelection(): void {
+  selectedElement = null
+  selectedPatchlySrc = null
+  selectedTargets = null
+  if (promptBar) promptBar.style.display = 'none'
+  if (promptInput) promptInput.value = ''
+  if (elementHighlight) elementHighlight.style.display = 'none'
+  if (componentLabel) componentLabel.style.display = 'none'
+}
+
+function onViewportChange(): void {
+  if (isActive && activeMode === 'tailwind') renderSelHighlights()
+}
+
+// ─── Modes ───────────────────────────────────────────────────────────────────
+
+function setMode(mode: 'ai' | 'tailwind'): void {
+  activeMode = mode
+  updateToolbar()
+
+  // Clear any in-flight selection visuals when switching models.
+  if (promptBar) promptBar.style.display = 'none'
+  if (selectionRect) selectionRect.style.display = 'none'
+  hidePicker()
+
+  if (mode === 'ai') {
+    hideClassPanel()
+    clearSelHighlights()
+    selectedSet = []
+  } else {
+    // Entering Tailwind: if Tailwind isn't configured, tell the user.
+    if (window.__patchlyGetTailwindConfigured?.() === false) {
+      showInfoToast('Tailwind not detected in this project — class editing may not apply.')
+    }
+    // If something is already selected from AI, inspect it in the sidebar.
+    if (selectedElement) {
+      selectedSet = [selectedElement]
+      selectedTargets = selectedSet
+      renderSelHighlights()
+      inspectCurrentSelection()
+    }
+  }
+}
+
 function currentSelectionSrcs(): string[] {
   if (selectedTargets && selectedTargets.length) {
     return selectedTargets
@@ -118,95 +302,122 @@ function currentSelectionSrcs(): string[] {
   return []
 }
 
-// Ask the agent to inspect the current selection; result opens/updates the sidebar.
 function inspectCurrentSelection(): void {
   const srcs = currentSelectionSrcs()
-  if (!srcs.length) return
+  if (!srcs.length) { hideClassPanel(); return }
   pendingInspectSessionId = Math.random().toString(36).slice(2)
   window.__patchlyInspect?.(srcs, pendingInspectSessionId)
 }
 
-function activate(): void {
-  if (isActive) return
-  isActive = true
-  init()
-  root?.classList.add('active')
-  console.log('[Patchly] Selection mode activated. Draw a box around what to change.')
-}
-
-function cancel(): void {
-  isActive = false
-  isDragging = false
-  selectedElement = null
-  selectedPatchlySrc = null
-  selectedTargets = null
-  pendingInspectSessionId = null
-
-  root?.classList.remove('active')
-  if (selectionRect) selectionRect.style.display = 'none'
-  if (elementHighlight) elementHighlight.style.display = 'none'
-  if (promptBar) promptBar.style.display = 'none'
-  if (componentLabel) componentLabel.style.display = 'none'
-  if (promptInput) promptInput.value = ''
-  hidePicker()
-  hideClassPanel()
-}
+// ─── Mouse handling ──────────────────────────────────────────────────────────
 
 function onMouseDown(e: MouseEvent): void {
   if (!isActive) return
   e.preventDefault()
-  isDragging = true
-  startX = e.clientX
-  startY = e.clientY
-  currentX = e.clientX
-  currentY = e.clientY
-
+  mouseDown = true
+  isDragging = false
+  startX = currentX = e.clientX
+  startY = currentY = e.clientY
+  // Dismiss transient UI; keep the toolbar.
   if (promptBar) promptBar.style.display = 'none'
-  if (componentLabel) componentLabel.style.display = 'none'
-  if (promptInput) promptInput.value = ''
   hidePicker()
-
-  updateSelectionRect()
-  if (selectionRect) selectionRect.style.display = 'block'
 }
 
 function onMouseMove(e: MouseEvent): void {
-  if (!isDragging) return
+  if (!isActive) return
   currentX = e.clientX
   currentY = e.clientY
-  updateSelectionRect()
+
+  // AI mode: a held drag past the threshold becomes an area box.
+  if (mouseDown && activeMode === 'ai') {
+    const moved = Math.abs(currentX - startX) > DRAG_THRESHOLD || Math.abs(currentY - startY) > DRAG_THRESHOLD
+    if (moved) {
+      isDragging = true
+      updateSelectionRect()
+      if (selectionRect) selectionRect.style.display = 'block'
+      return
+    }
+  }
+
+  if (!isDragging) hoverHighlight(e.clientX, e.clientY)
 }
 
 function onMouseUp(e: MouseEvent): void {
-  if (!isDragging) return
-  isDragging = false
+  if (!isActive || !mouseDown) return
+  mouseDown = false
   currentX = e.clientX
   currentY = e.clientY
 
-  const rect = getSelectionRect()
-
-  if (rect.width < 5 || rect.height < 5) {
-    cancel()
+  if (activeMode === 'ai') {
+    if (isDragging) {
+      isDragging = false
+      const rect = getSelectionRect()
+      if (selectionRect) selectionRect.style.display = 'none'
+      if (rect.width < DRAG_THRESHOLD && rect.height < DRAG_THRESHOLD) return
+      findTargetElement(rect)
+    } else {
+      // Plain click → single element under cursor.
+      const el = elementAtPoint(e.clientX, e.clientY)
+      if (el) selectElement(el, pointRect(e.clientX, e.clientY))
+    }
     return
   }
 
-  findTargetElement(rect)
+  // Tailwind mode: click = single, Ctrl/Cmd+Click = toggle into multi-select.
+  isDragging = false
+  const el = elementAtPoint(e.clientX, e.clientY)
+  if (el) tailwindSelect(el, e.ctrlKey || e.metaKey)
+}
+
+// Nearest [data-patchly-src] under the cursor (skipping our own UI).
+function elementAtPoint(x: number, y: number): Element | null {
+  const stack = document.elementsFromPoint(x, y)
+  for (const el of stack) {
+    if (el.id && el.id.startsWith('patchly-')) continue
+    if (el.closest('[id^="patchly-"]')) continue
+    const match = el.closest('[data-patchly-src]')
+    if (match) return match
+  }
+  return null
+}
+
+function pointRect(x: number, y: number): SelectionRect {
+  return { x, y, width: 0, height: 0 }
+}
+
+// Live hover outline (both modes, before/over selection).
+function hoverHighlight(x: number, y: number): void {
+  // In AI mode, stop hovering once the prompt bar is showing for a selection.
+  if (activeMode === 'ai' && promptBar && promptBar.style.display !== 'none') return
+  const el = elementAtPoint(x, y)
+  if (!el || !elementHighlight) {
+    if (elementHighlight) elementHighlight.style.display = 'none'
+    if (componentLabel) componentLabel.style.display = 'none'
+    return
+  }
+  const r = el.getBoundingClientRect()
+  positionBox(elementHighlight, r)
+  elementHighlight.style.display = 'block'
+  const src = (el as HTMLElement).dataset.patchlySrc
+  if (componentLabel) {
+    componentLabel.textContent = src ? (src.split(':')[0].split('/').pop() ?? '') : el.tagName.toLowerCase()
+    componentLabel.style.left = r.left + 'px'
+    componentLabel.style.top = (r.top - 22) + 'px'
+    componentLabel.style.display = 'block'
+  }
+}
+
+function positionBox(box: HTMLElement, r: DOMRect | SelectionRect): void {
+  const left = 'left' in r ? r.left : r.x
+  const top = 'top' in r ? r.top : r.y
+  box.style.left = left + 'px'
+  box.style.top = top + 'px'
+  box.style.width = r.width + 'px'
+  box.style.height = r.height + 'px'
 }
 
 function updateSelectionRect(): void {
-  const rect = getSelectionRect()
-  if (!selectionRect) return
-  selectionRect.style.left = rect.x + 'px'
-  selectionRect.style.top = rect.y + 'px'
-  selectionRect.style.width = rect.width + 'px'
-  selectionRect.style.height = rect.height + 'px'
-}
-
-interface SelectionRect {
-  x: number
-  y: number
-  width: number
-  height: number
+  if (selectionRect) positionBox(selectionRect, getSelectionRect())
 }
 
 function getSelectionRect(): SelectionRect {
@@ -218,27 +429,17 @@ function getSelectionRect(): SelectionRect {
   }
 }
 
+// ─── AI area selection (drag box → candidates / picker) ──────────────────────
+
 function findTargetElement(rect: SelectionRect): void {
   const srcCandidates = gatherSrcCandidates(rect)
-
-  if (srcCandidates.length > 1) {
-    showComponentPicker(rect, srcCandidates)
-    return
-  }
+  if (srcCandidates.length > 1) { showComponentPicker(rect, srcCandidates); return }
 
   let el: Element | null
-  if (srcCandidates.length === 1) {
-    el = srcCandidates[0].el
-  } else {
-    el = pickByCenter(rect)
-  }
+  if (srcCandidates.length === 1) el = srcCandidates[0].el
+  else el = pickByCenter(rect)
 
-  if (!el) {
-    console.log('[Patchly] No element found in selection')
-    cancel()
-    return
-  }
-
+  if (!el) { dismissSelection(); return }
   selectElement(el, rect)
 }
 
@@ -251,80 +452,42 @@ function overlapArea(rect: SelectionRect, elRect: DOMRect): number {
 function gatherSrcCandidates(rect: SelectionRect): SrcCandidate[] {
   const found: SrcCandidate[] = []
   const seen = new Set<string>()
-
   document.querySelectorAll('[data-patchly-src]').forEach((el) => {
     if (el.id && el.id.startsWith('patchly-')) return
     const elRect = el.getBoundingClientRect()
     const elArea = elRect.width * elRect.height
     if (elArea <= 0) return
-
     const overlap = overlapArea(rect, elRect)
     if (overlap <= 0) return
     if (overlap / elArea < 0.5) return
-
     const src = (el as HTMLElement).dataset.patchlySrc!
     if (seen.has(src)) return
     seen.add(src)
     found.push({ el, src, area: elArea })
   })
-
-  const outermost = found.filter(
-    (c) => !found.some((other) => other !== c && other.el.contains(c.el)),
-  )
+  const outermost = found.filter((c) => !found.some((o) => o !== c && o.el.contains(c.el)))
   outermost.sort((a, b) => b.area - a.area)
   return outermost
 }
 
 function pickByCenter(rect: SelectionRect): Element | null {
-  if (root) root.style.display = 'none'
-  if (selectionRect) selectionRect.style.display = 'none'
-  if (elementHighlight) elementHighlight.style.display = 'none'
-
   const centerX = rect.x + rect.width / 2
   const centerY = rect.y + rect.height / 2
-  const elements = document.elementsFromPoint(centerX, centerY)
-
-  if (root) root.style.display = ''
-  if (selectionRect) selectionRect.style.display = 'block'
-  if (elementHighlight) elementHighlight.style.display = 'none'
-
-  const candidates = elements.filter((el) => {
-    const tag = el.tagName.toLowerCase()
-    if (['html', 'body', 'script', 'style', 'head'].includes(tag)) return false
-    if (el.id && el.id.startsWith('patchly-')) return false
-    return true
-  })
-
-  if (candidates.length === 0) return null
-
-  const selectionArea = rect.width * rect.height
-  let best = candidates[0]
-  for (const el of candidates) {
-    const coverage = overlapArea(rect, el.getBoundingClientRect()) / selectionArea
-    if (coverage >= 0.5) {
-      best = el
-      break
-    }
-  }
-  return best ?? null
+  return elementAtPoint(centerX, centerY)
 }
+
+// ─── AI single/batch selection ───────────────────────────────────────────────
 
 function selectElement(el: Element, rect: SelectionRect): void {
   selectedElement = el
   selectedTargets = null
+  selectedSet = []
   selectedPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
 
   const elRect = el.getBoundingClientRect()
-  if (elementHighlight) {
-    elementHighlight.style.left = elRect.left + 'px'
-    elementHighlight.style.top = elRect.top + 'px'
-    elementHighlight.style.width = elRect.width + 'px'
-    elementHighlight.style.height = elRect.height + 'px'
-    elementHighlight.style.display = 'block'
-  }
+  if (elementHighlight) { positionBox(elementHighlight, elRect); elementHighlight.style.display = 'block' }
 
-  const srcParts = selectedPatchlySrc ? selectedPatchlySrc.split(':') : null
-  const fileName = srcParts ? srcParts[0].split('/').pop() : el.tagName.toLowerCase()
+  const fileName = selectedPatchlySrc ? selectedPatchlySrc.split(':')[0].split('/').pop() : el.tagName.toLowerCase()
   if (componentLabel) {
     componentLabel.textContent = fileName ?? ''
     componentLabel.style.left = elRect.left + 'px'
@@ -332,27 +495,64 @@ function selectElement(el: Element, rect: SelectionRect): void {
     componentLabel.style.display = 'block'
   }
 
-  const selRect = rect || getSelectionRect()
-  const promptY = Math.min(selRect.y + selRect.height + 8, window.innerHeight - 60)
+  openPromptBar(rect)
+}
+
+function openPromptBar(rect: SelectionRect): void {
+  const promptY = Math.min(rect.y + rect.height + 8, window.innerHeight - 80)
   if (promptBar) {
-    promptBar.style.left = selRect.x + 'px'
+    promptBar.style.left = Math.max(8, Math.min(rect.x, window.innerWidth - 360)) + 'px'
     promptBar.style.top = promptY + 'px'
     promptBar.style.display = 'flex'
   }
-
-  // Ensure tabs reflect current mode
-  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
-    t.classList.toggle('active', t.getAttribute('data-mode') === activeMode)
-  })
-  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
-  if (aiBody) aiBody.style.display = activeMode === 'ai' ? 'flex' : 'none'
-
-  if (activeMode === 'ai') {
-    setTimeout(() => promptInput?.focus(), 50)
-  } else {
-    inspectCurrentSelection()
-  }
+  if (promptInput) { promptInput.value = ''; autoGrowPrompt() }
+  setTimeout(() => promptInput?.focus(), 50)
 }
+
+function autoGrowPrompt(): void {
+  if (!promptInput) return
+  promptInput.style.height = 'auto'
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 160) + 'px'
+}
+
+// ─── Tailwind multi-select ───────────────────────────────────────────────────
+
+function tailwindSelect(el: Element, additive: boolean): void {
+  if (!additive) {
+    selectedSet = [el]
+  } else if (selectedSet.includes(el)) {
+    selectedSet = selectedSet.filter((x) => x !== el)
+  } else {
+    selectedSet = [...selectedSet, el]
+  }
+  selectedElement = selectedSet[0] ?? null
+  selectedPatchlySrc = null
+  selectedTargets = selectedSet.length ? selectedSet : null
+  renderSelHighlights()
+  if (selectedSet.length) inspectCurrentSelection()
+  else hideClassPanel()
+}
+
+function renderSelHighlights(): void {
+  while (selHighlights.length < selectedSet.length) {
+    const d = document.createElement('div')
+    d.className = 'patchly-sel-highlight'
+    document.body.appendChild(d)
+    selHighlights.push(d)
+  }
+  selHighlights.forEach((d, i) => {
+    const el = selectedSet[i]
+    if (!el) { d.style.display = 'none'; return }
+    positionBox(d, el.getBoundingClientRect())
+    d.style.display = 'block'
+  })
+}
+
+function clearSelHighlights(): void {
+  selHighlights.forEach((d) => (d.style.display = 'none'))
+}
+
+// ─── AI component picker (from area drag) ────────────────────────────────────
 
 function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): void {
   let picker = document.getElementById('patchly-picker') as HTMLDivElement | null
@@ -416,18 +616,10 @@ function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): v
   picker.querySelectorAll<HTMLElement>('.patchly-picker-row').forEach((row) => {
     const c = candidates[Number(row.getAttribute('data-idx'))]
     row.addEventListener('mouseenter', () => {
-      const r = c.el.getBoundingClientRect()
-      if (elementHighlight) {
-        elementHighlight.style.left = r.left + 'px'
-        elementHighlight.style.top = r.top + 'px'
-        elementHighlight.style.width = r.width + 'px'
-        elementHighlight.style.height = r.height + 'px'
-        elementHighlight.style.display = 'block'
-      }
+      if (elementHighlight) { positionBox(elementHighlight, c.el.getBoundingClientRect()); elementHighlight.style.display = 'block' }
     })
     row.addEventListener('click', () => {
       hidePicker()
-      selectedTargets = null
       selectElement(c.el, rect)
     })
   })
@@ -437,7 +629,6 @@ function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): v
     if (chosen.length === 0) return
     hidePicker()
     if (chosen.length === 1) {
-      selectedTargets = null
       selectElement(chosen[0].el, rect)
     } else {
       selectedTargets = chosen.map((c) => c.el)
@@ -449,40 +640,23 @@ function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): v
 function openPromptForTargets(rect: SelectionRect, candidates: SrcCandidate[]): void {
   selectedElement = candidates[0].el
   selectedPatchlySrc = null
+  selectedSet = []
   if (elementHighlight) elementHighlight.style.display = 'none'
-
   if (componentLabel) {
     componentLabel.textContent = `${candidates.length} components`
     componentLabel.style.left = rect.x + 'px'
     componentLabel.style.top = Math.max(2, rect.y - 22) + 'px'
     componentLabel.style.display = 'block'
   }
-
-  const promptY = Math.min(rect.y + rect.height + 8, window.innerHeight - 60)
-  if (promptBar) {
-    promptBar.style.left = rect.x + 'px'
-    promptBar.style.top = promptY + 'px'
-    promptBar.style.display = 'flex'
-  }
-
-  // Reflect the active mode on the tabs.
-  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
-    t.classList.toggle('active', t.getAttribute('data-mode') === activeMode)
-  })
-  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
-  if (aiBody) aiBody.style.display = activeMode === 'ai' ? 'flex' : 'none'
-
-  if (activeMode === 'ai') {
-    setTimeout(() => promptInput?.focus(), 50)
-  } else {
-    inspectCurrentSelection()
-  }
+  openPromptBar(rect)
 }
 
 function hidePicker(): void {
   const picker = document.getElementById('patchly-picker')
   if (picker) picker.style.display = 'none'
 }
+
+// ─── Screenshot + AI edit dispatch ───────────────────────────────────────────
 
 async function captureElementScreenshot(element: Element): Promise<string | null> {
   try {
@@ -534,15 +708,8 @@ async function captureElementScreenshot(element: Element): Promise<string | null
 async function submitPrompt(): Promise<void> {
   if (!promptInput) return
   const prompt = promptInput.value.trim()
-  if (!prompt) {
-    promptInput.focus()
-    return
-  }
-
-  if (!selectedElement && !selectedTargets) {
-    console.log('[Patchly] No element selected')
-    return
-  }
+  if (!prompt) { promptInput.focus(); return }
+  if (!selectedElement && !selectedTargets) return
 
   if (selectedTargets && selectedTargets.length > 1) {
     const targets = selectedTargets
@@ -554,14 +721,7 @@ async function submitPrompt(): Promise<void> {
         screenshot_base64: null,
       }))
 
-    const payload = {
-      prompt,
-      sessionId: Math.random().toString(36).slice(2),
-      targets,
-    }
-
-    console.log(`[Patchly] Batch edit request (${targets.length} targets)`)
-
+    const payload = { prompt, sessionId: Math.random().toString(36).slice(2), targets }
     if (window.__patchlySend) {
       window.__patchlySend(payload as Record<string, unknown>)
       if (promptBar) promptBar.style.display = 'none'
@@ -572,9 +732,7 @@ async function submitPrompt(): Promise<void> {
     return
   }
 
-  if (selectedElement) {
-    await sendSingleEdit(selectedElement, selectedPatchlySrc, prompt)
-  }
+  if (selectedElement) await sendSingleEdit(selectedElement, selectedPatchlySrc, prompt)
 }
 
 async function sendSingleEdit(el: Element, patchlySrc: string | null, prompt: string): Promise<void> {
@@ -583,7 +741,6 @@ async function sendSingleEdit(el: Element, patchlySrc: string | null, prompt: st
   if (componentLabel) componentLabel.style.display = 'none'
 
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
   const screenshot_base64 = await captureElementScreenshot(el)
 
   const payload: Record<string, unknown> = {
@@ -596,52 +753,33 @@ async function sendSingleEdit(el: Element, patchlySrc: string | null, prompt: st
     screenshot_base64,
   }
 
-  console.log('[Patchly] Edit request (screenshot:', screenshot_base64 ? 'captured' : 'none', ')')
-
   if (window.__patchlySend) {
     window.__patchlySend(payload)
     if (promptBar) promptBar.style.display = 'none'
-    if (promptInput) {
-      promptInput.value = ''
-      promptInput.disabled = false
-    }
+    if (promptInput) { promptInput.value = ''; promptInput.disabled = false }
     const submitBtn = document.getElementById('patchly-prompt-submit') as HTMLButtonElement | null
-    if (submitBtn) {
-      submitBtn.textContent = 'Apply'
-      submitBtn.disabled = false
-      submitBtn.style.background = ''
-    }
+    if (submitBtn) { submitBtn.textContent = 'Apply'; submitBtn.disabled = false; submitBtn.style.background = '' }
     showLoadingPanel()
-  } else {
-    console.warn('[Patchly] __patchlySend not available')
   }
 }
 
 function resetPromptBar(): void {
   const submitBtn = document.getElementById('patchly-prompt-submit') as HTMLButtonElement | null
-  if (submitBtn) {
-    submitBtn.textContent = 'Apply'
-    submitBtn.disabled = false
-    submitBtn.style.background = ''
-  }
-  if (promptInput) {
-    promptInput.disabled = false
-    promptInput.value = ''
-  }
+  if (submitBtn) { submitBtn.textContent = 'Apply'; submitBtn.disabled = false; submitBtn.style.background = '' }
+  if (promptInput) { promptInput.disabled = false; promptInput.value = '' }
   if (promptBar) promptBar.style.display = 'none'
   if (componentLabel) componentLabel.style.display = 'none'
 }
 
+// ─── Globals (content → overlay) ─────────────────────────────────────────────
 window.__patchlyResetPromptBar = resetPromptBar
 window.__patchlyActivate = activate
-window.__patchlyCancel = cancel
+window.__patchlyToggle = toggle
+window.__patchlyCancel = exitEditing
+window.__patchlySetConnected = setConnectedDot
+window.__patchlyHistoryChanged = updateToolbar
 
-function escapeHtml(s: string): string {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
+// ─── Diff / preview rendering ────────────────────────────────────────────────
 
 function renderDiff(diff: string): string {
   return (diff || '')
@@ -741,10 +879,7 @@ function updateLoadingPanel({ stage, text }: { stage?: string; text?: string }):
 }
 
 function hideLoadingPanel(): void {
-  if (loadingTimer) {
-    clearInterval(loadingTimer)
-    loadingTimer = null
-  }
+  if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null }
   const panel = document.getElementById('patchly-loading')
   if (panel) panel.remove()
 }
@@ -855,9 +990,7 @@ function showPreviewBatch(msg: Record<string, unknown>): void {
 
   const apply = (): void => {
     closePreviewPanel()
-    if (okEdits.length) {
-      window.__patchlySendToAgent?.({ type: 'PATCHLY_CONFIRM', sessionId })
-    }
+    if (okEdits.length) window.__patchlySendToAgent?.({ type: 'PATCHLY_CONFIRM', sessionId })
   }
   const reject = (): void => {
     closePreviewPanel()
@@ -875,6 +1008,8 @@ function showPreviewBatch(msg: Record<string, unknown>): void {
 }
 
 window.__patchlyShowPreviewBatch = showPreviewBatch
+
+// ─── Toasts ──────────────────────────────────────────────────────────────────
 
 function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePath: string; showUndo?: boolean; editId?: string | null }): void {
   const existing = document.getElementById('patchly-toast')
@@ -1012,6 +1147,7 @@ function showRedirectToast(msg: Record<string, unknown>): void {
     prompt: string
     suggestions: Array<{ file: string; reason: string }>
   }
+  void sessionId
 
   const existing = document.getElementById('patchly-toast')
   if (existing) existing.remove()
@@ -1067,15 +1203,13 @@ function showRedirectToast(msg: Record<string, unknown>): void {
 
 window.__patchlyShowRedirect = showRedirectToast
 
-// ─── Direct class panel ───────────────────────────────────────────────────────
+// ─── Direct class panel (Tailwind mode) ──────────────────────────────────────
 
 window.__patchlyShowElementInfo = function (msg: Record<string, unknown>): void {
   const sessionId = msg.sessionId as string | undefined
-  // Ignore if this ELEMENT_INFO is for a stale inspect session
   if (sessionId && sessionId !== pendingInspectSessionId) return
   pendingInspectSessionId = null
-
-  if (activeMode !== 'classes') return
+  if (activeMode !== 'tailwind') return
   const theme = (window.__patchlyGetTheme?.() ?? { colors: [] }) as unknown as ThemeTokens
   const elements = (msg.elements ?? []) as ClassInfo[]
   showClassPanel(elements, theme)
@@ -1083,124 +1217,9 @@ window.__patchlyShowElementInfo = function (msg: Record<string, unknown>): void 
 
 window.__patchlyClassEditError = classEditError
 window.__patchlyClassEditApplied = classEditApplied
-// Sidebar's own × button closed it → fall back to AI mode for the next selection.
+// Sidebar's own × button closed it → drop the Tailwind selection (stay in editing mode).
 window.__patchlyClassPanelClosed = function (): void {
-  setMode('ai')
+  selectedSet = []
+  selectedTargets = null
+  clearSelHighlights()
 }
-
-// ─── Edit history sidebar ─────────────────────────────────────────────────────
-
-const PATCHLY_HISTORY_KEY = 'patchly_edits'
-let historyInited = false
-
-interface HistoryEntry {
-  editId: string
-  filePath: string
-  lineNumber?: number
-  explanation?: string
-  ts: number
-  undone?: boolean
-}
-
-function readHistory(): Promise<HistoryEntry[]> {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.session.get({ [PATCHLY_HISTORY_KEY]: [] }, (res) => {
-        resolve(chrome.runtime.lastError ? [] : ((res[PATCHLY_HISTORY_KEY] as HistoryEntry[]) || []))
-      })
-    } catch {
-      resolve([])
-    }
-  })
-}
-
-function ensureHistoryUI(): void {
-  if (historyInited) return
-  historyInited = true
-
-  const tab = document.createElement('button')
-  tab.id = 'patchly-history-tab'
-  tab.textContent = 'Patchly edits'
-  tab.onclick = openHistory
-  document.body.appendChild(tab)
-
-  const panel = document.createElement('div')
-  panel.id = 'patchly-history'
-  panel.innerHTML = `
-    <div class="patchly-hist-head">
-      <span>Patchly edits</span>
-      <button class="patchly-hist-close" title="Close">&times;</button>
-    </div>
-    <div class="patchly-hist-list"></div>
-  `
-  document.body.appendChild(panel)
-  ;(panel.querySelector('.patchly-hist-close') as HTMLButtonElement).onclick = closeHistory
-}
-
-function relativeTime(ts: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
-  if (s < 60) return 'just now'
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.round(h / 24)}d ago`
-}
-
-async function renderHistory(): Promise<void> {
-  ensureHistoryUI()
-  const edits = await readHistory()
-  const tab = document.getElementById('patchly-history-tab')
-  if (tab) tab.style.display = edits.length ? 'block' : 'none'
-
-  const list = document.querySelector('#patchly-history .patchly-hist-list')
-  if (!list) return
-
-  if (!edits.length) {
-    list.innerHTML = '<div class="patchly-hist-empty">No edits yet this session.</div>'
-    return
-  }
-
-  list.innerHTML = edits
-    .slice()
-    .reverse()
-    .map((e) => {
-      const undone = e.undone
-      return `
-        <div class="patchly-hist-row${undone ? ' undone' : ''}" data-edit-id="${escapeHtml(e.editId)}">
-          <div class="patchly-hist-main">
-            <div class="patchly-hist-file">${escapeHtml(e.filePath)}:${e.lineNumber ?? '?'}</div>
-            <div class="patchly-hist-expl">${escapeHtml(e.explanation || 'Edit')}</div>
-            <div class="patchly-hist-ts">${relativeTime(e.ts)}${undone ? ' · undone' : ''}</div>
-          </div>
-          <button class="patchly-hist-undo" ${undone ? 'disabled' : ''}>&#8624;</button>
-        </div>
-      `
-    })
-    .join('')
-
-  list.querySelectorAll<HTMLElement>('.patchly-hist-row').forEach((row) => {
-    const editId = row.getAttribute('data-edit-id')
-    const btn = row.querySelector('.patchly-hist-undo') as HTMLButtonElement | null
-    if (btn && !btn.disabled) {
-      btn.onclick = () => {
-        window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO', editId })
-      }
-    }
-  })
-}
-
-function openHistory(): void {
-  ensureHistoryUI()
-  const panel = document.getElementById('patchly-history')
-  if (panel) panel.classList.add('open')
-  void renderHistory()
-}
-
-function closeHistory(): void {
-  const panel = document.getElementById('patchly-history')
-  if (panel) panel.classList.remove('open')
-}
-
-window.__patchlyRenderHistory = renderHistory
-window.__patchlyOpenHistory = openHistory

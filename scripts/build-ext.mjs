@@ -11,17 +11,16 @@ const EXT_DIR = 'extension'
 const OUT_DIR = path.join(EXT_DIR, 'dist')
 const watch = process.argv.includes('--watch')
 
-fs.mkdirSync(path.join(OUT_DIR, 'popup'), { recursive: true })
+fs.mkdirSync(OUT_DIR, { recursive: true })
 if (fs.existsSync(path.join(EXT_DIR, 'assets'))) {
   fs.mkdirSync(path.join(OUT_DIR, 'assets'), { recursive: true })
 }
 
 const buildOptions = {
   entryPoints: {
-    background:    path.join(EXT_DIR, 'background.ts'),
-    content:       path.join(EXT_DIR, 'content.ts'),
-    overlay:       path.join(EXT_DIR, 'overlay.ts'),
-    'popup/popup': path.join(EXT_DIR, 'popup', 'popup.ts'),
+    background: path.join(EXT_DIR, 'background.ts'),
+    content:    path.join(EXT_DIR, 'content.ts'),
+    overlay:    path.join(EXT_DIR, 'overlay.ts'),
   },
   bundle: true,
   format: /** @type {const} */ ('iife'),
@@ -33,7 +32,6 @@ const buildOptions = {
 
 function copyStatics() {
   fs.copyFileSync(path.join(EXT_DIR, 'overlay.css'), path.join(OUT_DIR, 'overlay.css'))
-  fs.copyFileSync(path.join(EXT_DIR, 'popup', 'popup.html'), path.join(OUT_DIR, 'popup', 'popup.html'))
 
   // Deep-copy assets/ if present
   const assetsDir = path.join(EXT_DIR, 'assets')
@@ -44,7 +42,6 @@ function copyStatics() {
   src.background.service_worker = 'background.js'
   src.content_scripts[0].js = ['content.js', 'overlay.js']
   src.content_scripts[0].css = ['overlay.css']
-  src.action.default_popup = 'popup/popup.html'
   fs.writeFileSync(
     path.join(OUT_DIR, 'manifest.json'),
     JSON.stringify(src, null, 2),
