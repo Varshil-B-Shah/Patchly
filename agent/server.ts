@@ -1,7 +1,7 @@
 // agent/server.ts
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
-import type { BatchEditEntry, ThemeTokens } from '../shared/protocol.js'
+import type { BatchEditEntry, ThemeTokens, ClassInfo } from '../shared/protocol.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
@@ -363,74 +363,83 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         pendingEdits.delete(msg.sessionId)
       }
 
-      // ── Direct class panel: inspect element className from source ───────────
+      // ── Direct class panel: inspect element className(s) from source ────────
       if (msg.type === MSG.INSPECT) {
-        const { sessionId, patchlySrc } = msg
-        const sourceResult = resolveSource(patchlySrc, config.projectRoot)
-        if (!sourceResult.success) {
-          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: sourceResult.code, message: sourceResult.message }))
+        const { sessionId, patchlySources } = msg as { sessionId: string; patchlySources: string[] }
+        const sources = Array.isArray(patchlySources) ? patchlySources : []
+
+        const elements: ClassInfo[] = []
+        let lastError: { code: string; message: string } | null = null
+
+        for (const patchlySrc of sources) {
+          const sourceResult = resolveSource(patchlySrc, config.projectRoot)
+          if (!sourceResult.success) {
+            lastError = { code: sourceResult.code, message: sourceResult.message }
+            continue
+          }
+          const target = {
+            file: sourceResult.relativePath,
+            line: sourceResult.lineNumber,
+            column: sourceResult.colNumber,
+            tagName: '', // inspectElement reads it from the AST
+          }
+          const result = inspectElement(config.projectRoot, target, patchlySrc)
+          if (!result.ok) {
+            lastError = { code: result.code, message: result.message }
+            continue
+          }
+          elements.push(result.info)
+        }
+
+        // Only fail outright if NOTHING could be inspected.
+        if (elements.length === 0) {
+          const err = lastError ?? { code: 'NO_SOURCE_ATTR', message: 'Nothing to inspect.' }
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: err.code, message: err.message }))
           return
         }
-        const target = {
-          file: sourceResult.relativePath,
-          line: sourceResult.lineNumber,
-          column: sourceResult.colNumber,
-          tagName: '',  // inspectElement reads it from the AST
-        }
-        const result = inspectElement(config.projectRoot, target)
-        if (!result.ok) {
-          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: result.code, message: result.message }))
-          return
-        }
-        ws.send(JSON.stringify({ type: MSG.ELEMENT_INFO, ...result.info, sessionId }))
+
+        ws.send(JSON.stringify({ type: MSG.ELEMENT_INFO, sessionId, elements }))
         return
       }
 
       // ── Direct class panel: apply pre-built ops (no LLM, no preview) ────────
+      // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
+      // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
-        const { sessionId, operations, explanation } = msg as { sessionId: string; operations: EditOperation[]; explanation: string }
+        const { sessionId, operations } = msg as { sessionId: string; operations: EditOperation[]; explanation: string }
 
         if (!Array.isArray(operations) || operations.length === 0) {
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
           return
         }
 
-        // Pin the target file via source-mapper so a spoofed path can't escape.
-        const patchlySrc = `${operations[0].target.file}:${operations[0].target.line}:${operations[0].target.column}`
-        const sourceResult = resolveSource(patchlySrc, config.projectRoot)
-        if (!sourceResult.success) {
-          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: sourceResult.code, message: sourceResult.message }))
-          return
+        // Pin each op's file via source-mapper (per-op, so a spoofed path can't
+        // escape and multi-file selections resolve correctly), then group by file.
+        const opsByFile = new Map<string, EditOperation[]>()
+        for (const op of operations) {
+          const t = op.target
+          const patchlySrc = `${t.file}:${t.line}:${t.column}`
+          const sourceResult = resolveSource(patchlySrc, config.projectRoot)
+          if (!sourceResult.success) {
+            ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: sourceResult.code, message: sourceResult.message }))
+            return
+          }
+          const pinned = { ...op, target: { ...t, file: sourceResult.relativePath } } as EditOperation
+          const group = opsByFile.get(sourceResult.relativePath) ?? []
+          group.push(pinned)
+          opsByFile.set(sourceResult.relativePath, group)
         }
 
-        const pinnedOps = operations.map((op) => ({
-          ...op,
-          target: { ...op.target, file: sourceResult.relativePath },
-        }) as EditOperation)
-
-        const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: pinnedOps })
-        if (!editResult.ok) {
-          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
-          return
+        // Apply each file's ops in one pass. First failure stops; panel reverts.
+        for (const fileOps of opsByFile.values()) {
+          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps })
+          if (!editResult.ok) {
+            ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
+            return
+          }
         }
 
-        const editId = Math.random().toString(36).slice(2)
-        editHistory.set(editId, {
-          absolutePath: editResult.absolutePath,
-          snapshot: editResult.snapshot,
-          filePath: editResult.filePath,
-          lineNumber: sourceResult.lineNumber,
-          explanation,
-        })
-
-        ws.send(JSON.stringify({
-          type: MSG.EDIT_DONE,
-          sessionId,
-          editId,
-          filePath: editResult.filePath,
-          lineNumber: sourceResult.lineNumber,
-          explanation,
-        }))
+        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true }))
         return
       }
 
