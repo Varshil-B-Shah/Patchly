@@ -22,7 +22,7 @@
     "build:ext": "node scripts/build-ext.mjs",
     "watch:ext": "node scripts/build-ext.mjs --watch",
     "prepublishOnly": "npm run build",
-    "test": "node --import tsx --test agent/ast/__tests__/operations.test.ts agent/ast/__tests__/drift.test.ts agent/ast/__tests__/property.test.ts"
+    "test": "node --import tsx --test agent/ast/__tests__/operations.test.ts agent/ast/__tests__/drift.test.ts agent/ast/__tests__/property.test.ts agent/ast/__tests__/tailwindClasses.test.ts"
   },
   "dependencies": {
     "@babel/generator": "^7.24.0",
@@ -31,6 +31,7 @@
     "@babel/types": "^7.24.0",
     "diff": "^9.0.0",
     "prettier": "^3.8.4",
+    "tailwind-merge": "^3.6.0",
     "ts-morph": "^28.0.0",
     "ws": "^8.16.0"
   },

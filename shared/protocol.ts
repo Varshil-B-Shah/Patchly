@@ -2,6 +2,8 @@
 // Message types for extension ↔ agent communication
 // Both sides must use these exact strings — no magic strings elsewhere
 
+import type { EditOperation } from './operations.js'
+
 export const MSG = {
   // Extension → Agent
   PING:         'PATCHLY_PING',
@@ -23,6 +25,11 @@ export const MSG = {
   // Extension → Agent (Phase 4+)
   CONFIRM:      'PATCHLY_CONFIRM',
   REJECT:       'PATCHLY_REJECT',
+
+  // Direct class panel (LLM-free direct manipulation)
+  INSPECT:      'PATCHLY_INSPECT',       // ext → agent: read an element's source className
+  ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',  // agent → ext: the className breakdown
+  APPLY_OPS:    'PATCHLY_APPLY_OPS',     // ext → agent: apply pre-built operations, no LLM
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -197,10 +204,56 @@ export interface InfoMessage {
   message: string
 }
 
+/** One color token from the project's Tailwind theme, for panel swatches. */
+export interface ThemeColor {
+  /** Tailwind name fragment, e.g. "brand" or "brand-light". */
+  name: string
+  /** CSS color value, e.g. "#6366f1". */
+  value: string
+}
+
+/** Structured design tokens the class panel renders (distinct from the LLM's string summary). */
+export interface ThemeTokens {
+  colors: ThemeColor[]
+}
+
 export interface StatusMessage {
   type: typeof MSG.STATUS
   connected: boolean
   projectRoot: string
+  /** Project Tailwind theme tokens for the class panel (sent once on connect). */
+  theme?: ThemeTokens
+}
+
+/** Ask the agent to read an element's className straight from source. */
+export interface InspectMessage {
+  type: typeof MSG.INSPECT
+  sessionId: string
+  patchlySrc: string
+}
+
+/** The source-accurate className breakdown for the class panel. */
+export interface ElementInfoMessage {
+  type: typeof MSG.ELEMENT_INFO
+  sessionId: string
+  tagName: string
+  /** 'static' = editable string literal; 'dynamic' = clsx/ternary/etc (locked); 'none' = no className attr. */
+  classNameKind: 'static' | 'dynamic' | 'none'
+  /** The class tokens (empty for 'none'; for 'dynamic' these come from the live DOM, display-only). */
+  classes: string[]
+  /** Short snippet of the dynamic expression, shown on the locked chip. */
+  dynamicText?: string
+  filePath: string
+  lineNumber: number
+}
+
+/** Apply pre-built operations directly (no LLM, no preview) — the direct panel path. */
+export interface ApplyOpsMessage {
+  type: typeof MSG.APPLY_OPS
+  sessionId: string
+  operations: EditOperation[]
+  /** One-sentence summary for the history sidebar, e.g. "Set classes on <button>". */
+  explanation: string
 }
 
 export interface PongMessage {
@@ -240,6 +293,8 @@ export type ExtensionToAgentMessage =
   | ConfirmMessage
   | RejectMessage
   | UndoMessage
+  | InspectMessage
+  | ApplyOpsMessage
 
 /** Any message the agent sends to the extension. */
 export type AgentToExtensionMessage =
@@ -253,3 +308,4 @@ export type AgentToExtensionMessage =
   | EditErrorMessage
   | InfoMessage
   | UndoDoneMessage
+  | ElementInfoMessage
