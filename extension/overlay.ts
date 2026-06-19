@@ -1,8 +1,8 @@
 // extension/overlay.ts
 // Handles all visual selection UI. Bundled as IIFE by esbuild.
 
-import { initClassPanel, showClassPanel, hideClassPanel, classEditError } from './classPanel.js'
-import type { ElementInfoMessage, ThemeTokens } from '../shared/protocol.js'
+import { initClassPanel, showClassPanel, hideClassPanel, classEditError, classEditApplied } from './classPanel.js'
+import type { ClassInfo, ThemeTokens } from '../shared/protocol.js'
 
 const PATCHLY_PORT = 7842
 
@@ -21,7 +21,6 @@ let selectedElement: Element | null = null
 let selectedPatchlySrc: string | null = null
 let selectedTargets: Element[] | null = null
 let activeMode: 'ai' | 'classes' = 'ai'
-let lastSelectionRect: { x: number; y: number; width: number; height: number } = { x: 0, y: 0, width: 0, height: 0 }
 let pendingInspectSessionId: string | null = null
 
 // DOM elements (created once, reused)
@@ -104,12 +103,27 @@ function setMode(mode: 'ai' | 'classes'): void {
     setTimeout(() => promptInput?.focus(), 50)
   } else {
     if (aiBody) aiBody.style.display = 'none'
-    // Trigger INSPECT for the currently selected element
-    if (selectedPatchlySrc) {
-      pendingInspectSessionId = Math.random().toString(36).slice(2)
-      window.__patchlyInspect?.(selectedPatchlySrc, pendingInspectSessionId)
-    }
+    inspectCurrentSelection()
   }
+}
+
+// The data-patchly-src pointers of whatever is currently selected (1 or many).
+function currentSelectionSrcs(): string[] {
+  if (selectedTargets && selectedTargets.length) {
+    return selectedTargets
+      .map((el) => (el as HTMLElement).dataset.patchlySrc)
+      .filter((s): s is string => Boolean(s))
+  }
+  if (selectedPatchlySrc) return [selectedPatchlySrc]
+  return []
+}
+
+// Ask the agent to inspect the current selection; result opens/updates the sidebar.
+function inspectCurrentSelection(): void {
+  const srcs = currentSelectionSrcs()
+  if (!srcs.length) return
+  pendingInspectSessionId = Math.random().toString(36).slice(2)
+  window.__patchlyInspect?.(srcs, pendingInspectSessionId)
 }
 
 function activate(): void {
@@ -297,6 +311,7 @@ function pickByCenter(rect: SelectionRect): Element | null {
 
 function selectElement(el: Element, rect: SelectionRect): void {
   selectedElement = el
+  selectedTargets = null
   selectedPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
 
   const elRect = el.getBoundingClientRect()
@@ -318,7 +333,6 @@ function selectElement(el: Element, rect: SelectionRect): void {
   }
 
   const selRect = rect || getSelectionRect()
-  lastSelectionRect = { x: selRect.x, y: selRect.y, width: selRect.width, height: selRect.height }
   const promptY = Math.min(selRect.y + selRect.height + 8, window.innerHeight - 60)
   if (promptBar) {
     promptBar.style.left = selRect.x + 'px'
@@ -335,9 +349,8 @@ function selectElement(el: Element, rect: SelectionRect): void {
 
   if (activeMode === 'ai') {
     setTimeout(() => promptInput?.focus(), 50)
-  } else if (selectedPatchlySrc) {
-    pendingInspectSessionId = Math.random().toString(36).slice(2)
-    window.__patchlyInspect?.(selectedPatchlySrc, pendingInspectSessionId)
+  } else {
+    inspectCurrentSelection()
   }
 }
 
@@ -451,7 +464,19 @@ function openPromptForTargets(rect: SelectionRect, candidates: SrcCandidate[]): 
     promptBar.style.top = promptY + 'px'
     promptBar.style.display = 'flex'
   }
-  setTimeout(() => promptInput?.focus(), 50)
+
+  // Reflect the active mode on the tabs.
+  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
+    t.classList.toggle('active', t.getAttribute('data-mode') === activeMode)
+  })
+  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
+  if (aiBody) aiBody.style.display = activeMode === 'ai' ? 'flex' : 'none'
+
+  if (activeMode === 'ai') {
+    setTimeout(() => promptInput?.focus(), 50)
+  } else {
+    inspectCurrentSelection()
+  }
 }
 
 function hidePicker(): void {
@@ -1052,10 +1077,16 @@ window.__patchlyShowElementInfo = function (msg: Record<string, unknown>): void 
 
   if (activeMode !== 'classes') return
   const theme = (window.__patchlyGetTheme?.() ?? { colors: [] }) as unknown as ThemeTokens
-  showClassPanel(msg as unknown as ElementInfoMessage, theme, lastSelectionRect)
+  const elements = (msg.elements ?? []) as ClassInfo[]
+  showClassPanel(elements, theme)
 }
 
 window.__patchlyClassEditError = classEditError
+window.__patchlyClassEditApplied = classEditApplied
+// Sidebar's own × button closed it → fall back to AI mode for the next selection.
+window.__patchlyClassPanelClosed = function (): void {
+  setMode('ai')
+}
 
 // ─── Edit history sidebar ─────────────────────────────────────────────────────
 

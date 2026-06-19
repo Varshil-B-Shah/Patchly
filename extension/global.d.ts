@@ -11,7 +11,7 @@ declare global {
     __patchlySend?: (payload: Record<string, unknown>) => void
     __patchlySendToAgent?: (data: Record<string, unknown>) => void
     // Direct class panel: send INSPECT (ext→agent) and APPLY_OPS (ext→agent)
-    __patchlyInspect?: (patchlySrc: string, sessionId: string) => void
+    __patchlyInspect?: (patchlySources: string[], sessionId: string) => void
     __patchlyApplyOps?: (operations: Record<string, unknown>[], explanation: string, sessionId: string) => void
     __patchlyGetTheme?: () => Record<string, unknown> | null
 
@@ -37,6 +37,9 @@ declare global {
 
     // Direct class panel callbacks (defined by overlay/classPanel, called by content)
     __patchlyShowElementInfo?: (msg: Record<string, unknown>) => void
-    __patchlyClassEditError?: () => void
+    __patchlyClassEditError?: (sessionId: string) => void
+    __patchlyClassEditApplied?: (sessionId: string) => void
+    // Defined by overlay, called by classPanel when its × button closes the panel.
+    __patchlyClassPanelClosed?: () => void
   }
 }

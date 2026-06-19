@@ -57,10 +57,14 @@ function connect(): void {
         window.__patchlyShowSuccess?.({ filePath: String(msg.filePath ?? ''), editId: msg.editId as string | null })
       }
 
+      if (msg.type === 'PATCHLY_OPS_APPLIED') {
+        window.__patchlyClassEditApplied?.(String(msg.sessionId ?? ''))
+      }
+
       if (msg.type === 'PATCHLY_EDIT_ERROR') {
         window.__patchlyHideLoading?.()
         window.__patchlyResetPromptBar?.()
-        window.__patchlyClassEditError?.()  // revert any optimistic class panel update
+        window.__patchlyClassEditError?.(String(msg.sessionId ?? ''))  // revert optimistic class edit (no-op if not ours)
         window.__patchlyShowError?.(String(msg.message ?? ''))
       }
 
@@ -199,10 +203,10 @@ window.__patchlySendToAgent = function (data: Record<string, unknown>): void {
   ws.send(JSON.stringify(data))
 }
 
-// Direct class panel: ask agent to read element's className from source
-window.__patchlyInspect = function (patchlySrc: string, sessionId: string): void {
+// Direct class panel: ask agent to read element(s) className from source
+window.__patchlyInspect = function (patchlySources: string[], sessionId: string): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(JSON.stringify({ type: 'PATCHLY_INSPECT', patchlySrc, sessionId }))
+  ws.send(JSON.stringify({ type: 'PATCHLY_INSPECT', patchlySources, sessionId }))
 }
 
 // Direct class panel: apply pre-built operations (no LLM, no preview)
