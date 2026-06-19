@@ -27,9 +27,10 @@ export const MSG = {
   REJECT:       'PATCHLY_REJECT',
 
   // Direct class panel (LLM-free direct manipulation)
-  INSPECT:      'PATCHLY_INSPECT',       // ext → agent: read an element's source className
-  ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',  // agent → ext: the className breakdown
+  INSPECT:      'PATCHLY_INSPECT',       // ext → agent: read element(s) source className
+  ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',  // agent → ext: the className breakdown(s)
   APPLY_OPS:    'PATCHLY_APPLY_OPS',     // ext → agent: apply pre-built operations, no LLM
+  OPS_APPLIED:  'PATCHLY_OPS_APPLIED',   // agent → ext: ops applied (NOT recorded in AI history)
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -225,17 +226,18 @@ export interface StatusMessage {
   theme?: ThemeTokens
 }
 
-/** Ask the agent to read an element's className straight from source. */
+/** Ask the agent to read the className of one or more elements straight from source. */
 export interface InspectMessage {
   type: typeof MSG.INSPECT
   sessionId: string
-  patchlySrc: string
+  /** One or many data-patchly-src pointers (multi-select). */
+  patchlySources: string[]
 }
 
-/** The source-accurate className breakdown for the class panel. */
-export interface ElementInfoMessage {
-  type: typeof MSG.ELEMENT_INFO
-  sessionId: string
+/** The source-accurate className breakdown for a single element. */
+export interface ClassInfo {
+  /** The data-patchly-src pointer this info was resolved from. */
+  patchlySrc: string
   tagName: string
   /** 'static' = editable string literal; 'dynamic' = clsx/ternary/etc (locked); 'none' = no className attr. */
   classNameKind: 'static' | 'dynamic' | 'none'
@@ -248,13 +250,29 @@ export interface ElementInfoMessage {
   column: number
 }
 
+/** The className breakdown(s) for the class panel — one entry per inspected element. */
+export interface ElementInfoMessage {
+  type: typeof MSG.ELEMENT_INFO
+  sessionId: string
+  elements: ClassInfo[]
+}
+
 /** Apply pre-built operations directly (no LLM, no preview) — the direct panel path. */
 export interface ApplyOpsMessage {
   type: typeof MSG.APPLY_OPS
   sessionId: string
+  /** One or many ops, possibly across multiple files (multi-select). */
   operations: EditOperation[]
-  /** One-sentence summary for the history sidebar, e.g. "Set classes on <button>". */
+  /** One-sentence summary (e.g. "Set classes on <button>"). Not recorded in AI history. */
   explanation: string
+}
+
+/** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
+ *  edits never enter the AI editHistory / "Patchly edits" sidebar. */
+export interface OpsAppliedMessage {
+  type: typeof MSG.OPS_APPLIED
+  sessionId: string
+  ok: true
 }
 
 export interface PongMessage {
@@ -310,3 +328,4 @@ export type AgentToExtensionMessage =
   | InfoMessage
   | UndoDoneMessage
   | ElementInfoMessage
+  | OpsAppliedMessage
