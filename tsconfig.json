@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": ".",
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": ["agent/**/*", "shared/**/*", "vite-plugin/**/*", "bin/**/*"],
+  "exclude": ["node_modules", "dist", "patchly-spike", "extension", "**/__fixtures__/**"]
+}

@@ -19,12 +19,16 @@ Follow the printed instructions to add `patchlyPlugin()` to your `vite.config.js
 (skipped automatically if it's already there), then add your Azure OpenAI credentials
 to the generated `.patchlyrc.json`.
 
-**2. Load the Chrome extension:**
+**2. Build and load the Chrome extension:**
+```bash
+npm run build:ext        # bundles TypeScript → extension/dist/
+```
 Open `chrome://extensions`, enable Developer Mode, and "Load unpacked" the
-`extension/` folder.
+`extension/dist/` folder.
 
-> Reloading the extension after pulling changes? Hit ↻ on the Patchly card in
-> `chrome://extensions` — Chrome caches the content scripts until you do.
+> Reloading the extension after pulling changes? Run `npm run build:ext` first,
+> then hit ↻ on the Patchly card in `chrome://extensions` — Chrome caches the
+> content scripts until you do.
 
 ---
 
@@ -112,7 +116,7 @@ never sees your screen. They talk over a single local WebSocket.
 
 | Folder | What it is | Responsibilities |
 |--------|------------|------------------|
-| `extension/` | Chrome MV3 extension (vanilla JS) | Everything the user sees and touches: selection overlay, prompt bar, screenshot capture, diff-preview panel, history sidebar, popup settings. Holds the API key (in `chrome.storage.local`) and the per-session edit history (in `chrome.storage.session`). |
+| `extension/` | Chrome MV3 extension (TypeScript, built by esbuild → `extension/dist/`) | Everything the user sees and touches: selection overlay, prompt bar, screenshot capture, diff-preview panel, history sidebar, popup settings. Holds the API key (in `chrome.storage.local`) and the per-session edit history (in `chrome.storage.session`). |
 | `agent/` | Local Node 20+ process | The WebSocket server, source mapping, context building, LLM calls, the ts-morph AST editing engine, the safety rails, and in-memory undo snapshots. This is the only component that reads or writes your files. |
 | `shared/` | Common contracts | The message protocol (every WebSocket message type + the registry of error codes) and the **edit-operation schema** — the structured description of a change, deliberately kept LLM-independent. |
 
@@ -271,6 +275,34 @@ All extension ↔ agent communication uses a small set of typed messages over th
 | ext → agent | `UNDO` | revert a specific `editId` (or the most recent) |
 | agent → ext | `UNDO_DONE` | the revert completed |
 | agent → ext | `EDIT_ERROR` / `INFO` | a failure with an error code, or an informational note |
+
+---
+
+## Development
+
+The entire project is TypeScript (`strict: true`). Two separate build pipelines:
+
+| Target | Dev | Production |
+|--------|-----|------------|
+| `agent/` + `shared/` + `vite-plugin/` | `npm run dev` (tsx, runs .ts directly) | `npm run build` (tsc → `dist/`) |
+| `extension/` | `npm run watch:ext` (esbuild --watch → `extension/dist/`) | `npm run build:ext` (esbuild → `extension/dist/`) |
+
+```bash
+# Run tests (47 AST regression tests)
+npm test
+
+# Type-check both tsconfigs
+npm run typecheck
+
+# Start agent in dev mode
+npm run dev
+
+# Build + watch extension (reload unpacked after each change)
+npm run watch:ext
+```
+
+After any extension source change: run `build:ext` (or `watch:ext` handles it), then hit ↻ in
+`chrome://extensions`.
 
 ---
 
