@@ -1,13 +1,19 @@
 // agent/server.ts
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
-import type { BatchEditEntry } from '../shared/protocol.js'
+import type { BatchEditEntry, ThemeTokens } from '../shared/protocol.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
 import { undoEdit } from './fileEditor.js'
 import { applyEditOperations } from './ast/applyEdit.js'
+import { inspectElement } from './ast/inspect.js'
+import { loadThemeTokens } from './contextBuilder.js'
 import type { ResolvedConfig } from './config.js'
+
+// Theme is loaded once on first connection and cached for the lifetime of the
+// server process. The project's tailwind.config rarely changes during a session.
+let cachedTheme: ThemeTokens | null = null
 
 interface ApplyGroup {
   filePath: string
@@ -41,10 +47,13 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
   wss.on('connection', (ws) => {
     console.log('Extension connected')
 
+    if (!cachedTheme) cachedTheme = loadThemeTokens(config.projectRoot)
+
     ws.send(JSON.stringify({
       type: MSG.STATUS,
       connected: true,
       projectRoot: config.projectRoot,
+      theme: cachedTheme,
     }))
 
     ws.on('message', async (data) => {
@@ -352,6 +361,77 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       if (msg.type === MSG.REJECT) {
         pendingEdits.delete(msg.sessionId)
+      }
+
+      // ── Direct class panel: inspect element className from source ───────────
+      if (msg.type === MSG.INSPECT) {
+        const { sessionId, patchlySrc } = msg
+        const sourceResult = resolveSource(patchlySrc, config.projectRoot)
+        if (!sourceResult.success) {
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: sourceResult.code, message: sourceResult.message }))
+          return
+        }
+        const target = {
+          file: sourceResult.relativePath,
+          line: sourceResult.lineNumber,
+          column: sourceResult.colNumber,
+          tagName: '',  // inspectElement reads it from the AST
+        }
+        const result = inspectElement(config.projectRoot, target)
+        if (!result.ok) {
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: result.code, message: result.message }))
+          return
+        }
+        ws.send(JSON.stringify({ type: MSG.ELEMENT_INFO, ...result.info, sessionId }))
+        return
+      }
+
+      // ── Direct class panel: apply pre-built ops (no LLM, no preview) ────────
+      if (msg.type === MSG.APPLY_OPS) {
+        const { sessionId, operations, explanation } = msg as { sessionId: string; operations: EditOperation[]; explanation: string }
+
+        if (!Array.isArray(operations) || operations.length === 0) {
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
+          return
+        }
+
+        // Pin the target file via source-mapper so a spoofed path can't escape.
+        const patchlySrc = `${operations[0].target.file}:${operations[0].target.line}:${operations[0].target.column}`
+        const sourceResult = resolveSource(patchlySrc, config.projectRoot)
+        if (!sourceResult.success) {
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: sourceResult.code, message: sourceResult.message }))
+          return
+        }
+
+        const pinnedOps = operations.map((op) => ({
+          ...op,
+          target: { ...op.target, file: sourceResult.relativePath },
+        }) as EditOperation)
+
+        const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: pinnedOps })
+        if (!editResult.ok) {
+          ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
+          return
+        }
+
+        const editId = Math.random().toString(36).slice(2)
+        editHistory.set(editId, {
+          absolutePath: editResult.absolutePath,
+          snapshot: editResult.snapshot,
+          filePath: editResult.filePath,
+          lineNumber: sourceResult.lineNumber,
+          explanation,
+        })
+
+        ws.send(JSON.stringify({
+          type: MSG.EDIT_DONE,
+          sessionId,
+          editId,
+          filePath: editResult.filePath,
+          lineNumber: sourceResult.lineNumber,
+          explanation,
+        }))
+        return
       }
 
       if (msg.type === MSG.UNDO) {

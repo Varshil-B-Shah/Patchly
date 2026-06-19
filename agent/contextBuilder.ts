@@ -5,6 +5,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import type { ThemeTokens, ThemeColor } from '../shared/protocol.js'
 
 const IMPORT_RE = /^import\s+.*?from\s+['"]([^'"]+)['"]/gm
 const MAX_IMPORT_CHARS = 1500
@@ -138,6 +139,72 @@ export function parseTailwindConfig(configText: string): string {
 
   const summary = parts.join(' | ')
   return summary.length > MAX_TAILWIND_CHARS ? summary.slice(0, MAX_TAILWIND_CHARS) + '...' : summary
+}
+
+/**
+ * Extract structured color tokens for the class panel swatches.
+ * Unlike parseTailwindConfig (which returns a string summary for the LLM), this
+ * returns {name, value} pairs for every custom color, flattening nested shades.
+ *
+ * Examples:
+ *   brand: { DEFAULT: '#6366f1', light: '#a5b4fc' }
+ *   → [{name:'brand', value:'#6366f1'}, {name:'brand-light', value:'#a5b4fc'}]
+ *
+ *   accent: '#f59e0b'
+ *   → [{name:'accent', value:'#f59e0b'}]
+ */
+export function extractThemeTokens(configText: string): ThemeTokens {
+  const colors: ThemeColor[] = []
+  const seen = new Set<string>()
+
+  // Match colors: { ... } blocks (handles theme.colors and theme.extend.colors)
+  const colorBlockRe = /colors\s*:\s*\{([\s\S]*?)\}/g
+  let blockMatch: RegExpExecArray | null
+  while ((blockMatch = colorBlockRe.exec(configText)) !== null) {
+    const block = blockMatch[1]
+
+    // Flat entry: colorName: '#hexval' or colorName: "hexval"
+    const flatRe = /^\s*['"]?(\w[\w-]*)['"]?\s*:\s*['"]([#\w()%.,\s]+)['"]/gm
+    let m: RegExpExecArray | null
+    while ((m = flatRe.exec(block)) !== null) {
+      const name = m[1]
+      const value = m[2].trim()
+      if (!seen.has(name) && value.startsWith('#')) {
+        colors.push({ name, value })
+        seen.add(name)
+      }
+    }
+
+    // Nested entry: colorName: { DEFAULT: '#hex', shade: '#hex', ... }
+    const nestedRe = /['"]?(\w[\w-]*)['"]?\s*:\s*\{([^}]+)\}/g
+    while ((m = nestedRe.exec(block)) !== null) {
+      const prefix = m[1]
+      const inner = m[2]
+      const shadeRe = /['"]?(\w[\w-]*)['"]?\s*:\s*['"]([^'"]+)['"]/g
+      let sm: RegExpExecArray | null
+      while ((sm = shadeRe.exec(inner)) !== null) {
+        const shade = sm[1]
+        const value = sm[2].trim()
+        if (!value.startsWith('#')) continue
+        const fullName = shade === 'DEFAULT' ? prefix : `${prefix}-${shade}`
+        if (!seen.has(fullName)) {
+          colors.push({ name: fullName, value })
+          seen.add(fullName)
+        }
+      }
+    }
+  }
+
+  return { colors }
+}
+
+/** Load theme tokens from the project's Tailwind config (or return empty). */
+export function loadThemeTokens(projectRoot: string): ThemeTokens {
+  const twPath = findTailwindConfig(projectRoot)
+  if (!twPath) return { colors: [] }
+  const text = tryRead(twPath, 8000)
+  if (!text) return { colors: [] }
+  return extractThemeTokens(text)
 }
 
 // Read import files + global CSS for the given source file.

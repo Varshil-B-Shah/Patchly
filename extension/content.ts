@@ -10,6 +10,7 @@ const MSG_EDIT_REQUEST = 'PATCHLY_EDIT_REQUEST'
 
 let ws: WebSocket | null = null
 let isConnected = false
+let cachedTheme: Record<string, unknown> | null = null  // ThemeTokens from STATUS
 
 function connect(): void {
   try {
@@ -24,9 +25,14 @@ function connect(): void {
 
       if (msg.type === MSG_PONG || msg.type === MSG_STATUS) {
         isConnected = true
+        if (msg.type === MSG_STATUS && msg.theme) cachedTheme = msg.theme as Record<string, unknown>
         try {
           chrome.runtime.sendMessage({ type: 'AGENT_STATUS', connected: true })
         } catch { return }
+      }
+
+      if (msg.type === 'PATCHLY_ELEMENT_INFO') {
+        window.__patchlyShowElementInfo?.(msg)
       }
 
       if (msg.type === 'PATCHLY_PROGRESS') {
@@ -54,6 +60,7 @@ function connect(): void {
       if (msg.type === 'PATCHLY_EDIT_ERROR') {
         window.__patchlyHideLoading?.()
         window.__patchlyResetPromptBar?.()
+        window.__patchlyClassEditError?.()  // revert any optimistic class panel update
         window.__patchlyShowError?.(String(msg.message ?? ''))
       }
 
@@ -191,6 +198,25 @@ window.__patchlySendToAgent = function (data: Record<string, unknown>): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return
   ws.send(JSON.stringify(data))
 }
+
+// Direct class panel: ask agent to read element's className from source
+window.__patchlyInspect = function (patchlySrc: string, sessionId: string): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_INSPECT', patchlySrc, sessionId }))
+}
+
+// Direct class panel: apply pre-built operations (no LLM, no preview)
+window.__patchlyApplyOps = function (
+  operations: Record<string, unknown>[],
+  explanation: string,
+  sessionId: string,
+): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_APPLY_OPS', sessionId, operations, explanation }))
+}
+
+// Expose cached theme for overlay.ts to read when showing the class panel
+;(window as unknown as Record<string, unknown>).__patchlyGetTheme = (): Record<string, unknown> | null => cachedTheme
 
 // Start connecting when page loads
 connect()

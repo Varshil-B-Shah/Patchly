@@ -10,6 +10,10 @@ declare global {
     // ── Defined by content.ts, called by overlay.ts ──────────────────────────
     __patchlySend?: (payload: Record<string, unknown>) => void
     __patchlySendToAgent?: (data: Record<string, unknown>) => void
+    // Direct class panel: send INSPECT (ext→agent) and APPLY_OPS (ext→agent)
+    __patchlyInspect?: (patchlySrc: string, sessionId: string) => void
+    __patchlyApplyOps?: (operations: Record<string, unknown>[], explanation: string, sessionId: string) => void
+    __patchlyGetTheme?: () => Record<string, unknown> | null
 
     // ── Defined by overlay.ts, called by content.ts ──────────────────────────
     __patchlyActivate?: () => void
@@ -30,5 +34,9 @@ declare global {
 
     __patchlyRenderHistory?: () => void
     __patchlyOpenHistory?: () => void
+
+    // Direct class panel callbacks (defined by overlay/classPanel, called by content)
+    __patchlyShowElementInfo?: (msg: Record<string, unknown>) => void
+    __patchlyClassEditError?: () => void
   }
 }

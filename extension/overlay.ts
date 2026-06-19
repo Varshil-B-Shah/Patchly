@@ -1,6 +1,9 @@
 // extension/overlay.ts
 // Handles all visual selection UI. Bundled as IIFE by esbuild.
 
+import { initClassPanel, showClassPanel, hideClassPanel, classEditError } from './classPanel.js'
+import type { ElementInfoMessage, ThemeTokens } from '../shared/protocol.js'
+
 const PATCHLY_PORT = 7842
 
 interface SrcCandidate {
@@ -17,6 +20,9 @@ let currentX = 0, currentY = 0
 let selectedElement: Element | null = null
 let selectedPatchlySrc: string | null = null
 let selectedTargets: Element[] | null = null
+let activeMode: 'ai' | 'classes' = 'ai'
+let lastSelectionRect: { x: number; y: number; width: number; height: number } = { x: 0, y: 0, width: 0, height: 0 }
+let pendingInspectSessionId: string | null = null
 
 // DOM elements (created once, reused)
 let root: HTMLDivElement | null = null
@@ -48,9 +54,15 @@ function init(): void {
   promptBar = document.createElement('div')
   promptBar.id = 'patchly-prompt-bar'
   promptBar.innerHTML = `
-    <input id="patchly-prompt-input" type="text" placeholder="Describe what to change..." autocomplete="off" />
-    <button id="patchly-prompt-submit">Apply</button>
-    <button id="patchly-prompt-cancel">x</button>
+    <div class="patchly-pb-tabs">
+      <button class="patchly-pb-tab active" data-mode="ai">AI</button>
+      <button class="patchly-pb-tab" data-mode="classes">Classes</button>
+      <button id="patchly-prompt-cancel" class="patchly-pb-close">×</button>
+    </div>
+    <div class="patchly-pb-ai-body">
+      <input id="patchly-prompt-input" type="text" placeholder="Describe what to change..." autocomplete="off" />
+      <button id="patchly-prompt-submit">Apply</button>
+    </div>
   `
   document.body.appendChild(promptBar)
 
@@ -58,6 +70,13 @@ function init(): void {
 
   document.getElementById('patchly-prompt-submit')!.addEventListener('click', submitPrompt)
   document.getElementById('patchly-prompt-cancel')!.addEventListener('click', cancel)
+
+  promptBar.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const mode = tab.getAttribute('data-mode') as 'ai' | 'classes'
+      setMode(mode)
+    })
+  })
 
   root.addEventListener('mousedown', onMouseDown)
   root.addEventListener('mousemove', onMouseMove)
@@ -68,6 +87,29 @@ function init(): void {
     if (e.key === 'Escape') cancel()
     e.stopPropagation()
   })
+
+  initClassPanel()
+}
+
+function setMode(mode: 'ai' | 'classes'): void {
+  activeMode = mode
+  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
+  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
+    t.classList.toggle('active', t.getAttribute('data-mode') === mode)
+  })
+
+  if (mode === 'ai') {
+    if (aiBody) aiBody.style.display = 'flex'
+    hideClassPanel()
+    setTimeout(() => promptInput?.focus(), 50)
+  } else {
+    if (aiBody) aiBody.style.display = 'none'
+    // Trigger INSPECT for the currently selected element
+    if (selectedPatchlySrc) {
+      pendingInspectSessionId = Math.random().toString(36).slice(2)
+      window.__patchlyInspect?.(selectedPatchlySrc, pendingInspectSessionId)
+    }
+  }
 }
 
 function activate(): void {
@@ -84,6 +126,7 @@ function cancel(): void {
   selectedElement = null
   selectedPatchlySrc = null
   selectedTargets = null
+  pendingInspectSessionId = null
 
   root?.classList.remove('active')
   if (selectionRect) selectionRect.style.display = 'none'
@@ -92,6 +135,7 @@ function cancel(): void {
   if (componentLabel) componentLabel.style.display = 'none'
   if (promptInput) promptInput.value = ''
   hidePicker()
+  hideClassPanel()
 }
 
 function onMouseDown(e: MouseEvent): void {
@@ -274,6 +318,7 @@ function selectElement(el: Element, rect: SelectionRect): void {
   }
 
   const selRect = rect || getSelectionRect()
+  lastSelectionRect = { x: selRect.x, y: selRect.y, width: selRect.width, height: selRect.height }
   const promptY = Math.min(selRect.y + selRect.height + 8, window.innerHeight - 60)
   if (promptBar) {
     promptBar.style.left = selRect.x + 'px'
@@ -281,7 +326,19 @@ function selectElement(el: Element, rect: SelectionRect): void {
     promptBar.style.display = 'flex'
   }
 
-  setTimeout(() => promptInput?.focus(), 50)
+  // Ensure tabs reflect current mode
+  promptBar?.querySelectorAll<HTMLButtonElement>('.patchly-pb-tab').forEach((t) => {
+    t.classList.toggle('active', t.getAttribute('data-mode') === activeMode)
+  })
+  const aiBody = promptBar?.querySelector('.patchly-pb-ai-body') as HTMLElement | null
+  if (aiBody) aiBody.style.display = activeMode === 'ai' ? 'flex' : 'none'
+
+  if (activeMode === 'ai') {
+    setTimeout(() => promptInput?.focus(), 50)
+  } else if (selectedPatchlySrc) {
+    pendingInspectSessionId = Math.random().toString(36).slice(2)
+    window.__patchlyInspect?.(selectedPatchlySrc, pendingInspectSessionId)
+  }
 }
 
 function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): void {
@@ -984,6 +1041,21 @@ function showRedirectToast(msg: Record<string, unknown>): void {
 }
 
 window.__patchlyShowRedirect = showRedirectToast
+
+// ─── Direct class panel ───────────────────────────────────────────────────────
+
+window.__patchlyShowElementInfo = function (msg: Record<string, unknown>): void {
+  const sessionId = msg.sessionId as string | undefined
+  // Ignore if this ELEMENT_INFO is for a stale inspect session
+  if (sessionId && sessionId !== pendingInspectSessionId) return
+  pendingInspectSessionId = null
+
+  if (activeMode !== 'classes') return
+  const theme = (window.__patchlyGetTheme?.() ?? { colors: [] }) as unknown as ThemeTokens
+  showClassPanel(msg as unknown as ElementInfoMessage, theme, lastSelectionRect)
+}
+
+window.__patchlyClassEditError = classEditError
 
 // ─── Edit history sidebar ─────────────────────────────────────────────────────
 

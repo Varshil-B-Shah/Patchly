@@ -245,6 +245,7 @@ export interface ElementInfoMessage {
   dynamicText?: string
   filePath: string
   lineNumber: number
+  column: number
 }
 
 /** Apply pre-built operations directly (no LLM, no preview) — the direct panel path. */
