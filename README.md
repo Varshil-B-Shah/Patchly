@@ -36,26 +36,32 @@ Open `chrome://extensions`, enable Developer Mode, and "Load unpacked" the
 
 1. Run `npx patchly` in your project folder (starts the local agent on port `7842`)
 2. Open your app at `http://localhost:5173`
-3. Press `Alt+Shift+P` to activate selection mode
-4. Draw a box around anything you want to change
-5. Describe the change in plain English and hit Enter
-6. Review the **diff preview** with its confidence score, then click **Apply** (or press `Enter`) —
+3. **Click the Patchly toolbar icon** to turn on editing mode — a floating toolbar appears at the
+   top of the page with **AI Mode** / **Tailwind Mode** tabs, undo/redo, settings, and a connection dot
+4. **AI Mode** — hover to highlight; **click** an element (or **click-and-drag** a box over an area),
+   then describe the change in the prompt and hit Enter
+5. Review the **diff preview** with its confidence score, then click **Apply** (or press `Enter`) —
    your code updates and the browser hot-reloads
+6. **Tailwind Mode** — **click** an element (or **Ctrl/Cmd+Click** several) to open the inspector
+   sidebar and edit Tailwind classes directly, no AI involved
 
-Made a mistake? Open the **edit history** sidebar and click **Undo** on any past edit to revert it.
+Made a mistake? Use the toolbar **Undo** (AI edits) or the inspector's **Undo/Redo** (class edits).
+Click the icon again, the toolbar **×**, or press **Esc** to exit editing mode.
 
 ---
 
 ## What it can do
 
-- **Point-and-edit** — draw a box over any element; Patchly resolves it to the exact source line.
+- **Click-to-activate editing mode** — clicking the toolbar icon toggles a floating, color-picker–style
+  toolbar with **AI** / **Tailwind** mode tabs, undo/redo, settings, and an agent-connection dot.
+- **Point-and-edit** — in AI mode, click an element or drag a box over an area; Patchly resolves it
+  to the exact source line. The prompt is an auto-growing textarea.
 - **Diff preview before writing** — every edit is dry-run first and shown as a color-coded diff
   with a model **confidence score**. Nothing touches your files until you Apply.
-- **Per-edit undo history** — an in-page sidebar lists every edit this session; undo any one of
-  them individually, not just the last.
-- **Confidence-gated auto-apply** *(opt-in)* — turn on auto-apply in the popup and set a threshold
-  (0.7 – 0.95); high-confidence edits apply straight away, lower-confidence ones still ask first.
-  Off by default — you always see the diff.
+- **One-click undo** — the toolbar **Undo** reverts the most recent AI edit.
+- **Confidence-gated auto-apply** *(opt-in)* — turn on auto-apply in the toolbar settings and set a
+  threshold (0.7 – 0.95); high-confidence edits apply straight away, lower-confidence ones still ask
+  first. Off by default — you always see the diff.
 - **Multi-component batch edits** — select several elements at once; Patchly groups them by file
   and applies one coherent change across all of them.
 - **Cross-file redirect** — select a parent and describe a change that actually lives in a child
@@ -63,13 +69,13 @@ Made a mistake? Open the **edit history** sidebar and click **Undo** on any past
   one-click "Edit that component instead".
 - **Design-token aware** — the model is fed your Tailwind config tokens, global CSS, and a
   screenshot of the selection, so edits use *your* brand colors and spacing, not generic guesses.
-- **Direct class panel (no AI)** — switch the selection to the **Classes** tab to open a docked,
-  Figma-style inspector sidebar. See an element's Tailwind classes as devtools-style toggle rows,
-  flip them on/off, remove them, or search a built-in catalog (`items-center`, `hover:bg-…`, your
-  theme colors) and click to add. Works across a **multi-select** (changes apply to every selected
-  element; classes present on only some show as "mixed"). Edits write instantly with Tailwind
-  conflict resolution, and the panel has its **own** undo/redo buttons — separate from the AI edit
-  history below.
+- **Tailwind Mode (no AI)** — switch to the **Tailwind Mode** tab and **click** (or **Ctrl/Cmd+Click**
+  several) elements to open a docked, Figma-style inspector. See each element's Tailwind classes as
+  devtools-style toggle rows, flip them on/off, remove them, or search a built-in catalog
+  (`items-center`, `hover:bg-…`, your theme colors) and click to add. Multi-select shows an
+  **Apply-to-all** bar plus **per-element sections** so you can target specific elements. Edits write
+  instantly with Tailwind conflict resolution; the inspector has its **own** undo/redo, separate from
+  AI edits.
 
 ---
 
@@ -108,12 +114,12 @@ never sees your screen. They talk over a single local WebSocket.
 ┌─────────────────────────────┐         ┌──────────────────────────────────────┐
 │  Chrome extension (MV3)      │         │  Local Node agent  (port 7842)         │
 │                              │         │                                        │
-│  • selection overlay         │ ──WS──► │  • source mapper (data-patchly-src →   │
-│  • prompt bar                │ EDIT_   │      file:line:col)                    │
-│  • screenshot capture        │ REQUEST │  • context builder (imports, CSS,      │
-│  • diff-preview panel        │         │      Tailwind tokens)                  │
-│  • edit-history sidebar      │ ◄──WS── │  • LLM client (Azure OpenAI)           │
-│  • popup settings            │ PREVIEW │  • AST editing engine (ts-morph)       │
+│  • floating toolbar          │ ──WS──► │  • source mapper (data-patchly-src →   │
+│  • selection overlay         │ EDIT_   │      file:line:col)                    │
+│  • AI prompt bar             │ REQUEST │  • context builder (imports, CSS,      │
+│  • Tailwind class inspector  │         │      Tailwind tokens)                  │
+│  • diff-preview panel        │ ◄──WS── │  • LLM client (Azure OpenAI)           │
+│  • screenshot capture        │ PREVIEW │  • AST editing engine (ts-morph)       │
 └─────────────────────────────┘ /DONE   │  • safety rails + undo snapshots       │
             ▲                            └──────────────────┬─────────────────────┘
             │                                               │ writes file
@@ -123,7 +129,7 @@ never sees your screen. They talk over a single local WebSocket.
 
 | Folder | What it is | Responsibilities |
 |--------|------------|------------------|
-| `extension/` | Chrome MV3 extension (TypeScript, built by esbuild → `extension/dist/`) | Everything the user sees and touches: selection overlay, prompt bar, screenshot capture, diff-preview panel, history sidebar, popup settings. Holds the API key (in `chrome.storage.local`) and the per-session edit history (in `chrome.storage.session`). |
+| `extension/` | Chrome MV3 extension (TypeScript, built by esbuild → `extension/dist/`) | Everything the user sees and touches: the floating toolbar, selection overlay, AI prompt bar, Tailwind class inspector, screenshot capture, and diff-preview panel. Holds settings + API key in `chrome.storage.local`. Activated by clicking the toolbar icon. |
 | `agent/` | Local Node 20+ process | The WebSocket server, source mapping, context building, LLM calls, the ts-morph AST editing engine, the safety rails, and in-memory undo snapshots. This is the only component that reads or writes your files. |
 | `shared/` | Common contracts | The message protocol (every WebSocket message type + the registry of error codes) and the **edit-operation schema** — the structured description of a change, deliberately kept LLM-independent. |
 
@@ -165,8 +171,8 @@ flowchart TD
 > stages below break down each box in this graph.
 
 ### 1. Selection → a precise source location
-You activate selection mode and draw a box. The overlay resolves your box to the best-matching DOM
-element and reads its `data-patchly-src` tag. It also captures a cropped **screenshot** of just that
+You turn on editing mode (toolbar icon) and, in AI mode, click an element or drag a box. The overlay
+resolves your selection to the best-matching DOM element and reads its `data-patchly-src` tag. It also captures a cropped **screenshot** of just that
 element and grabs its current classes/markup. All of this is bundled into an `EDIT_REQUEST` and sent
 to the agent over the WebSocket, along with your natural-language prompt.
 
@@ -227,19 +233,24 @@ The agent sends a `PREVIEW` back with the diff, confidence, and file/line. The e
 color-coded diff with a confidence chip and waits:
 
 - **Manual (default):** you read the diff and click **Apply** (`Enter`) or **Reject** (`Esc`).
-- **Auto-apply (opt-in):** if you've enabled it in the popup and the confidence meets your threshold
-  (0.7–0.95), it applies immediately; anything below still shows the diff.
+- **Auto-apply (opt-in):** if you've enabled it in the toolbar settings and the confidence meets your
+  threshold (0.7–0.95), it applies immediately; anything below still shows the diff.
 
 Only an explicit **confirm** causes the agent to write the file (the same AST pipeline, now for
 real). Before writing it snapshots the file's previous contents for undo. The write lands on disk,
-Vite's HMR picks it up, and the page reloads. The agent replies `EDIT_DONE` with an `editId`, which
-the extension records in its session history sidebar.
+Vite's HMR picks it up, and the page reloads. The agent replies `EDIT_DONE` with an `editId`; the
+toolbar **Undo** reverts the most recent edit.
+
+> **Tailwind Mode** is a separate, LLM-free path: `INSPECT` reads an element's classes from source,
+> and class toggles/adds send `APPLY_OPS` straight to the AST engine (no preview, no AI). These edits
+> are **not** recorded in the AI undo — the inspector keeps its own undo/redo.
 
 ### 7. Undo
-Every applied edit gets its own `editId` and a stored snapshot on the agent. The history sidebar
-lists edits newest-first; undoing any one of them sends that `editId` back, and the agent restores
-that file's snapshot. (Known limitation: if two edits touched the same file, undoing the older one
-restores its whole snapshot — last-write-wins, no per-hunk stacking. Acceptable for v2.)
+Every applied AI edit gets its own `editId` and a stored snapshot on the agent. The toolbar **Undo**
+sends `UNDO` and the agent restores the most recent edit's snapshot. (Known limitation: if two edits
+touched the same file, undoing restores its whole snapshot — last-write-wins, no per-hunk stacking.
+Acceptable for v2.) Tailwind-mode class edits are stateless on the agent and undone/redone entirely
+in the inspector by re-applying the inverse operations.
 
 ### Batch edits (multi-select fan-out)
 When you select several elements at once, the agent **groups the targets by file** and sends each
@@ -317,7 +328,8 @@ After any extension source change: run `build:ext` (or `watch:ext` handles it), 
 
 **v0.1.0** — React + Vite + Tailwind. Early release.
 
-Working today: AST-based editing engine, visual + design-token context, diff preview, per-edit undo
-history, confidence-gated auto-apply, batch edits, and cross-file redirect.
+Working today: click-to-activate floating toolbar, AST-based editing engine, visual + design-token
+context, diff preview, one-click undo, confidence-gated auto-apply, batch edits, cross-file redirect,
+and a direct Tailwind-class inspector (multi-select, per-element + apply-to-all).
 
 On the roadmap: multi-provider LLM support, Next.js, and Chrome Web Store distribution.

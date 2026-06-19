@@ -224,6 +224,8 @@ export interface StatusMessage {
   projectRoot: string
   /** Project Tailwind theme tokens for the class panel (sent once on connect). */
   theme?: ThemeTokens
+  /** Whether a tailwind.config.* was found — gates the Tailwind editing mode. */
+  tailwindConfigured?: boolean
 }
 
 /** Ask the agent to read the className of one or more elements straight from source. */

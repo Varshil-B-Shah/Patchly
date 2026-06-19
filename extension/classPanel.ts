@@ -37,7 +37,9 @@ let undoStack: Step[] = []
 let redoStack: Step[] = []
 let pending: Pending | null = null
 let pendingSessionId = ''
-let query = ''
+// Per-section search queries. Key is 'all' (apply-to-all bar) or 'el<i>' (element i).
+let queries: Record<string, string> = {}
+const scopeToSrc = new Map<string, string>()
 
 function esc(s: string): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -83,7 +85,7 @@ export function showClassPanel(elements: ClassInfo[], themeTokens: ThemeTokens):
   undoStack = []
   redoStack = []
   pending = null
-  query = ''
+  queries = {}
   renderPanel()
   if (panelEl) panelEl.style.display = 'flex'
 }
@@ -173,7 +175,14 @@ function commit(mutate: (classes: string[]) => { add: string[]; remove: string[]
   }
 }
 
-function undo(): void {
+export function canUndo(): boolean {
+  return undoStack.length > 0
+}
+export function canRedo(): boolean {
+  return redoStack.length > 0
+}
+
+export function undo(): void {
   if (!undoStack.length) return
   const step = undoStack[undoStack.length - 1]
   const transitions: Transition[] = step.map((e) => ({
@@ -188,7 +197,7 @@ function undo(): void {
   }
 }
 
-function redo(): void {
+export function redo(): void {
   if (!redoStack.length) return
   const step = redoStack[redoStack.length - 1]
   const transitions: Transition[] = step.map((e) => ({
@@ -205,17 +214,34 @@ function redo(): void {
 
 // ─── Edit intents ────────────────────────────────────────────────────────────────
 
-function addClass(cls: string): void {
-  commit((classes) => computeClassAdd(classes, cls), `Add ${cls}`)
+// Apply-to-all (every editable target).
+function addClassAll(cls: string): void {
+  commit((classes) => computeClassAdd(classes, cls), `Add ${cls} to all`)
 }
-function removeClass(cls: string): void {
-  commit((classes) => (classes.includes(cls) ? computeClassRemove(cls) : null), `Remove ${cls}`)
+function removeClassAll(cls: string): void {
+  commit((classes) => (classes.includes(cls) ? computeClassRemove(cls) : null), `Remove ${cls} from all`)
 }
-function toggleClass(cls: string): void {
-  const ed = editableTargets()
-  const onAll = ed.length > 0 && ed.every((t) => t.classes.includes(cls))
-  if (onAll) removeClass(cls)
-  else addClass(cls)
+
+// Per-element (one target). Reuses dispatch so undo/redo + revert work unchanged.
+function commitOne(src: string, mutate: (classes: string[]) => { add: string[]; remove: string[] } | null, explanation: string): void {
+  const t = bySrc(src)
+  if (!t || !isEditable(t)) return
+  const edit = mutate(t.classes)
+  const to = edit ? applyClassEdit(t.classes, edit) : [...t.classes]
+  const from = [...t.classes]
+  if (sameSet(from, to)) return
+  const step: Step = [{ patchlySrc: src, before: from, after: to }]
+  if (dispatch([{ src, from, to }], explanation)) {
+    undoStack.push(step)
+    redoStack = []
+    renderPanel()
+  }
+}
+function addClassOne(src: string, cls: string): void {
+  commitOne(src, (classes) => computeClassAdd(classes, cls), `Add ${cls}`)
+}
+function removeClassOne(src: string, cls: string): void {
+  commitOne(src, (classes) => (classes.includes(cls) ? computeClassRemove(cls) : null), `Remove ${cls}`)
 }
 
 // ─── Render ────────────────────────────────────────────────────────────────────
@@ -236,14 +262,20 @@ function unionClassStates(): ClassState[] {
   return order.map((cls) => ({ cls, count: counts.get(cls)!, total }))
 }
 
-function renderResults(): void {
-  const box = panelEl?.querySelector('.patchly-cp-results')
+function classExistsAll(cls: string): boolean {
+  const ed = editableTargets()
+  return ed.length > 0 && ed.every((t) => t.classes.includes(cls))
+}
+
+// Render the search-results list for one scope ('all' or 'el<i>').
+function renderResultsFor(scope: string): void {
+  const box = panelEl?.querySelector(`.patchly-cp-results[data-scope="${scope}"]`) as HTMLElement | null
   if (!box) return
-  const list = query.trim() ? searchClasses(query, theme) : defaultSuggestions(theme)
-  const onAll = (cls: string): boolean => {
-    const ed = editableTargets()
-    return ed.length > 0 && ed.every((t) => t.classes.includes(cls))
-  }
+  const q = queries[scope] ?? ''
+  const list = q.trim() ? searchClasses(q, theme) : defaultSuggestions(theme)
+  const src = scopeToSrc.get(scope)
+  const has = (cls: string): boolean => (scope === 'all' ? classExistsAll(cls) : !!bySrc(src ?? '')?.classes.includes(cls))
+
   if (!list.length) {
     box.innerHTML = '<div class="patchly-cp-noresult">No matches</div>'
     return
@@ -251,135 +283,150 @@ function renderResults(): void {
   box.innerHTML = list
     .map(
       (cls) =>
-        `<button class="patchly-cp-result${onAll(cls) ? ' on' : ''}" data-cls="${esc(cls)}">` +
+        `<button class="patchly-cp-result${has(cls) ? ' on' : ''}" data-cls="${esc(cls)}">` +
         `<span class="patchly-cp-result-name">${esc(cls)}</span>` +
-        `<span class="patchly-cp-result-act">${onAll(cls) ? '✓' : '+'}</span></button>`,
+        `<span class="patchly-cp-result-act">${has(cls) ? '✓' : '+'}</span></button>`,
     )
     .join('')
   box.querySelectorAll<HTMLButtonElement>('.patchly-cp-result').forEach((btn) => {
     btn.onclick = () => {
       const cls = btn.getAttribute('data-cls')!
-      if (onAll(cls)) removeClass(cls)
-      else addClass(cls)
+      if (scope === 'all') has(cls) ? removeClassAll(cls) : addClassAll(cls)
+      else if (src) has(cls) ? removeClassOne(src, cls) : addClassOne(src, cls)
     }
   })
 }
 
+// HTML for a search box + results container for a scope.
+function searchHtml(scope: string): string {
+  return (
+    `<div class="patchly-cp-search">` +
+    `<span class="patchly-cp-search-icon">🔍</span>` +
+    `<input class="patchly-cp-search-input" data-scope="${scope}" type="text" placeholder="search e.g. items-center, hover:bg-…" autocomplete="off" />` +
+    `</div>` +
+    `<div class="patchly-cp-results" data-scope="${scope}"></div>`
+  )
+}
+
+// HTML for a class row (devtools-style). `mixed` only applies to the apply-all union.
+function classRowHtml(cls: string, scope: string, mixed = false, count = 0, total = 0): string {
+  const mark = mixed ? '–' : '✓'
+  return (
+    `<div class="patchly-cp-row" data-scope="${scope}" data-cls="${esc(cls)}">` +
+    `<button class="patchly-cp-check${mixed ? ' mixed' : ' on'}" title="Toggle">${mark}</button>` +
+    `<span class="patchly-cp-clsname">${esc(cls)}</span>` +
+    (mixed ? `<span class="patchly-cp-mixed">${count}/${total}</span>` : '') +
+    `<button class="patchly-cp-rm" title="Remove">×</button>` +
+    `</div>`
+  )
+}
+
 function renderPanel(): void {
+  // renderPanel runs after every stack-changing action — let the toolbar refresh.
+  window.__patchlyHistoryChanged?.()
   if (!panelEl) return
+  scopeToSrc.clear()
 
   if (!targets.length) {
     panelEl.innerHTML = '<div class="patchly-cp-empty-panel">Select an element to inspect its classes.</div>'
     return
   }
 
-  const dynamicTargets = targets.filter((t) => t.info.classNameKind === 'dynamic')
+  const editable = editableTargets()
   const multi = targets.length > 1
+  const showApplyAll = editable.length > 1
+  const titleText = multi ? `${targets.length} elements` : 'Inspector'
 
-  // Header label
-  let headerHtml: string
-  if (multi) {
-    headerHtml = `<span class="patchly-cp-tag">${targets.length} elements</span>`
-  } else {
-    const info = targets[0].info
-    const fileLabel = `${(info.filePath || '').split('/').pop()}:${info.lineNumber}`
-    headerHtml =
-      `<span class="patchly-cp-tag">&lt;${esc(info.tagName)}&gt;</span>` +
-      `<span class="patchly-cp-loc">${esc(fileLabel)}</span>`
+  // Apply-to-all bar (multi-select only)
+  let applyAllHtml = ''
+  if (showApplyAll) {
+    const states = unionClassStates()
+    const rows = states.length
+      ? states.map((s) => classRowHtml(s.cls, 'all', s.count < s.total, s.count, s.total)).join('')
+      : '<div class="patchly-cp-empty">No shared classes.</div>'
+    applyAllHtml = `
+      <div class="patchly-cp-section patchly-cp-all">
+        <div class="patchly-cp-section-label">Apply to all ${editable.length} selected</div>
+        <div class="patchly-cp-classlist">${rows}</div>
+        ${searchHtml('all')}
+      </div>`
   }
 
-  // Dynamic note
-  const dynNote = dynamicTargets.length
-    ? `<div class="patchly-cp-dynamic">🔒 ${dynamicTargets.length === targets.length ? 'Dynamic className' : `${dynamicTargets.length} element(s) have a dynamic className`} — edit those via the AI tab.</div>`
-    : ''
+  // Per-element sections
+  const sections = targets
+    .map((t, i) => {
+      const info = t.info
+      const fileLabel = `${(info.filePath || '').split('/').pop()}:${info.lineNumber}`
+      const head =
+        `<div class="patchly-cp-sec-head">` +
+        `<span class="patchly-cp-tag">&lt;${esc(info.tagName)}&gt;</span>` +
+        `<span class="patchly-cp-loc">${esc(fileLabel)}</span></div>`
 
-  // Current classes
-  const states = unionClassStates()
-  let classListHtml: string
-  if (!editableTargets().length) {
-    classListHtml = ''
-  } else if (!states.length) {
-    classListHtml = '<div class="patchly-cp-empty">No classes yet — add some below.</div>'
-  } else {
-    classListHtml = states
-      .map((s) => {
-        const mixed = s.count < s.total
-        const mark = mixed ? '–' : '✓'
-        return (
-          `<div class="patchly-cp-row" data-cls="${esc(s.cls)}">` +
-          `<button class="patchly-cp-check${mixed ? ' mixed' : ' on'}" title="Toggle">${mark}</button>` +
-          `<span class="patchly-cp-clsname">${esc(s.cls)}</span>` +
-          (mixed ? `<span class="patchly-cp-mixed">${s.count}/${s.total}</span>` : '') +
-          `<button class="patchly-cp-rm" title="Remove">×</button>` +
-          `</div>`
-        )
-      })
-      .join('')
-  }
+      if (info.classNameKind === 'dynamic') {
+        return `<div class="patchly-cp-section">${head}` +
+          `<div class="patchly-cp-dynamic">🔒 ${esc(info.dynamicText ?? 'Dynamic className')} — edit via the AI mode.</div></div>`
+      }
 
-  const canEdit = editableTargets().length > 0
+      const scope = `el${i}`
+      scopeToSrc.set(scope, t.patchlySrc)
+      const rows = t.classes.length
+        ? t.classes.map((cls) => classRowHtml(cls, scope)).join('')
+        : '<div class="patchly-cp-empty">No classes yet — add below.</div>'
+      return `<div class="patchly-cp-section">${head}` +
+        `<div class="patchly-cp-classlist">${rows}</div>${searchHtml(scope)}</div>`
+    })
+    .join('')
 
   panelEl.innerHTML = `
     <div class="patchly-cp-toolbar">
-      <span class="patchly-cp-title">Inspector</span>
-      <button class="patchly-cp-undo" title="Undo" ${undoStack.length ? '' : 'disabled'}>↶</button>
-      <button class="patchly-cp-redo" title="Redo" ${redoStack.length ? '' : 'disabled'}>↷</button>
+      <span class="patchly-cp-title">${esc(titleText)}</span>
       <button class="patchly-cp-close" title="Close">×</button>
     </div>
-    <div class="patchly-cp-header">${headerHtml}</div>
-    ${dynNote}
-    ${canEdit ? `
-      <div class="patchly-cp-section-label">Classes</div>
-      <div class="patchly-cp-classlist">${classListHtml}</div>
-      <div class="patchly-cp-section-label">Add a class</div>
-      <div class="patchly-cp-search">
-        <span class="patchly-cp-search-icon">🔍</span>
-        <input class="patchly-cp-search-input" type="text" placeholder="search e.g. items-center, hover:bg-…" autocomplete="off" />
-      </div>
-      <div class="patchly-cp-results"></div>
-    ` : ''}
+    <div class="patchly-cp-body">
+      ${applyAllHtml}
+      ${sections}
+    </div>
   `
 
-  // Toolbar wiring
-  ;(panelEl.querySelector('.patchly-cp-undo') as HTMLButtonElement | null)?.addEventListener('click', undo)
-  ;(panelEl.querySelector('.patchly-cp-redo') as HTMLButtonElement | null)?.addEventListener('click', redo)
+  // Close
   ;(panelEl.querySelector('.patchly-cp-close') as HTMLButtonElement | null)?.addEventListener('click', () => {
     hideClassPanel()
     window.__patchlyClassPanelClosed?.()
   })
 
-  // Class rows
+  // Class rows (scope-aware)
   panelEl.querySelectorAll<HTMLElement>('.patchly-cp-row').forEach((row) => {
     const cls = row.getAttribute('data-cls')!
-    ;(row.querySelector('.patchly-cp-check') as HTMLButtonElement).onclick = () => toggleClass(cls)
-    ;(row.querySelector('.patchly-cp-rm') as HTMLButtonElement).onclick = () => removeClass(cls)
+    const scope = row.getAttribute('data-scope')!
+    const src = scopeToSrc.get(scope)
+    const removeFn = (): void => {
+      if (scope === 'all') removeClassAll(cls)
+      else if (src) removeClassOne(src, cls)
+    }
+    ;(row.querySelector('.patchly-cp-check') as HTMLButtonElement).onclick = removeFn
+    ;(row.querySelector('.patchly-cp-rm') as HTMLButtonElement).onclick = removeFn
   })
 
-  // Search
-  if (canEdit) {
-    const input = panelEl.querySelector<HTMLInputElement>('.patchly-cp-search-input')
-    if (input) {
-      input.value = query
-      input.addEventListener('input', () => {
-        query = input.value
-        renderResults()
-      })
-      input.addEventListener('keydown', (e) => {
-        e.stopPropagation()
-        if (e.key === 'Enter') {
-          const first = query.trim() ? searchClasses(query, theme)[0] : ''
-          const typed = query.trim()
-          // Enter applies the typed class verbatim if it looks complete, else the top hit.
-          const cls = typed && (typed.includes('-') || typed.includes(':')) ? typed : first
-          if (cls) {
-            query = ''
-            addClass(cls)
-          }
-        }
-      })
-      input.addEventListener('mousedown', (e) => e.stopPropagation())
-      if (query) input.focus()
-    }
-    renderResults()
-  }
+  // Search inputs (scope-aware)
+  panelEl.querySelectorAll<HTMLInputElement>('.patchly-cp-search-input').forEach((input) => {
+    const scope = input.getAttribute('data-scope')!
+    input.value = queries[scope] ?? ''
+    input.addEventListener('input', () => {
+      queries[scope] = input.value
+      renderResultsFor(scope)
+    })
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter') {
+        const q = (queries[scope] ?? '').trim()
+        const cls = q && (q.includes('-') || q.includes(':')) ? q : (q ? searchClasses(q, theme)[0] : '')
+        if (!cls) return
+        queries[scope] = ''
+        if (scope === 'all') addClassAll(cls)
+        else { const src = scopeToSrc.get(scope); if (src) addClassOne(src, cls) }
+      }
+    })
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    renderResultsFor(scope)
+  })
 }

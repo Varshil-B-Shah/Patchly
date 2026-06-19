@@ -8,12 +8,13 @@ import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './l
 import { undoEdit } from './fileEditor.js'
 import { applyEditOperations } from './ast/applyEdit.js'
 import { inspectElement } from './ast/inspect.js'
-import { loadThemeTokens } from './contextBuilder.js'
+import { loadThemeTokens, isTailwindConfigured } from './contextBuilder.js'
 import type { ResolvedConfig } from './config.js'
 
 // Theme is loaded once on first connection and cached for the lifetime of the
 // server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
+let cachedTailwindConfigured: boolean | null = null
 
 interface ApplyGroup {
   filePath: string
@@ -48,12 +49,14 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
     console.log('Extension connected')
 
     if (!cachedTheme) cachedTheme = loadThemeTokens(config.projectRoot)
+    if (cachedTailwindConfigured === null) cachedTailwindConfigured = isTailwindConfigured(config.projectRoot)
 
     ws.send(JSON.stringify({
       type: MSG.STATUS,
       connected: true,
       projectRoot: config.projectRoot,
       theme: cachedTheme,
+      tailwindConfigured: cachedTailwindConfigured,
     }))
 
     ws.on('message', async (data) => {

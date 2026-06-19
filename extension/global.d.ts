@@ -14,9 +14,13 @@ declare global {
     __patchlyInspect?: (patchlySources: string[], sessionId: string) => void
     __patchlyApplyOps?: (operations: Record<string, unknown>[], explanation: string, sessionId: string) => void
     __patchlyGetTheme?: () => Record<string, unknown> | null
+    __patchlyGetTailwindConfigured?: () => boolean | null
+    __patchlyIsConnected?: () => boolean
 
     // ── Defined by overlay.ts, called by content.ts ──────────────────────────
     __patchlyActivate?: () => void
+    __patchlyToggle?: () => void
+    __patchlySetConnected?: (connected: boolean) => void
     __patchlyCancel?: () => void
     __patchlyResetPromptBar?: () => void
 
@@ -32,14 +36,13 @@ declare global {
     __patchlyShowInfo?: (message: string) => void
     __patchlyShowRedirect?: (msg: Record<string, unknown>) => void
 
-    __patchlyRenderHistory?: () => void
-    __patchlyOpenHistory?: () => void
-
     // Direct class panel callbacks (defined by overlay/classPanel, called by content)
     __patchlyShowElementInfo?: (msg: Record<string, unknown>) => void
     __patchlyClassEditError?: (sessionId: string) => void
     __patchlyClassEditApplied?: (sessionId: string) => void
     // Defined by overlay, called by classPanel when its × button closes the panel.
     __patchlyClassPanelClosed?: () => void
+    // Defined by overlay, called by classPanel after any undo/redo stack change.
+    __patchlyHistoryChanged?: () => void
   }
 }
