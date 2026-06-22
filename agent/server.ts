@@ -86,7 +86,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       }
 
       if (msg.type === MSG.GET_SELECTION) {
-        ws.send(JSON.stringify({ type: MSG.SELECTION, selection: latestSelection }))
+        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selection: latestSelection }))
         return
       }
 
@@ -457,10 +457,10 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
           }
-          if (dryRun) combinedDiff += editResult.diff
+          combinedDiff += editResult.diff  // always collect; MCP uses it to show what changed
         }
 
-        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, ...(dryRun ? { diff: combinedDiff } : {}) }))
+        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, diff: combinedDiff }))
         return
       }
 

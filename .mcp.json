@@ -1,15 +1,8 @@
 {
   "mcpServers": {
     "patchly": {
-      "command": "node",
-      "args": [
-        "--import",
-        "tsx",
-        "C:\\Users\\Varshil\\Desktop\\MyWebApps\\Patchly\\agent\\mcp\\server.ts"
-      ],
-      "env": {
-        "NODE_OPTIONS": "--no-warnings"
-      }
+      "command": "npm",
+      "args": ["run", "mcp"]
     }
   }
 }

@@ -284,8 +284,8 @@ export interface OpsAppliedMessage {
   type: typeof MSG.OPS_APPLIED
   sessionId: string
   ok: true
-  /** Present when the request had dryRun:true. */
-  diff?: string
+  /** Unified diff of what was (or would be) changed. Always present. */
+  diff: string
 }
 
 /** One selected element, as the browser sees it. The MCP bridge surfaces these
@@ -308,11 +308,14 @@ export interface SelectionUpdateMessage {
 /** MCP → agent: ask for the element(s) the user currently has selected. */
 export interface GetSelectionMessage {
   type: typeof MSG.GET_SELECTION
+  /** Echo'd back in SelectionMessage so the MCP client can correlate by sessionId. */
+  sessionId: string
 }
 
 /** Agent → MCP: the cached browser selection (empty array if nothing selected). */
 export interface SelectionMessage {
   type: typeof MSG.SELECTION
+  sessionId: string
   selection: SelectionItem[]
 }
 
