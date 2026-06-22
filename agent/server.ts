@@ -1,7 +1,7 @@
 // agent/server.ts
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
-import type { BatchEditEntry, ThemeTokens, ClassInfo } from '../shared/protocol.js'
+import type { BatchEditEntry, ThemeTokens, ClassInfo, SelectionItem } from '../shared/protocol.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
@@ -15,6 +15,11 @@ import type { ResolvedConfig } from './config.js'
 // server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
 let cachedTailwindConfigured: boolean | null = null
+
+// Latest browser selection, pushed by the extension on every selection change.
+// Process-lifetime cache (like the theme above), read by the MCP bridge via
+// GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
+let latestSelection: SelectionItem[] = []
 
 interface ApplyGroup {
   filePath: string
@@ -72,6 +77,17 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       if (msg.type === MSG.PING) {
         ws.send(JSON.stringify({ type: MSG.PONG }))
+      }
+
+      // ── MCP bridge: cache the browser selection / answer selection queries ──
+      if (msg.type === MSG.SELECTION_UPDATE) {
+        latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
+        return
+      }
+
+      if (msg.type === MSG.GET_SELECTION) {
+        ws.send(JSON.stringify({ type: MSG.SELECTION, selection: latestSelection }))
+        return
       }
 
       if (msg.type === MSG.EDIT_REQUEST) {
