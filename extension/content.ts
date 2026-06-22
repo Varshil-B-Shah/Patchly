@@ -132,6 +132,15 @@ window.__patchlyInspect = function (patchlySources: string[], sessionId: string)
   ws.send(JSON.stringify({ type: 'PATCHLY_INSPECT', patchlySources, sessionId }))
 }
 
+// MCP bridge: push the current browser selection to the agent's in-memory cache
+// so the MCP server can answer patchly_current_selection() without polling the DOM.
+window.__patchlySelectionUpdate = function (
+  selection: Array<{ patchlySrc: string; tag: string; classes: string }>,
+): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_SELECTION_UPDATE', selection }))
+}
+
 // Direct class panel: apply pre-built operations (no LLM, no preview)
 window.__patchlyApplyOps = function (
   operations: Record<string, unknown>[],

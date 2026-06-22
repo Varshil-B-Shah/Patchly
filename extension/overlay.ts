@@ -245,6 +245,7 @@ function clearSelectionState(): void {
   selectedTargets = null
   selectedSet = []
   pendingInspectSessionId = null
+  window.__patchlySelectionUpdate?.([])
 }
 
 // Esc / dismiss → drop the current selection but stay in editing mode.
@@ -252,6 +253,7 @@ function dismissSelection(): void {
   selectedElement = null
   selectedPatchlySrc = null
   selectedTargets = null
+  window.__patchlySelectionUpdate?.([])
   if (promptBar) promptBar.style.display = 'none'
   if (promptInput) promptInput.value = ''
   if (elementHighlight) elementHighlight.style.display = 'none'
@@ -484,6 +486,14 @@ function selectElement(el: Element, rect: SelectionRect): void {
   selectedSet = []
   selectedPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
 
+  if (selectedPatchlySrc) {
+    window.__patchlySelectionUpdate?.([{
+      patchlySrc: selectedPatchlySrc,
+      tag: el.tagName.toLowerCase(),
+      classes: (el as HTMLElement).className || '',
+    }])
+  }
+
   const elRect = el.getBoundingClientRect()
   if (elementHighlight) { positionBox(elementHighlight, elRect); elementHighlight.style.display = 'block' }
 
@@ -529,6 +539,17 @@ function tailwindSelect(el: Element, additive: boolean): void {
   selectedPatchlySrc = null
   selectedTargets = selectedSet.length ? selectedSet : null
   renderSelHighlights()
+
+  window.__patchlySelectionUpdate?.(
+    selectedSet
+      .filter((e) => (e as HTMLElement).dataset.patchlySrc)
+      .map((e) => ({
+        patchlySrc: (e as HTMLElement).dataset.patchlySrc!,
+        tag: e.tagName.toLowerCase(),
+        classes: (e as HTMLElement).className || '',
+      })),
+  )
+
   if (selectedSet.length) inspectCurrentSelection()
   else hideClassPanel()
 }

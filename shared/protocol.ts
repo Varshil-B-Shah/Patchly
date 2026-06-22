@@ -264,7 +264,9 @@ export interface ElementInfoMessage {
   elements: ClassInfo[]
 }
 
-/** Apply pre-built operations directly (no LLM, no preview) — the direct panel path. */
+/** Apply pre-built operations directly (no LLM, no preview) — the direct panel path.
+ *  When dryRun is true the agent runs the full pipeline (drift/syntax/format) but
+ *  skips the disk write and replies with OPS_APPLIED carrying the unified diff. */
 export interface ApplyOpsMessage {
   type: typeof MSG.APPLY_OPS
   sessionId: string
@@ -272,6 +274,8 @@ export interface ApplyOpsMessage {
   operations: EditOperation[]
   /** One-sentence summary (e.g. "Set classes on <button>"). Not recorded in AI history. */
   explanation: string
+  /** When true: validate + diff without writing. Reply is still OPS_APPLIED. */
+  dryRun?: boolean
 }
 
 /** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
@@ -280,6 +284,8 @@ export interface OpsAppliedMessage {
   type: typeof MSG.OPS_APPLIED
   sessionId: string
   ok: true
+  /** Present when the request had dryRun:true. */
+  diff?: string
 }
 
 /** One selected element, as the browser sees it. The MCP bridge surfaces these

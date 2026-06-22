@@ -425,7 +425,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
       // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
-        const { sessionId, operations } = msg as { sessionId: string; operations: EditOperation[]; explanation: string }
+        const { sessionId, operations, dryRun } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean }
 
         if (!Array.isArray(operations) || operations.length === 0) {
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
@@ -449,16 +449,18 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           opsByFile.set(sourceResult.relativePath, group)
         }
 
-        // Apply each file's ops in one pass. First failure stops; panel reverts.
+        // Apply (or dry-run) each file's ops in one pass. First failure stops.
+        let combinedDiff = ''
         for (const fileOps of opsByFile.values()) {
-          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps })
+          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: !!dryRun })
           if (!editResult.ok) {
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
           }
+          if (dryRun) combinedDiff += editResult.diff
         }
 
-        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true }))
+        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, ...(dryRun ? { diff: combinedDiff } : {}) }))
         return
       }
 

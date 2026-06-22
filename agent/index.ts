@@ -28,6 +28,8 @@ async function main() {
 
 if (process.argv[2] === 'init') {
   import('../bin/init.js')
+} else if (process.argv[2] === 'mcp') {
+  import('./mcp/server.js')
 } else {
   main().catch((err) => {
     console.error('Fatal error:', err)
