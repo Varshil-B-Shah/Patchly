@@ -1,7 +1,7 @@
 // agent/server.ts
 import { WebSocketServer } from 'ws'
 import { MSG } from '../shared/protocol.js'
-import type { BatchEditEntry, ThemeTokens, ClassInfo } from '../shared/protocol.js'
+import type { BatchEditEntry, ThemeTokens, ClassInfo, SelectionItem } from '../shared/protocol.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
@@ -15,6 +15,11 @@ import type { ResolvedConfig } from './config.js'
 // server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
 let cachedTailwindConfigured: boolean | null = null
+
+// Latest browser selection, pushed by the extension on every selection change.
+// Process-lifetime cache (like the theme above), read by the MCP bridge via
+// GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
+let latestSelection: SelectionItem[] = []
 
 interface ApplyGroup {
   filePath: string
@@ -72,6 +77,17 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       if (msg.type === MSG.PING) {
         ws.send(JSON.stringify({ type: MSG.PONG }))
+      }
+
+      // ── MCP bridge: cache the browser selection / answer selection queries ──
+      if (msg.type === MSG.SELECTION_UPDATE) {
+        latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
+        return
+      }
+
+      if (msg.type === MSG.GET_SELECTION) {
+        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selection: latestSelection }))
+        return
       }
 
       if (msg.type === MSG.EDIT_REQUEST) {
@@ -409,7 +425,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
       // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
-        const { sessionId, operations } = msg as { sessionId: string; operations: EditOperation[]; explanation: string }
+        const { sessionId, operations, dryRun } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean }
 
         if (!Array.isArray(operations) || operations.length === 0) {
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
@@ -433,16 +449,18 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           opsByFile.set(sourceResult.relativePath, group)
         }
 
-        // Apply each file's ops in one pass. First failure stops; panel reverts.
+        // Apply (or dry-run) each file's ops in one pass. First failure stops.
+        let combinedDiff = ''
         for (const fileOps of opsByFile.values()) {
-          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps })
+          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: !!dryRun })
           if (!editResult.ok) {
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
           }
+          combinedDiff += editResult.diff  // always collect; MCP uses it to show what changed
         }
 
-        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true }))
+        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, diff: combinedDiff }))
         return
       }
 

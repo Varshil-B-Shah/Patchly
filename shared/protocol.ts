@@ -31,6 +31,11 @@ export const MSG = {
   ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',  // agent → ext: the className breakdown(s)
   APPLY_OPS:    'PATCHLY_APPLY_OPS',     // ext → agent: apply pre-built operations, no LLM
   OPS_APPLIED:  'PATCHLY_OPS_APPLIED',   // agent → ext: ops applied (NOT recorded in AI history)
+
+  // MCP bridge (any MCP-capable coding agent → agent, via the stdio MCP server)
+  SELECTION_UPDATE: 'PATCHLY_SELECTION_UPDATE', // ext → agent: the browser selection changed
+  GET_SELECTION:    'PATCHLY_GET_SELECTION',    // mcp → agent: what is currently selected?
+  SELECTION:        'PATCHLY_SELECTION',        // agent → mcp: the cached browser selection
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -259,7 +264,9 @@ export interface ElementInfoMessage {
   elements: ClassInfo[]
 }
 
-/** Apply pre-built operations directly (no LLM, no preview) — the direct panel path. */
+/** Apply pre-built operations directly (no LLM, no preview) — the direct panel path.
+ *  When dryRun is true the agent runs the full pipeline (drift/syntax/format) but
+ *  skips the disk write and replies with OPS_APPLIED carrying the unified diff. */
 export interface ApplyOpsMessage {
   type: typeof MSG.APPLY_OPS
   sessionId: string
@@ -267,6 +274,8 @@ export interface ApplyOpsMessage {
   operations: EditOperation[]
   /** One-sentence summary (e.g. "Set classes on <button>"). Not recorded in AI history. */
   explanation: string
+  /** When true: validate + diff without writing. Reply is still OPS_APPLIED. */
+  dryRun?: boolean
 }
 
 /** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
@@ -275,6 +284,39 @@ export interface OpsAppliedMessage {
   type: typeof MSG.OPS_APPLIED
   sessionId: string
   ok: true
+  /** Unified diff of what was (or would be) changed. Always present. */
+  diff: string
+}
+
+/** One selected element, as the browser sees it. The MCP bridge surfaces these
+ *  to the coding agent so it knows what the user is pointing at. */
+export interface SelectionItem {
+  /** data-patchly-src pointer, "file:line:column". */
+  patchlySrc: string
+  /** Lowercase tag name, e.g. "button". */
+  tag: string
+  /** Live DOM className string (may differ from source for dynamic classes). */
+  classes: string
+}
+
+/** Extension → agent: the browser selection changed (replaces the cached set). */
+export interface SelectionUpdateMessage {
+  type: typeof MSG.SELECTION_UPDATE
+  selection: SelectionItem[]
+}
+
+/** MCP → agent: ask for the element(s) the user currently has selected. */
+export interface GetSelectionMessage {
+  type: typeof MSG.GET_SELECTION
+  /** Echo'd back in SelectionMessage so the MCP client can correlate by sessionId. */
+  sessionId: string
+}
+
+/** Agent → MCP: the cached browser selection (empty array if nothing selected). */
+export interface SelectionMessage {
+  type: typeof MSG.SELECTION
+  sessionId: string
+  selection: SelectionItem[]
 }
 
 export interface PongMessage {
@@ -307,7 +349,7 @@ export interface UndoDoneMessage {
   editId: string
 }
 
-/** Any message the extension sends to the agent. */
+/** Any message a client (extension or MCP bridge) sends to the agent. */
 export type ExtensionToAgentMessage =
   | PingMessage
   | EditRequestMessage
@@ -316,8 +358,10 @@ export type ExtensionToAgentMessage =
   | UndoMessage
   | InspectMessage
   | ApplyOpsMessage
+  | SelectionUpdateMessage
+  | GetSelectionMessage
 
-/** Any message the agent sends to the extension. */
+/** Any message the agent sends back to a client (extension or MCP bridge). */
 export type AgentToExtensionMessage =
   | PongMessage
   | StatusMessage
@@ -331,3 +375,4 @@ export type AgentToExtensionMessage =
   | UndoDoneMessage
   | ElementInfoMessage
   | OpsAppliedMessage
+  | SelectionMessage

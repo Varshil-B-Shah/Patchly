@@ -278,6 +278,86 @@ confirm, its own history entry.
 
 ---
 
+## MCP server — editor-agnostic element editing
+
+Patchly ships a local [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server so any
+MCP-capable coding agent (Claude Code, Cline, Windsurf, Cursor) can inspect and edit the element the
+user is currently pointing at in the browser — with no LLM in the edit path and all of Patchly's
+safety rails intact.
+
+### How it works
+
+The MCP server is a thin stdio process. It does **not** re-implement any editing logic. It connects
+as a WebSocket client to the already-running `patchly` agent and proxies requests to it. The agent
+remains the single source of truth for selection state and all file writes.
+
+```
+Coding agent ⇄ (stdio/MCP) ⇄ patchly mcp ⇄ (ws://localhost:7842) ⇄ patchly agent ⇄ source files
+                                                       ↑
+                           Chrome extension also connected (pushes SELECTION_UPDATE)
+```
+
+When the user selects an element in the browser, the extension pushes the selection to the agent's
+in-memory cache (`SELECTION_UPDATE`). The MCP server can then retrieve it instantly without touching
+the DOM.
+
+### Starting the MCP server
+
+```bash
+# development (no compile step)
+npm run mcp
+
+# production (after npm run build)
+npx patchly mcp
+```
+
+The server requires the patchly agent to already be running (`npx patchly` in your project). If the
+agent isn't up, every tool call returns a clear error: *"Patchly agent not found — run `npx patchly`
+in your project first."*
+
+### Claude Code setup
+
+A `.mcp.json` is included at the repo root. Open this repo in Claude Code and it will detect and
+offer to enable the `patchly` server automatically.
+
+For other MCP clients, add this to their MCP config (pointing `cwd` at the Patchly repo root):
+
+```json
+{
+  "mcpServers": {
+    "patchly": {
+      "command": "npm",
+      "args": ["run", "mcp"]
+    }
+  }
+}
+```
+
+### MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `patchly_current_selection` | Returns the element(s) currently selected in the browser. Includes source file/line/column, tag name, and source-accurate className breakdown (`classNameKind`: static \| dynamic \| none, plus class token list). Auto-inspects via AST — no second tool call needed. |
+| `patchly_inspect(patchlySrc)` | Reads an element's className straight from source for a specific `data-patchly-src` pointer. Useful when you know the source location but haven't selected it. Read-only. |
+| `patchly_apply(operation, dryRun?)` | Applies one `EditOperation` (same schema as the LLM path — `setClassName`, `setAttribute`, `setText`, `setInlineStyle`, `wrapElement`, `insertChild`, `replaceElement`, `removeElement`). If `operation.target` is omitted, the current browser selection is used automatically. Always returns the unified diff. Set `dryRun: true` to preview without writing. |
+
+### Typical workflow
+
+```
+user selects element in browser
+  → agent calls patchly_current_selection()
+    → gets { file, line, column, tag, classNameKind, classes }
+  → agent calls patchly_apply({ op: "setClassName", add: ["..."], remove: ["..."] })
+    → source file is edited, HMR reloads the page, diff is returned
+```
+
+All of Patchly's safety rails apply: no writes outside the project root, drift/fingerprint check
+before every edit, syntax guard (pre- and post-edit), and Prettier formatting. The apply path uses
+`APPLY_OPS`, which is deliberately **not** recorded in the AI edit history — MCP edits stay out of
+the extension's undo sidebar.
+
+---
+
 ## Message protocol (at a glance)
 
 All extension ↔ agent communication uses a small set of typed messages over the WebSocket:
@@ -293,6 +373,13 @@ All extension ↔ agent communication uses a small set of typed messages over th
 | ext → agent | `UNDO` | revert a specific `editId` (or the most recent) |
 | agent → ext | `UNDO_DONE` | the revert completed |
 | agent → ext | `EDIT_ERROR` / `INFO` | a failure with an error code, or an informational note |
+| ext → agent | `INSPECT` | read element className(s) from source (Tailwind Mode + MCP) |
+| agent → ext | `ELEMENT_INFO` | source-accurate className breakdown (static/dynamic/none) |
+| ext → agent | `APPLY_OPS` | apply pre-built operations directly — no LLM, no preview (Tailwind Mode + MCP) |
+| agent → ext | `OPS_APPLIED` | ops applied; carries the unified diff; not recorded in AI history |
+| ext → agent | `SELECTION_UPDATE` | extension pushes current browser selection to the agent cache (MCP bridge) |
+| mcp → agent | `GET_SELECTION` | MCP server requests the cached selection |
+| agent → mcp | `SELECTION` | the cached selection items (empty array if nothing selected) |
 
 ---
 
@@ -306,7 +393,7 @@ The entire project is TypeScript (`strict: true`). Two separate build pipelines:
 | `extension/` | `npm run watch:ext` (esbuild --watch → `extension/dist/`) | `npm run build:ext` (esbuild → `extension/dist/`) |
 
 ```bash
-# Run tests (47 AST regression tests)
+# Run tests (71 AST regression tests)
 npm test
 
 # Type-check both tsconfigs
@@ -314,6 +401,9 @@ npm run typecheck
 
 # Start agent in dev mode
 npm run dev
+
+# Start MCP server in dev mode (requires agent already running)
+npm run mcp
 
 # Build + watch extension (reload unpacked after each change)
 npm run watch:ext
@@ -330,6 +420,7 @@ After any extension source change: run `build:ext` (or `watch:ext` handles it), 
 
 Working today: click-to-activate floating toolbar, AST-based editing engine, visual + design-token
 context, diff preview, one-click undo, confidence-gated auto-apply, batch edits, cross-file redirect,
-and a direct Tailwind-class inspector (multi-select, per-element + apply-to-all).
+a direct Tailwind-class inspector (multi-select, per-element + apply-to-all), and an **MCP server**
+that exposes browser selection + source-mapped editing to any MCP-capable coding agent.
 
 On the roadmap: multi-provider LLM support, Next.js, and Chrome Web Store distribution.
