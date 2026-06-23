@@ -573,6 +573,7 @@ function inspectCurrentSelection(): void {
 // ─── Mouse handling ──────────────────────────────────────────────────────────
 
 function onMouseDown(e: MouseEvent): void {
+  if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
   if (!isActive) return
   e.preventDefault()
   mouseDown = true
@@ -585,6 +586,7 @@ function onMouseDown(e: MouseEvent): void {
 }
 
 function onMouseMove(e: MouseEvent): void {
+  if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
   if (!isActive) return
   currentX = e.clientX
   currentY = e.clientY
