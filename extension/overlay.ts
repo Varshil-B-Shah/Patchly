@@ -340,7 +340,7 @@ function initPinsLayer(): void {
   pinsContainerEl = document.createElement('div')
   pinsContainerEl.id = 'patchly-pins'
   pinsContainerEl.style.cssText =
-    'position:fixed;inset:0;pointer-events:none;z-index:2147483620;'
+    'position:fixed;inset:0;pointer-events:none;z-index:2147483647;'
   document.body.appendChild(pinsContainerEl)
   window.addEventListener('scroll', refreshPins, { passive: true })
   window.addEventListener('resize', refreshPins, { passive: true })
@@ -415,7 +415,7 @@ function openPinCard(
   pinCardEl = document.createElement('div')
   pinCardEl.className = 'patchly-pin-card'
   pinCardEl.style.cssText = `
-    position:fixed;z-index:2147483640;
+    position:fixed;z-index:2147483647;
     background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;
     padding:12px;width:280px;
     box-shadow:0 4px 24px rgba(0,0,0,.5);
@@ -627,7 +627,9 @@ function onMouseUp(e: MouseEvent): void {
   }
 
   if (activeMode === 'comment' && !isDragging) {
-    if (commentComposerEl && commentComposerEl.style.display !== 'none') return
+    // Ignore clicks that land inside the composer itself; a click on any other
+    // page element re-targets the composer to the newly clicked element.
+    if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
     const el = elementAtPoint(e.clientX, e.clientY)
     if (!el) return
     const rect = el.getBoundingClientRect()
@@ -645,7 +647,7 @@ function onMouseUp(e: MouseEvent): void {
   }
 
   if (activeMode === 'comment' && isDragging) {
-    if (commentComposerEl && commentComposerEl.style.display !== 'none') return
+    if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
     const selRect = getSelectionRect()
     if (selectionRect) selectionRect.style.display = 'none'
     isDragging = false
@@ -1190,7 +1192,10 @@ function resetPromptBar(): void {
 function initCommentComposer(): void {
   commentComposerEl = document.createElement('div')
   commentComposerEl.id = 'patchly-comment-composer'
-  commentComposerEl.style.cssText = 'display:none;position:fixed;z-index:2147483630;flex-direction:column;gap:6px;background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:300px;box-shadow:0 4px 24px rgba(0,0,0,.4);'
+  // Max z-index + appended after #patchly-root so it stacks ABOVE the full-screen
+  // capture layer (which has pointer-events:all + cursor:crosshair). cursor:default
+  // overrides the page-level crosshair while the pointer is over the composer.
+  commentComposerEl.style.cssText = 'display:none;position:fixed;z-index:2147483647;cursor:default;flex-direction:column;gap:6px;background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:300px;box-shadow:0 4px 24px rgba(0,0,0,.4);'
   commentComposerEl.innerHTML = `
     <textarea id="patchly-cc-note" rows="3" placeholder="Describe the change needed…" style="resize:vertical;width:100%;box-sizing:border-box;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;"></textarea>
     <input id="patchly-cc-author" type="text" placeholder="Your name (optional)" style="background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;" />
