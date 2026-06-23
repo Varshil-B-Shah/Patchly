@@ -2,7 +2,13 @@
 // Manages the WebSocket connection to the local agent and routes incoming
 // messages to the overlay UI (via window.__patchly* globals).
 
-const AGENT_PORT = 7842
+import { DEFAULT_PORT, PORT_SCAN_RANGE } from '../shared/agentInfo.js'
+
+// Browsers can't read the agent's lockfile, so we scan a small port range and
+// connect to the first agent that responds. STATUS.projectRoot then tells us
+// which project we reached.
+const CANDIDATE_PORTS = Array.from({ length: PORT_SCAN_RANGE + 1 }, (_, i) => DEFAULT_PORT + i)
+let portIdx = 0
 const MSG_PING = 'PATCHLY_PING'
 const MSG_PONG = 'PATCHLY_PONG'
 const MSG_STATUS = 'PATCHLY_STATUS'
@@ -20,7 +26,8 @@ function setConnected(connected: boolean): void {
 
 function connect(): void {
   try {
-    ws = new WebSocket(`ws://localhost:${AGENT_PORT}`)
+    const port = CANDIDATE_PORTS[portIdx]
+    ws = new WebSocket(`ws://localhost:${port}`)
 
     ws.onopen = () => {
       ws!.send(JSON.stringify({ type: MSG_PING }))
@@ -87,11 +94,17 @@ function connect(): void {
       if (msg.type === 'PATCHLY_UNDO_DONE') {
         window.__patchlyShowSuccess?.({ filePath: 'Undone', showUndo: false })
       }
+
+      if (msg.type === 'PATCHLY_SCREENSHOT_REQUEST') {
+        window.__patchlyHandleScreenshotRequest?.(String(msg.sessionId ?? ''))
+      }
     }
 
     ws.onclose = () => {
       setConnected(false)
-      setTimeout(connect, 3000)
+      // Advance to the next candidate port; wait longer only after a full sweep.
+      portIdx = (portIdx + 1) % CANDIDATE_PORTS.length
+      setTimeout(connect, portIdx === 0 ? 3000 : 150)
     }
 
     ws.onerror = () => {
@@ -135,7 +148,14 @@ window.__patchlyInspect = function (patchlySources: string[], sessionId: string)
 // MCP bridge: push the current browser selection to the agent's in-memory cache
 // so the MCP server can answer patchly_current_selection() without polling the DOM.
 window.__patchlySelectionUpdate = function (
-  selection: Array<{ patchlySrc: string; tag: string; classes: string }>,
+  selection: Array<{
+    patchlySrc: string
+    tag: string
+    classes: string
+    computedStyles?: Record<string, string>
+    screenshot?: string | null
+    reactInfo?: { componentName: string | null; props: Record<string, unknown> } | null
+  }>,
 ): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return
   ws.send(JSON.stringify({ type: 'PATCHLY_SELECTION_UPDATE', selection }))

@@ -40,9 +40,13 @@ function updateGitignore(projectRoot: string): void {
   if (!fs.existsSync(gitignorePath)) return
 
   let content = fs.readFileSync(gitignorePath, 'utf8')
-  if (content.includes('.patchlyrc.json')) return
-
-  content += `${content.endsWith('\n') ? '' : '\n'}.patchlyrc.json\n`
+  let changed = false
+  for (const entry of ['.patchlyrc.json', '.patchly/']) {
+    if (content.includes(entry)) continue
+    content += `${content.endsWith('\n') ? '' : '\n'}${entry}\n`
+    changed = true
+  }
+  if (!changed) return
   fs.writeFileSync(gitignorePath, content)
   console.log('Updated .gitignore')
 }

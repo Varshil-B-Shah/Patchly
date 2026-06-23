@@ -12,16 +12,46 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import fs from 'fs'
+import path from 'path'
 import WebSocket from 'ws'
 import { z } from 'zod'
 import { MSG } from '../../shared/protocol.js'
 import type { SelectionItem, ClassInfo } from '../../shared/protocol.js'
+import { DEFAULT_PORT, LOCKFILE_REL, type AgentLockfile } from '../../shared/agentInfo.js'
 
-const WS_PORT = 7842
-const WS_URL = `ws://localhost:${WS_PORT}`
 const REQUEST_TIMEOUT_MS = 10_000
 const NOT_FOUND_MSG =
   'Patchly agent not found — run `npx patchly` in your project first.'
+
+/**
+ * Discover the running agent via its per-project lockfile. The MCP server is
+ * launched with cwd = the user's project, so we read <cwd>/.patchly/agent.json,
+ * verify it belongs to THIS project (guards against editing a different running
+ * app), and return its port. Falls back to DEFAULT_PORT if no lockfile exists.
+ */
+function discoverAgentPort(): number {
+  const cwd = path.resolve(process.cwd())
+  const lockPath = path.resolve(cwd, LOCKFILE_REL)
+  if (!fs.existsSync(lockPath)) return DEFAULT_PORT
+
+  let lock: AgentLockfile
+  try {
+    lock = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as AgentLockfile
+  } catch {
+    return DEFAULT_PORT
+  }
+
+  if (path.resolve(lock.projectRoot) !== cwd) {
+    throw new Error(
+      `Patchly agent lockfile is for a different project.\n` +
+      `  lockfile projectRoot: ${lock.projectRoot}\n` +
+      `  this MCP server cwd:  ${cwd}\n` +
+      `Run the MCP server from the same project as the running agent.`,
+    )
+  }
+  return lock.port
+}
 
 // ─── WebSocket agent client ───────────────────────────────────────────────────
 
@@ -37,7 +67,18 @@ class PatchlyAgentClient {
   connect(): Promise<void> {
     if (this.connectPromise) return this.connectPromise
     this.connectPromise = new Promise((resolve, reject) => {
-      const ws = new WebSocket(WS_URL)
+      let port: number
+      try {
+        port = discoverAgentPort()
+      } catch (err: unknown) {
+        // projectRoot mismatch — surface the specific reason. Reset the cached
+        // promise so a later call (after the user fixes it) can retry.
+        this.connectPromise = null
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+
+      const ws = new WebSocket(`ws://localhost:${port}`)
       const timer = setTimeout(() => {
         ws.terminate()
         reject(new Error(NOT_FOUND_MSG))
@@ -175,10 +216,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_current_selection',
       description:
-        'Returns the element(s) the user currently has selected in the browser (via the Patchly Chrome extension). ' +
-        'Includes the source file/line, tag name, and source-accurate className breakdown ' +
-        '(classNameKind: static | dynamic | none, plus the class token list). ' +
-        'Call this first before patchly_apply — you get everything you need to make an edit in one shot.',
+        'THE PRIMARY TOOL. Returns what the user is pointing at in the browser (via the Patchly ' +
+        'Chrome extension): the exact source location (file/line/column), tag name, source-accurate ' +
+        'className breakdown (classNameKind: static | dynamic | none + class tokens), the element\'s ' +
+        'computed CSS styles, AND a screenshot of the element as an image block so you can SEE it. ' +
+        'Call this to resolve "what am I looking at" — then open that file and edit it yourself with ' +
+        'your normal editing tools. You do NOT need patchly_apply for that; you have the precise ' +
+        'location and a picture of the current visual state.',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
     {
@@ -201,11 +245,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_apply',
       description:
-        'Applies one EditOperation to the source file and hot-reloads the page via HMR. ' +
-        'Always returns the unified diff of what changed. ' +
-        'If operation.target is omitted, the current browser selection is used automatically — ' +
-        'so after patchly_current_selection you can apply without repeating the target. ' +
-        'Set dryRun:true to validate and preview the diff without writing to disk.',
+        'OPTIONAL deterministic fast-path. In most cases you should edit the source file yourself ' +
+        'using the location from patchly_current_selection — you already know exactly where it is. ' +
+        'Use this tool only for trivial, mechanical tweaks (className/style/text) where you want ' +
+        'Patchly\'s AST-safe edit + drift guard instead of editing by hand. ' +
+        'Applies one EditOperation and hot-reloads via HMR; always returns the unified diff. ' +
+        'If operation.target is omitted, the current selection is used. ' +
+        'SAFETY: structural ops (wrapElement/insertChild/replaceElement/removeElement) without ' +
+        'dryRun automatically return a dry-run diff and requiresConfirmation:true — call again ' +
+        'with confirmed:true after reviewing the diff.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -220,9 +268,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'boolean',
             description: 'Preview the diff without writing to disk.',
           },
+          confirmed: {
+            type: 'boolean',
+            description: 'Must be true to execute structural ops (wrapElement/insertChild/replaceElement/removeElement) after reviewing the dry-run diff.',
+          },
         },
         required: ['operation'],
       },
+    },
+    {
+      name: 'patchly_screenshot',
+      description:
+        'Captures a fresh screenshot of the currently selected element and returns it as an image ' +
+        'block. Call this AFTER making an edit and waiting a moment for HMR to reload the page, to ' +
+        'visually confirm the change looks correct. Returns null if no element is selected.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
     },
   ],
 }))
@@ -283,10 +343,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         classNameKind: info?.classNameKind ?? 'unknown',
         classes: info?.classes ?? s.classes.split(/\s+/).filter(Boolean),
         ...(info?.dynamicText ? { dynamicText: info.dynamicText } : {}),
+        // Visual state: curated computed styles + React component identity.
+        ...(s.computedStyles ? { computedStyles: s.computedStyles } : {}),
+        ...(s.reactInfo ? { reactInfo: s.reactInfo } : {}),
       }
     })
 
-    return { content: [{ type: 'text', text: JSON.stringify(items, null, 2) }] }
+    const selectionId = (selResponse as Record<string, unknown>).selectionId as string | undefined
+
+    // Mixed content: the structured pointer/styles/reactInfo as text, plus a
+    // screenshot IMAGE block so the agent can literally SEE what it's editing.
+    const payload = selectionId ? { selectionId, elements: items } : { elements: items }
+    const content: Array<Record<string, unknown>> = [
+      { type: 'text', text: JSON.stringify(payload, null, 2) },
+    ]
+    for (const s of selection) {
+      if (s.screenshot) {
+        content.push({ type: 'image', data: s.screenshot, mimeType: 'image/png' })
+      }
+    }
+
+    return { content }
   }
 
   // ── patchly_inspect ───────────────────────────────────────────────────────
@@ -308,6 +385,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: `Inspect failed: ${response.message}` }], isError: true }
     }
     return { content: [{ type: 'text', text: JSON.stringify(response.elements, null, 2) }] }
+  }
+
+  // ── patchly_screenshot ────────────────────────────────────────────────────
+  if (name === 'patchly_screenshot') {
+    const sessionId = mkSid()
+    let response: Record<string, unknown>
+    try {
+      response = await agent.request({ type: MSG.SCREENSHOT_REQUEST, sessionId })
+    } catch (err: unknown) {
+      return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
+    }
+
+    const screenshot = response.screenshot as string | null
+    if (!screenshot) {
+      return {
+        content: [{ type: 'text', text: 'No screenshot available — no element is currently selected in the browser.' }],
+      }
+    }
+    return {
+      content: [
+        { type: 'text', text: 'Current element state:' },
+        { type: 'image', data: screenshot, mimeType: 'image/png' },
+      ],
+    }
   }
 
   // ── patchly_apply ─────────────────────────────────────────────────────────
@@ -354,6 +455,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    const confirmed = rawArgs?.confirmed === true
     const sessionId = mkSid()
     let response: Record<string, unknown>
     try {
@@ -363,6 +465,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         operations: [parsed.data],
         explanation: `MCP: ${parsed.data.op}`,
         dryRun,
+        confirmed,
       })
     } catch (err: unknown) {
       return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
@@ -375,6 +478,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const diffBlock = response.diff
       ? `\n\n\`\`\`diff\n${response.diff}\n\`\`\``
       : ''
+
+    // Trust gate: structural op was auto-converted to dry-run — show the diff and
+    // ask the agent to call again with confirmed:true if the change looks correct.
+    if (response.requiresConfirmation) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Structural operation \`${parsed.data.op}\` requires confirmation.\n\nReview the diff:${diffBlock || ' (no diff)'}\n\nIf the change looks correct, call patchly_apply again with the same operation and \`confirmed: true\`.`,
+        }],
+      }
+    }
 
     if (dryRun) {
       return {

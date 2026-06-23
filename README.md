@@ -278,12 +278,19 @@ confirm, its own history entry.
 
 ---
 
-## MCP server — editor-agnostic element editing
+## MCP server — give any coding agent eyes on the browser
 
 Patchly ships a local [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server so any
-MCP-capable coding agent (Claude Code, Cline, Windsurf, Cursor) can inspect and edit the element the
-user is currently pointing at in the browser — with no LLM in the edit path and all of Patchly's
-safety rails intact.
+MCP-capable coding agent (Claude Code, GitHub Copilot, Cline, Windsurf, Cursor) can answer the one
+question it otherwise can't from a terminal: **"what is the user pointing at in the browser, where is
+it in source, and what does it look like right now?"**
+
+This is the key framing: a coding agent already has a first-class editor. What it *lacks* is
+**perception** — the browser is invisible to it. Patchly's MCP server is the **eyes and the pointer**:
+it resolves a click in the browser to an exact source location, the element's computed styles, and a
+**screenshot** of the element, and hands all of that to the agent. The agent then edits the file
+itself with its own tools. (A deterministic `patchly_apply` is offered too, but it's optional — see
+below.)
 
 ### How it works
 
@@ -292,69 +299,70 @@ as a WebSocket client to the already-running `patchly` agent and proxies request
 remains the single source of truth for selection state and all file writes.
 
 ```
-Coding agent ⇄ (stdio/MCP) ⇄ patchly mcp ⇄ (ws://localhost:7842) ⇄ patchly agent ⇄ source files
+Coding agent ⇄ (stdio/MCP) ⇄ patchly mcp ⇄ (ws lockfile-discovered) ⇄ patchly agent ⇄ source files
                                                        ↑
                            Chrome extension also connected (pushes SELECTION_UPDATE)
 ```
 
-When the user selects an element in the browser, the extension pushes the selection to the agent's
-in-memory cache (`SELECTION_UPDATE`). The MCP server can then retrieve it instantly without touching
-the DOM.
+When the user selects an element, the extension captures its source pointer, tag, live classes,
+**computed styles, and a cropped screenshot**, and pushes them to the agent's in-memory cache
+(`SELECTION_UPDATE`). The MCP server retrieves all of it instantly — no DOM polling.
+
+### Agent discovery (multi-project safe)
+
+The agent binds the first free port starting at `7842` and writes a lockfile to
+`<projectRoot>/.patchly/agent.json` (`{ port, projectRoot, pid }`). The MCP server — launched with
+`cwd` = your project — reads that lockfile, **verifies its `projectRoot` matches the workspace**, and
+connects to the right port. This means two projects each running their own agent never collide, and
+the MCP can't accidentally edit a *different* running app. If no agent is found, every tool call
+returns: *"Patchly agent not found — run `npx patchly` in your project first."*
 
 ### Starting the MCP server
 
 ```bash
-# development (no compile step)
-npm run mcp
-
-# production (after npm run build)
-npx patchly mcp
+npm run mcp          # development (no compile step)
+npx patchly mcp      # production (after npm run build / when installed)
 ```
 
-The server requires the patchly agent to already be running (`npx patchly` in your project). If the
-agent isn't up, every tool call returns a clear error: *"Patchly agent not found — run `npx patchly`
-in your project first."*
+### Client setup
 
-### Claude Code setup
-
-A `.mcp.json` is included at the repo root. Open this repo in Claude Code and it will detect and
-offer to enable the `patchly` server automatically.
-
-For other MCP clients, add this to their MCP config (pointing `cwd` at the Patchly repo root):
-
+**Claude Code** — uses `.mcp.json` with the **`mcpServers`** key (included at the repo root):
 ```json
-{
-  "mcpServers": {
-    "patchly": {
-      "command": "npm",
-      "args": ["run", "mcp"]
-    }
-  }
-}
+{ "mcpServers": { "patchly": { "command": "npx", "args": ["patchly", "mcp"] } } }
 ```
+
+**GitHub Copilot (VS Code)** — uses `.vscode/mcp.json` with the **`servers`** key (included). Note:
+Copilot exposes MCP tools in **Agent mode** only, and prompts for confirmation before each tool call.
+```json
+{ "servers": { "patchly": { "type": "stdio", "command": "npx", "args": ["patchly", "mcp"] } } }
+```
+
+> In this repo, both configs use `npm run mcp` so they work without a build step. Consumers of a
+> published `patchly` package use the `npx patchly mcp` form shown above.
 
 ### MCP tools
 
 | Tool | Description |
 |------|-------------|
-| `patchly_current_selection` | Returns the element(s) currently selected in the browser. Includes source file/line/column, tag name, and source-accurate className breakdown (`classNameKind`: static \| dynamic \| none, plus class token list). Auto-inspects via AST — no second tool call needed. |
-| `patchly_inspect(patchlySrc)` | Reads an element's className straight from source for a specific `data-patchly-src` pointer. Useful when you know the source location but haven't selected it. Read-only. |
-| `patchly_apply(operation, dryRun?)` | Applies one `EditOperation` (same schema as the LLM path — `setClassName`, `setAttribute`, `setText`, `setInlineStyle`, `wrapElement`, `insertChild`, `replaceElement`, `removeElement`). If `operation.target` is omitted, the current browser selection is used automatically. Always returns the unified diff. Set `dryRun: true` to preview without writing. |
+| **`patchly_current_selection`** | **The primary tool.** Returns what the user is pointing at: source file/line/column, tag, source-accurate className breakdown (`classNameKind`: static \| dynamic \| none + tokens), the element's **computed CSS styles**, and a **screenshot of the element as an MCP image block** so the agent can *see* it. Everything in one call — then the agent opens the file and edits it itself. |
+| `patchly_inspect(patchlySrc)` | Reads an element's className straight from source for a specific `data-patchly-src` pointer. Useful when you know the location but haven't selected it. Read-only. |
+| `patchly_apply(operation, dryRun?)` | **Optional deterministic fast-path.** Most edits the agent should make itself using the location above. Use this only for trivial class/style/text tweaks where you want Patchly's AST-safe edit + drift guard. Applies one `EditOperation` (`setClassName`, `setAttribute`, `setText`, `setInlineStyle`, `wrapElement`, `insertChild`, `replaceElement`, `removeElement`), hot-reloads via HMR, and returns the unified diff. `target` defaults to the current selection. `dryRun: true` previews without writing. |
 
 ### Typical workflow
 
 ```
 user selects element in browser
   → agent calls patchly_current_selection()
-    → gets { file, line, column, tag, classNameKind, classes }
-  → agent calls patchly_apply({ op: "setClassName", add: ["..."], remove: ["..."] })
-    → source file is edited, HMR reloads the page, diff is returned
+    → gets { file, line, column, tag, classNameKind, classes, computedStyles }
+      + a screenshot image block of the element
+  → agent opens that file and edits it directly (it knows exactly where it is and can see it)
+    → Vite HMR reloads the page
 ```
 
-All of Patchly's safety rails apply: no writes outside the project root, drift/fingerprint check
-before every edit, syntax guard (pre- and post-edit), and Prettier formatting. The apply path uses
-`APPLY_OPS`, which is deliberately **not** recorded in the AI edit history — MCP edits stay out of
-the extension's undo sidebar.
+When `patchly_apply` *is* used, all of Patchly's safety rails apply: no writes outside the project
+root, drift/fingerprint check before every edit, syntax guard (pre- and post-edit), and Prettier
+formatting. The apply path uses `APPLY_OPS`, which is deliberately **not** recorded in the AI edit
+history — MCP edits stay out of the extension's undo sidebar.
 
 ---
 

@@ -33,9 +33,11 @@ export const MSG = {
   OPS_APPLIED:  'PATCHLY_OPS_APPLIED',   // agent → ext: ops applied (NOT recorded in AI history)
 
   // MCP bridge (any MCP-capable coding agent → agent, via the stdio MCP server)
-  SELECTION_UPDATE: 'PATCHLY_SELECTION_UPDATE', // ext → agent: the browser selection changed
-  GET_SELECTION:    'PATCHLY_GET_SELECTION',    // mcp → agent: what is currently selected?
-  SELECTION:        'PATCHLY_SELECTION',        // agent → mcp: the cached browser selection
+  SELECTION_UPDATE:    'PATCHLY_SELECTION_UPDATE',    // ext → agent: the browser selection changed
+  GET_SELECTION:       'PATCHLY_GET_SELECTION',       // mcp → agent: what is currently selected?
+  SELECTION:           'PATCHLY_SELECTION',           // agent → mcp: the cached browser selection
+  SCREENSHOT_REQUEST:  'PATCHLY_SCREENSHOT_REQUEST',  // mcp → agent → ext: capture current element
+  SCREENSHOT_RESULT:   'PATCHLY_SCREENSHOT_RESULT',   // ext → agent → mcp: the capture result
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -276,6 +278,10 @@ export interface ApplyOpsMessage {
   explanation: string
   /** When true: validate + diff without writing. Reply is still OPS_APPLIED. */
   dryRun?: boolean
+  /** Required to be true for structural ops (wrapElement/insertChild/replaceElement/removeElement)
+   *  when dryRun is false. Without it the server auto-converts to dry-run and sets
+   *  requiresConfirmation on the reply so the caller can review the diff first. */
+  confirmed?: boolean
 }
 
 /** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
@@ -286,6 +292,18 @@ export interface OpsAppliedMessage {
   ok: true
   /** Unified diff of what was (or would be) changed. Always present. */
   diff: string
+  /** True when a structural op was intercepted and run as a dry-run pending confirmation.
+   *  Caller must review the diff and call again with confirmed:true to execute for real. */
+  requiresConfirmation?: boolean
+}
+
+/** React fiber info extracted at selection time. Gives the agent the component
+ *  identity and its props — the same context Cursor gets from the fiber tree. */
+export interface ReactInfo {
+  /** Nearest React function component name, e.g. "StatsCard". Null for pure DOM. */
+  componentName: string | null
+  /** Curated props snapshot (functions/children/className excluded, capped at 20 keys). */
+  props: Record<string, unknown>
 }
 
 /** One selected element, as the browser sees it. The MCP bridge surfaces these
@@ -297,6 +315,12 @@ export interface SelectionItem {
   tag: string
   /** Live DOM className string (may differ from source for dynamic classes). */
   classes: string
+  /** Curated getComputedStyle subset, captured at selection time (single-select only). */
+  computedStyles?: Record<string, string>
+  /** base64 PNG crop of the element (single-select only); null if capture failed. */
+  screenshot?: string | null
+  /** React fiber: nearest component name + curated props (single-select only). */
+  reactInfo?: ReactInfo | null
 }
 
 /** Extension → agent: the browser selection changed (replaces the cached set). */
@@ -316,6 +340,8 @@ export interface GetSelectionMessage {
 export interface SelectionMessage {
   type: typeof MSG.SELECTION
   sessionId: string
+  /** Monotonically changes on each SELECTION_UPDATE. Agent uses this to detect stale selections. */
+  selectionId?: string
   selection: SelectionItem[]
 }
 
@@ -350,6 +376,22 @@ export interface UndoDoneMessage {
 }
 
 /** Any message a client (extension or MCP bridge) sends to the agent. */
+/** MCP → agent → extension: ask the extension to capture a fresh screenshot of the
+ *  currently selected element (or the viewport if nothing is selected). Lets an
+ *  agent visually verify its edit after HMR reloads the page. */
+export interface ScreenshotRequestMessage {
+  type: typeof MSG.SCREENSHOT_REQUEST
+  sessionId: string
+}
+
+/** Extension → agent → MCP: the capture result. */
+export interface ScreenshotResultMessage {
+  type: typeof MSG.SCREENSHOT_RESULT
+  sessionId: string
+  /** base64 PNG, or null if capture failed or nothing was selected. */
+  screenshot: string | null
+}
+
 export type ExtensionToAgentMessage =
   | PingMessage
   | EditRequestMessage
@@ -360,6 +402,7 @@ export type ExtensionToAgentMessage =
   | ApplyOpsMessage
   | SelectionUpdateMessage
   | GetSelectionMessage
+  | ScreenshotResultMessage
 
 /** Any message the agent sends back to a client (extension or MCP bridge). */
 export type AgentToExtensionMessage =
@@ -376,3 +419,4 @@ export type AgentToExtensionMessage =
   | ElementInfoMessage
   | OpsAppliedMessage
   | SelectionMessage
+  | ScreenshotRequestMessage

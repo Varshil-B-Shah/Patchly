@@ -11,6 +11,10 @@ import { inspectElement } from './ast/inspect.js'
 import { loadThemeTokens, isTailwindConfigured } from './contextBuilder.js'
 import type { ResolvedConfig } from './config.js'
 
+/** Ops that inject or remove JSX nodes. These require explicit `confirmed:true` from
+ *  the MCP caller when not running as a dry-run; auto-converted to dry-run otherwise. */
+const STRUCTURAL_OPS = new Set(['wrapElement', 'insertChild', 'replaceElement', 'removeElement'])
+
 // Theme is loaded once on first connection and cached for the lifetime of the
 // server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
@@ -20,6 +24,7 @@ let cachedTailwindConfigured: boolean | null = null
 // Process-lifetime cache (like the theme above), read by the MCP bridge via
 // GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
 let latestSelection: SelectionItem[] = []
+let latestSelectionId = ''
 
 interface ApplyGroup {
   filePath: string
@@ -50,8 +55,23 @@ const editHistory = new Map<string, EditHistoryEntry>()
 export async function startServer(port: number, config: ResolvedConfig): Promise<WebSocketServer> {
   const wss = new WebSocketServer({ port })
 
+  // Resolve only once the port is actually bound; reject on bind failure (e.g.
+  // EADDRINUSE) so the caller can try the next port in the scan range.
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => { wss.off('listening', onListening); reject(err) }
+    const onListening = () => { wss.off('error', onError); resolve() }
+    wss.once('error', onError)
+    wss.once('listening', onListening)
+  })
+
+  // Track which connected ws clients are extensions (sent PING) vs MCP clients.
+  // Needed to route SCREENSHOT_REQUEST to the extension and the result back to the
+  // MCP client that asked for it.
+  const extensionClients = new Set<import('ws').WebSocket>()
+  const screenshotCallbacks = new Map<string, import('ws').WebSocket>() // sessionId → requesting ws
+
   wss.on('connection', (ws) => {
-    console.log('Extension connected')
+    console.log('Client connected')
 
     if (!cachedTheme) cachedTheme = loadThemeTokens(config.projectRoot)
     if (cachedTailwindConfigured === null) cachedTailwindConfigured = isTailwindConfigured(config.projectRoot)
@@ -76,17 +96,43 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       console.log('Received:', msg.type)
 
       if (msg.type === MSG.PING) {
+        extensionClients.add(ws)
         ws.send(JSON.stringify({ type: MSG.PONG }))
       }
 
       // ── MCP bridge: cache the browser selection / answer selection queries ──
       if (msg.type === MSG.SELECTION_UPDATE) {
+        latestSelectionId = Math.random().toString(36).slice(2)
         latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
         return
       }
 
       if (msg.type === MSG.GET_SELECTION) {
-        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selection: latestSelection }))
+        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selectionId: latestSelectionId, selection: latestSelection }))
+        return
+      }
+
+      // ── MCP screenshot verify: forward request to extension, route result back ──
+      if (msg.type === MSG.SCREENSHOT_REQUEST) {
+        const { sessionId } = msg as { sessionId: string }
+        if (extensionClients.size === 0) {
+          ws.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot: null }))
+          return
+        }
+        screenshotCallbacks.set(sessionId, ws)
+        for (const extWs of extensionClients) {
+          extWs.send(JSON.stringify({ type: MSG.SCREENSHOT_REQUEST, sessionId }))
+        }
+        return
+      }
+
+      if (msg.type === MSG.SCREENSHOT_RESULT) {
+        const { sessionId, screenshot } = msg as { sessionId: string; screenshot: string | null }
+        const requester = screenshotCallbacks.get(sessionId)
+        screenshotCallbacks.delete(sessionId)
+        if (requester && requester.readyState === 1 /* OPEN */) {
+          requester.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot }))
+        }
         return
       }
 
@@ -425,12 +471,19 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
       // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
-        const { sessionId, operations, dryRun } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean }
+        const { sessionId, operations, dryRun, confirmed } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean; confirmed?: boolean }
 
         if (!Array.isArray(operations) || operations.length === 0) {
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
           return
         }
+
+        // Trust gate: structural ops (JSX injection/removal) must be explicitly confirmed
+        // when executing for real. Without confirmed:true we auto-convert to dry-run so the
+        // caller sees the diff and can decide before anything is written.
+        const hasStructural = operations.some((op) => STRUCTURAL_OPS.has(op.op))
+        const forcedDryRun = hasStructural && !dryRun && !confirmed
+        const effectiveDryRun = !!dryRun || forcedDryRun
 
         // Pin each op's file via source-mapper (per-op, so a spoofed path can't
         // escape and multi-file selections resolve correctly), then group by file.
@@ -452,7 +505,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         // Apply (or dry-run) each file's ops in one pass. First failure stops.
         let combinedDiff = ''
         for (const fileOps of opsByFile.values()) {
-          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: !!dryRun })
+          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: effectiveDryRun })
           if (!editResult.ok) {
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
@@ -460,7 +513,13 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           combinedDiff += editResult.diff  // always collect; MCP uses it to show what changed
         }
 
-        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, diff: combinedDiff }))
+        ws.send(JSON.stringify({
+          type: MSG.OPS_APPLIED,
+          sessionId,
+          ok: true,
+          diff: combinedDiff,
+          ...(forcedDryRun ? { requiresConfirmation: true } : {}),
+        }))
         return
       }
 
@@ -501,7 +560,8 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
     })
 
     ws.on('close', () => {
-      console.log('Extension disconnected')
+      extensionClients.delete(ws)
+      console.log('Client disconnected')
     })
   })
 
