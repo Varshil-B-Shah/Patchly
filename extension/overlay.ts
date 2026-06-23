@@ -673,6 +673,49 @@ function hidePicker(): void {
 
 // ─── Screenshot + AI edit dispatch ───────────────────────────────────────────
 
+// Walk the React fiber tree to extract the nearest component name + curated props.
+// React 16+ stores a fiber on DOM nodes as __reactFiber$<hash>. We walk up to the
+// nearest function component (max 20 hops) and curate props (max 20 keys, no
+// functions/children/className) to stay token-cheap.
+function getReactInfo(el: Element): import('../shared/protocol.js').ReactInfo | null {
+  try {
+    const fiberKey = Object.keys(el as unknown as Record<string, unknown>).find(
+      (k) => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'),
+    )
+    if (!fiberKey) return null
+
+    type Fiber = { type?: unknown; memoizedProps?: Record<string, unknown>; return?: Fiber }
+    const fiber = (el as unknown as Record<string, unknown>)[fiberKey] as Fiber | null
+    if (!fiber) return null
+
+    // Walk up to the nearest function component (skip host elements like 'div')
+    let cur: Fiber | undefined = fiber
+    let compFiber: Fiber | null = null
+    for (let i = 0; i < 20 && cur; i++, cur = cur.return) {
+      if (typeof cur.type === 'function') { compFiber = cur; break }
+    }
+    const componentName = compFiber
+      ? ((compFiber.type as { displayName?: string; name?: string }).displayName ||
+         (compFiber.type as { name?: string }).name ||
+         null)
+      : null
+
+    const rawProps = fiber.memoizedProps ?? {}
+    const props: Record<string, unknown> = {}
+    let count = 0
+    for (const [k, v] of Object.entries(rawProps)) {
+      if (count >= 20) break
+      if (k === 'children' || k === 'className' || typeof v === 'function') continue
+      try { JSON.stringify(v); props[k] = v } catch { props[k] = '[unserializable]' }
+      count++
+    }
+
+    return { componentName, props }
+  } catch {
+    return null
+  }
+}
+
 // Curated getComputedStyle subset the coding agent actually reasons over. Full
 // computed style is ~300 props — we keep ~24 visual/layout ones to stay token-cheap.
 const PERCEPTION_STYLE_PROPS = [
@@ -705,6 +748,7 @@ async function pushSelectionPerception(el: Element, patchlySrc: string): Promise
     tag: el.tagName.toLowerCase(),
     classes: (el as HTMLElement).className || '',
     computedStyles: collectComputedStyles(el),
+    reactInfo: getReactInfo(el),
   }
   window.__patchlySelectionUpdate?.([base])
 

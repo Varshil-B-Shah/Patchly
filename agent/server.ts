@@ -20,6 +20,7 @@ let cachedTailwindConfigured: boolean | null = null
 // Process-lifetime cache (like the theme above), read by the MCP bridge via
 // GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
 let latestSelection: SelectionItem[] = []
+let latestSelectionId = ''
 
 interface ApplyGroup {
   filePath: string
@@ -90,12 +91,13 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       // ── MCP bridge: cache the browser selection / answer selection queries ──
       if (msg.type === MSG.SELECTION_UPDATE) {
+        latestSelectionId = Math.random().toString(36).slice(2)
         latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
         return
       }
 
       if (msg.type === MSG.GET_SELECTION) {
-        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selection: latestSelection }))
+        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selectionId: latestSelectionId, selection: latestSelection }))
         return
       }
 

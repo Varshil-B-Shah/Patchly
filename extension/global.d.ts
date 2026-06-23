@@ -20,6 +20,7 @@ declare global {
       classes: string
       computedStyles?: Record<string, string>
       screenshot?: string | null
+      reactInfo?: { componentName: string | null; props: Record<string, unknown> } | null
     }>) => void
     __patchlyGetTheme?: () => Record<string, unknown> | null
     __patchlyGetTailwindConfigured?: () => boolean | null

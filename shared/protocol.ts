@@ -288,6 +288,15 @@ export interface OpsAppliedMessage {
   diff: string
 }
 
+/** React fiber info extracted at selection time. Gives the agent the component
+ *  identity and its props — the same context Cursor gets from the fiber tree. */
+export interface ReactInfo {
+  /** Nearest React function component name, e.g. "StatsCard". Null for pure DOM. */
+  componentName: string | null
+  /** Curated props snapshot (functions/children/className excluded, capped at 20 keys). */
+  props: Record<string, unknown>
+}
+
 /** One selected element, as the browser sees it. The MCP bridge surfaces these
  *  to the coding agent so it knows what the user is pointing at. */
 export interface SelectionItem {
@@ -301,6 +310,8 @@ export interface SelectionItem {
   computedStyles?: Record<string, string>
   /** base64 PNG crop of the element (single-select only); null if capture failed. */
   screenshot?: string | null
+  /** React fiber: nearest component name + curated props (single-select only). */
+  reactInfo?: ReactInfo | null
 }
 
 /** Extension → agent: the browser selection changed (replaces the cached set). */
@@ -320,6 +331,8 @@ export interface GetSelectionMessage {
 export interface SelectionMessage {
   type: typeof MSG.SELECTION
   sessionId: string
+  /** Monotonically changes on each SELECTION_UPDATE. Agent uses this to detect stale selections. */
+  selectionId?: string
   selection: SelectionItem[]
 }
 

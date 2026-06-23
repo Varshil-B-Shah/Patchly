@@ -329,15 +329,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         classNameKind: info?.classNameKind ?? 'unknown',
         classes: info?.classes ?? s.classes.split(/\s+/).filter(Boolean),
         ...(info?.dynamicText ? { dynamicText: info.dynamicText } : {}),
-        // Visual state (perception): curated computed styles from the live DOM.
+        // Visual state: curated computed styles + React component identity.
         ...(s.computedStyles ? { computedStyles: s.computedStyles } : {}),
+        ...(s.reactInfo ? { reactInfo: s.reactInfo } : {}),
       }
     })
 
-    // Mixed content: the structured pointer/styles as text, plus a screenshot
-    // IMAGE block per element so the agent can literally SEE what it's editing.
+    const selectionId = (selResponse as Record<string, unknown>).selectionId as string | undefined
+
+    // Mixed content: the structured pointer/styles/reactInfo as text, plus a
+    // screenshot IMAGE block so the agent can literally SEE what it's editing.
+    const payload = selectionId ? { selectionId, elements: items } : { elements: items }
     const content: Array<Record<string, unknown>> = [
-      { type: 'text', text: JSON.stringify(items, null, 2) },
+      { type: 'text', text: JSON.stringify(payload, null, 2) },
     ]
     for (const s of selection) {
       if (s.screenshot) {
