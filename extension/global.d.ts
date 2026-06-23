@@ -58,6 +58,8 @@ declare global {
     __patchlyClassPanelClosed?: () => void
     // Defined by overlay, called by classPanel after any undo/redo stack change.
     __patchlyHistoryChanged?: () => void
+    // Defined by overlay, called by classPanel on section hover to highlight the DOM element.
+    __patchlyHoverBySrc?: (src: string | null) => void
 
     // Comment mode — send bridges (overlay → content → agent)
     __patchlyAddComment?: (data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>) => void

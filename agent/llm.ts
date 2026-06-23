@@ -379,11 +379,19 @@ replaceElement — Replace the entire element with new JSX. Use ONLY as a last r
 
 removeElement — Remove the element entirely. No extra fields.
 
+setExpression — Set a JSX attribute to any JavaScript expression (ternary, variable, function call, object literal).
+  "attribute": "disabled",   "expression": "loading || !hasPermission"
+  "attribute": "className",  "expression": "cn('btn', { 'btn-active': isActive })"
+  "attribute": "style",      "expression": "isActive ? { color: 'red' } : { color: 'gray' }"
+  "attribute": "color",      "expression": "tone === 'success' ? 'text-green-600' : 'text-red-600'"
+  Use when the value needs conditional/dynamic logic. expression is the raw JS that goes INSIDE the {}.
+
 Decision rules:
 - Use setClassName for Tailwind class changes — do NOT use replaceElement just to change classes.
 - Use setAttribute for src, href, alt, aria-*, data-* and similar attribute changes.
 - Use setText only for plain text. If children are complex, use replaceElement.
 - Use setInlineStyle only when the instruction says "inline style" or the element already has style={{}}.
+- Use setExpression when the instruction requires a conditional, ternary, or dynamic attribute value (e.g. "make the color depend on a prop", "disable when loading"). Combine with other ops for compound edits.
 - Multiple operations are allowed for compound edits (e.g. setClassName + setText together).
 - If you cannot make the edit, return "operations": [] and explain in "explanation".
 
@@ -420,6 +428,30 @@ User: "change the link destination to /about"
     "target": { "file": "src/components/Nav.jsx", "line": 12, "column": 8, "tagName": "a", "textSnippet": "About" },
     "name": "href",
     "value": "/about"
+  }]
+}
+
+User: "disable the button when the loading prop is true"
+{
+  "explanation": "Set disabled attribute to the loading prop expression",
+  "confidence": 0.95,
+  "operations": [{
+    "op": "setExpression",
+    "target": { "file": "src/components/Button.jsx", "line": 4, "column": 4, "tagName": "button" },
+    "attribute": "disabled",
+    "expression": "loading"
+  }]
+}
+
+User: "make the badge color conditional — green when status is active, gray otherwise"
+{
+  "explanation": "Set className to ternary based on status prop",
+  "confidence": 0.93,
+  "operations": [{
+    "op": "setExpression",
+    "target": { "file": "src/components/Badge.jsx", "line": 5, "column": 2, "tagName": "span" },
+    "attribute": "className",
+    "expression": "status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'"
   }]
 }`
 }

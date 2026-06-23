@@ -10,6 +10,10 @@
 
 #patchly-root.active {
   pointer-events: all;
+  cursor: default;
+}
+
+#patchly-root.active.mode-ai {
   cursor: crosshair;
 }
 

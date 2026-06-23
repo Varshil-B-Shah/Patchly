@@ -81,6 +81,20 @@ export interface RemoveElementOp {
   target: EditTarget
 }
 
+export interface SetExpressionOp {
+  op: 'setExpression'
+  target: EditTarget
+  /** JSX attribute to set, e.g. "style", "className", "disabled". */
+  attribute: string
+  /**
+   * The raw JavaScript expression that goes INSIDE the braces, e.g.:
+   *   isActive ? 'text-blue-500' : 'text-gray-400'
+   *   { color: titleColor || 'red' }
+   *   cn('btn', { 'btn-active': isActive })
+   */
+  expression: string
+}
+
 export type EditOperation =
   | SetClassNameOp
   | SetAttributeOp
@@ -90,6 +104,7 @@ export type EditOperation =
   | InsertChildOp
   | ReplaceElementOp
   | RemoveElementOp
+  | SetExpressionOp
 
 export interface EditRequest {
   explanation: string
@@ -109,6 +124,7 @@ export const OPS = Object.freeze({
   INSERT_CHILD: 'insertChild',
   REPLACE_ELEMENT: 'replaceElement',
   REMOVE_ELEMENT: 'removeElement',
+  SET_EXPRESSION: 'setExpression',
 } as const)
 
 /** Union of operation name string literals, e.g. "setClassName". */

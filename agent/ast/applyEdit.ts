@@ -75,7 +75,7 @@ export async function applyEditOperations({
     const resolved = resolveTarget(sourceFile, op.target)
     if (!resolved.ok) return resolved
 
-    const result = applyOperation(resolved.node, op)
+    const result = applyOperation(resolved.node, op, project)
     if (!result.ok) return result
   }
 
