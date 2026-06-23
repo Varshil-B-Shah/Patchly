@@ -14,7 +14,13 @@ declare global {
     __patchlyInspect?: (patchlySources: string[], sessionId: string) => void
     __patchlyApplyOps?: (operations: Record<string, unknown>[], explanation: string, sessionId: string) => void
     // MCP bridge: push current browser selection to the agent cache
-    __patchlySelectionUpdate?: (selection: Array<{ patchlySrc: string; tag: string; classes: string }>) => void
+    __patchlySelectionUpdate?: (selection: Array<{
+      patchlySrc: string
+      tag: string
+      classes: string
+      computedStyles?: Record<string, string>
+      screenshot?: string | null
+    }>) => void
     __patchlyGetTheme?: () => Record<string, unknown> | null
     __patchlyGetTailwindConfigured?: () => boolean | null
     __patchlyIsConnected?: () => boolean

@@ -297,6 +297,10 @@ export interface SelectionItem {
   tag: string
   /** Live DOM className string (may differ from source for dynamic classes). */
   classes: string
+  /** Curated getComputedStyle subset, captured at selection time (single-select only). */
+  computedStyles?: Record<string, string>
+  /** base64 PNG crop of the element (single-select only); null if capture failed. */
+  screenshot?: string | null
 }
 
 /** Extension → agent: the browser selection changed (replaces the cached set). */
