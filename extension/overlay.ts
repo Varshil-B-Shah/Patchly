@@ -107,7 +107,6 @@ function init(): void {
   initClassPanel()
   initCommentComposer()
   initPinsLayer()
-  initCommentSidebar()
 }
 
 // ─── Floating toolbar ────────────────────────────────────────────────────────
@@ -255,7 +254,6 @@ function exitEditing(): void {
   hidePicker()
   hideClassPanel()
   clearSelHighlights()
-  hideCommentSidebar()
   window.removeEventListener('scroll', onViewportChange, true)
   window.removeEventListener('resize', onViewportChange)
 }
@@ -291,7 +289,6 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   // Cleanup when leaving comment mode.
   if (activeMode === 'comment') {
     hideCommentComposer()
-    hideCommentSidebar()
   }
 
   activeMode = mode
@@ -319,7 +316,6 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     if (componentLabel) componentLabel.style.display = 'none'
     // Load comments so pins can render
     requestCommentList()
-    showCommentSidebar()
   } else {
     // Entering Tailwind: if Tailwind isn't configured, tell the user.
     if (window.__patchlyGetTailwindConfigured?.() === false) {
@@ -555,7 +551,6 @@ function resolveComment(id: string, resolvedBy: 'dev' | 'agent'): void {
     c.id === id ? { ...c, status: 'resolved' as const } : c,
   )
   refreshPins()
-  refreshCommentSidebar()
 }
 
 function currentSelectionSrcs(): string[] {
@@ -630,6 +625,7 @@ function onMouseUp(e: MouseEvent): void {
   }
 
   if (activeMode === 'comment' && !isDragging) {
+    if (commentComposerEl && commentComposerEl.style.display !== 'none') return
     const el = elementAtPoint(e.clientX, e.clientY)
     if (!el) return
     const rect = el.getBoundingClientRect()
@@ -647,6 +643,7 @@ function onMouseUp(e: MouseEvent): void {
   }
 
   if (activeMode === 'comment' && isDragging) {
+    if (commentComposerEl && commentComposerEl.style.display !== 'none') return
     const selRect = getSelectionRect()
     if (selectionRect) selectionRect.style.display = 'none'
     isDragging = false
@@ -1279,161 +1276,7 @@ function submitComment(): void {
 }
 
 // ─── Comments sidebar ────────────────────────────────────────────────────────
-
-let sidebarFilter: 'open' | 'all' = 'open'
-
-function initCommentSidebar(): void {
-  commentSidebarEl = document.createElement('div')
-  commentSidebarEl.id = 'patchly-comment-sidebar'
-  commentSidebarEl.style.cssText = `
-    display:none;position:fixed;top:0;right:0;width:300px;height:100vh;
-    background:#1e1e2e;border-left:1px solid #3b3b5c;
-    flex-direction:column;z-index:2147483615;
-    font-family:sans-serif;font-size:13px;color:#e0e0f0;
-    overflow:hidden;
-  `
-  commentSidebarEl.addEventListener('mousedown', (e) => e.stopPropagation())
-  document.body.appendChild(commentSidebarEl)
-}
-
-function showCommentSidebar(): void {
-  if (!commentSidebarEl) return
-  commentSidebarEl.style.display = 'flex'
-  refreshCommentSidebar()
-}
-
-function hideCommentSidebar(): void {
-  if (commentSidebarEl) commentSidebarEl.style.display = 'none'
-}
-
-function refreshCommentSidebar(): void {
-  if (!commentSidebarEl || commentSidebarEl.style.display === 'none') return
-
-  const shown =
-    sidebarFilter === 'open'
-      ? cachedComments.filter((c) => c.status === 'open')
-      : cachedComments
-
-  commentSidebarEl.innerHTML = ''
-
-  // ── Toolbar ──────────────────────────────────────────────────
-  const toolbar = document.createElement('div')
-  toolbar.style.cssText =
-    'display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #3b3b5c;flex-shrink:0;'
-
-  const title = document.createElement('span')
-  title.style.cssText = 'font-weight:600;flex:1;'
-  title.textContent = 'Comments'
-
-  const filterBtn = document.createElement('button')
-  filterBtn.style.cssText =
-    'padding:2px 8px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:11px;'
-  filterBtn.textContent = sidebarFilter === 'open' ? 'Show all' : 'Open only'
-  filterBtn.addEventListener('click', () => {
-    sidebarFilter = sidebarFilter === 'open' ? 'all' : 'open'
-    refreshCommentSidebar()
-  })
-
-  const closeBtn = document.createElement('button')
-  closeBtn.style.cssText =
-    'background:none;border:none;color:#a0a0c0;font-size:18px;cursor:pointer;line-height:1;padding:0 2px;'
-  closeBtn.textContent = '×'
-  closeBtn.addEventListener('click', () => {
-    hideCommentSidebar()
-    setMode('ai')
-  })
-
-  toolbar.append(title, filterBtn, closeBtn)
-  commentSidebarEl.appendChild(toolbar)
-
-  // ── Body ─────────────────────────────────────────────────────
-  const body = document.createElement('div')
-  body.style.cssText = 'flex:1;overflow-y:auto;padding:8px 0;'
-
-  const openOnlyForIndex = cachedComments.filter((c) => c.status === 'open')
-
-  if (shown.length === 0) {
-    const empty = document.createElement('p')
-    empty.style.cssText = 'padding:16px 12px;color:#a0a0c0;text-align:center;margin:0;'
-    empty.textContent = 'No comments.'
-    body.appendChild(empty)
-  }
-
-  shown.forEach((comment) => {
-    const pinNumber = openOnlyForIndex.findIndex((c) => c.id === comment.id) + 1
-
-    const row = document.createElement('div')
-    row.style.cssText = `
-      padding:10px 12px;border-bottom:1px solid #2a2a3e;cursor:pointer;
-      ${comment.status === 'resolved' ? 'opacity:0.5;' : ''}
-    `
-    row.addEventListener('mouseenter', () => { row.style.background = '#2a2a3e' })
-    row.addEventListener('mouseleave', () => { row.style.background = '' })
-    row.addEventListener('click', () => {
-      openPinCard(comment, pinNumber > 0 ? pinNumber : 0)
-      const pinEl = pinsContainerEl?.querySelector(`[data-comment-id="${comment.id}"]`)
-      pinEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
-
-    // Header row: badge + meta
-    const rowHeader = document.createElement('div')
-    rowHeader.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;'
-
-    const badge = document.createElement('span')
-    badge.style.cssText =
-      'background:#7c3aed;color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;'
-    badge.textContent = pinNumber > 0 ? String(pinNumber) : '✓'
-
-    const meta = document.createElement('span')
-    meta.style.cssText = 'color:#a0a0c0;font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
-    meta.textContent = [comment.author, comment.componentName ?? comment.tag]
-      .filter(Boolean)
-      .join(' · ')
-
-    rowHeader.append(badge, meta)
-
-    // Note excerpt — textContent only, never innerHTML
-    const noteExcerpt = document.createElement('div')
-    noteExcerpt.style.cssText =
-      'color:#e0e0f0;margin-bottom:6px;line-height:1.4;word-break:break-word;'
-    noteExcerpt.textContent =
-      comment.note.length > 80
-        ? comment.note.slice(0, 80) + '…'
-        : comment.note   // SECURITY: textContent only
-
-    // Action buttons (open comments only)
-    const rowActions = document.createElement('div')
-    rowActions.style.cssText = 'display:flex;gap:4px;'
-    rowActions.addEventListener('click', (e) => e.stopPropagation())
-
-    if (comment.status === 'open') {
-      const fixBtn = document.createElement('button')
-      fixBtn.textContent = 'Fix with AI'
-      fixBtn.style.cssText =
-        'padding:2px 8px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:11px;font-weight:600;'
-      fixBtn.addEventListener('click', () => fixWithAI(comment))
-
-      const classBtn = document.createElement('button')
-      classBtn.textContent = 'Classes'
-      classBtn.style.cssText =
-        'padding:2px 8px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#e0e0f0;cursor:pointer;font-size:11px;'
-      classBtn.addEventListener('click', () => editClasses(comment))
-
-      const resolveBtn = document.createElement('button')
-      resolveBtn.textContent = 'Resolve'
-      resolveBtn.style.cssText =
-        'padding:2px 8px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:11px;'
-      resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
-
-      rowActions.append(fixBtn, classBtn, resolveBtn)
-    }
-
-    row.append(rowHeader, noteExcerpt, rowActions)
-    body.appendChild(row)
-  })
-
-  commentSidebarEl.appendChild(body)
-}
+// Sidebar removed — pins layer is sufficient for discovery.
 
 // ─── Globals (content → overlay) ─────────────────────────────────────────────
 window.__patchlyResetPromptBar = resetPromptBar
@@ -1449,26 +1292,22 @@ window.__patchlyOnCommentAdded = (comment) => {
     cachedComments = [...cachedComments, comment]
   }
   refreshPins()
-  refreshCommentSidebar()
 }
 window.__patchlyOnComments = (sessionId, comments) => {
   if (sessionId !== listCommentsSessionId) return
   listCommentsSessionId = null
   cachedComments = comments
   refreshPins()
-  refreshCommentSidebar()
 }
 window.__patchlyOnCommentResolved = (id) => {
   cachedComments = cachedComments.map((c) =>
     c.id === id ? { ...c, status: 'resolved' as const } : c,
   )
   refreshPins()
-  refreshCommentSidebar()
 }
 window.__patchlyOnCommentDeleted = (id) => {
   cachedComments = cachedComments.filter((c) => c.id !== id)
   refreshPins()
-  refreshCommentSidebar()
 }
 
 // ─── Diff / preview rendering ────────────────────────────────────────────────
