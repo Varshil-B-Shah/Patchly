@@ -12,16 +12,46 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import fs from 'fs'
+import path from 'path'
 import WebSocket from 'ws'
 import { z } from 'zod'
 import { MSG } from '../../shared/protocol.js'
 import type { SelectionItem, ClassInfo } from '../../shared/protocol.js'
+import { DEFAULT_PORT, LOCKFILE_REL, type AgentLockfile } from '../../shared/agentInfo.js'
 
-const WS_PORT = 7842
-const WS_URL = `ws://localhost:${WS_PORT}`
 const REQUEST_TIMEOUT_MS = 10_000
 const NOT_FOUND_MSG =
   'Patchly agent not found — run `npx patchly` in your project first.'
+
+/**
+ * Discover the running agent via its per-project lockfile. The MCP server is
+ * launched with cwd = the user's project, so we read <cwd>/.patchly/agent.json,
+ * verify it belongs to THIS project (guards against editing a different running
+ * app), and return its port. Falls back to DEFAULT_PORT if no lockfile exists.
+ */
+function discoverAgentPort(): number {
+  const cwd = path.resolve(process.cwd())
+  const lockPath = path.resolve(cwd, LOCKFILE_REL)
+  if (!fs.existsSync(lockPath)) return DEFAULT_PORT
+
+  let lock: AgentLockfile
+  try {
+    lock = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as AgentLockfile
+  } catch {
+    return DEFAULT_PORT
+  }
+
+  if (path.resolve(lock.projectRoot) !== cwd) {
+    throw new Error(
+      `Patchly agent lockfile is for a different project.\n` +
+      `  lockfile projectRoot: ${lock.projectRoot}\n` +
+      `  this MCP server cwd:  ${cwd}\n` +
+      `Run the MCP server from the same project as the running agent.`,
+    )
+  }
+  return lock.port
+}
 
 // ─── WebSocket agent client ───────────────────────────────────────────────────
 
@@ -37,7 +67,18 @@ class PatchlyAgentClient {
   connect(): Promise<void> {
     if (this.connectPromise) return this.connectPromise
     this.connectPromise = new Promise((resolve, reject) => {
-      const ws = new WebSocket(WS_URL)
+      let port: number
+      try {
+        port = discoverAgentPort()
+      } catch (err: unknown) {
+        // projectRoot mismatch — surface the specific reason. Reset the cached
+        // promise so a later call (after the user fixes it) can retry.
+        this.connectPromise = null
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+
+      const ws = new WebSocket(`ws://localhost:${port}`)
       const timer = setTimeout(() => {
         ws.terminate()
         reject(new Error(NOT_FOUND_MSG))

@@ -50,6 +50,15 @@ const editHistory = new Map<string, EditHistoryEntry>()
 export async function startServer(port: number, config: ResolvedConfig): Promise<WebSocketServer> {
   const wss = new WebSocketServer({ port })
 
+  // Resolve only once the port is actually bound; reject on bind failure (e.g.
+  // EADDRINUSE) so the caller can try the next port in the scan range.
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => { wss.off('listening', onListening); reject(err) }
+    const onListening = () => { wss.off('error', onError); resolve() }
+    wss.once('error', onError)
+    wss.once('listening', onListening)
+  })
+
   wss.on('connection', (ws) => {
     console.log('Extension connected')
 

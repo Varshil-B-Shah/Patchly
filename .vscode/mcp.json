@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "patchly": {
+      "type": "stdio",
+      "command": "npm",
+      "args": ["run", "mcp"]
+    }
+  }
+}
