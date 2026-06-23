@@ -14,7 +14,7 @@ declare global {
     __patchlyInspect?: (patchlySources: string[], sessionId: string) => void
     __patchlyApplyOps?: (operations: Record<string, unknown>[], explanation: string, sessionId: string) => void
     // MCP bridge: on-demand recapture — called when the agent sends SCREENSHOT_REQUEST
-    __patchlyHandleScreenshotRequest?: (sessionId: string) => void
+    __patchlyHandleScreenshotRequest?: (sessionId: string, patchlySrc?: string) => void
 
     // MCP bridge: push current browser selection to the agent cache
     __patchlySelectionUpdate?: (selection: Array<{

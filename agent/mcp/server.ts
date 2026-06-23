@@ -308,10 +308,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_screenshot',
       description:
-        'Captures a fresh screenshot of the currently selected element and returns it as an image ' +
-        'block. Call this AFTER making an edit and waiting a moment for HMR to reload the page, to ' +
-        'visually confirm the change looks correct. Returns null if no element is selected.',
-      inputSchema: { type: 'object', properties: {}, required: [] },
+        'Captures a fresh screenshot of an element and returns it as an image block. Call this AFTER ' +
+        'making an edit and waiting a moment for HMR to reload the page, to visually confirm the change. ' +
+        'IMPORTANT: pass the patchlySrc from patchly_current_selection — that makes the capture work ' +
+        'reliably even after the page hot-reloads or the user clicks elsewhere (it finds the element by ' +
+        'its data-patchly-src in the live DOM). Without patchlySrc it falls back to the current selection, ' +
+        'which may be empty after a reload.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          patchlySrc: {
+            type: 'string',
+            description: 'The data-patchly-src pointer (from patchly_current_selection) to screenshot.',
+          },
+        },
+        required: [],
+      },
     },
   ],
 }))
@@ -423,19 +435,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── patchly_screenshot ────────────────────────────────────────────────────
   if (name === 'patchly_screenshot') {
+    const patchlySrc = (args as Record<string, unknown>)?.patchlySrc as string | undefined
     const sessionId = mkSid()
     let response: Record<string, unknown>
     try {
-      response = await agent.request({ type: MSG.SCREENSHOT_REQUEST, sessionId })
+      response = await agent.request({ type: MSG.SCREENSHOT_REQUEST, sessionId, patchlySrc })
     } catch (err: unknown) {
       return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
     }
 
     const screenshot = response.screenshot as string | null
     if (!screenshot) {
-      return {
-        content: [{ type: 'text', text: 'No screenshot available — no element is currently selected in the browser.' }],
-      }
+      const hint = patchlySrc
+        ? `Could not capture ${patchlySrc} — the element may not be in the DOM (or is scrolled out of view).`
+        : 'No screenshot available — nothing is selected. Pass the patchlySrc from patchly_current_selection to capture a specific element.'
+      return { content: [{ type: 'text', text: hint }] }
     }
     return {
       content: [

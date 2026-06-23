@@ -25,6 +25,10 @@ let cachedTailwindConfigured: boolean | null = null
 // GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
 let latestSelection: SelectionItem[] = []
 let latestSelectionId = ''
+// Bounded history so the MCP bridge can pin to a specific prior selection by
+// selectionId even after the user clicks elsewhere. Keeps the last 10.
+const recentSelections = new Map<string, SelectionItem[]>()
+const MAX_RECENT_SELECTIONS = 10
 
 interface ApplyGroup {
   filePath: string
@@ -104,24 +108,39 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       if (msg.type === MSG.SELECTION_UPDATE) {
         latestSelectionId = Math.random().toString(36).slice(2)
         latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
+        recentSelections.set(latestSelectionId, latestSelection)
+        if (recentSelections.size > MAX_RECENT_SELECTIONS) {
+          recentSelections.delete(recentSelections.keys().next().value as string) // evict oldest
+        }
         return
       }
 
       if (msg.type === MSG.GET_SELECTION) {
-        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selectionId: latestSelectionId, selection: latestSelection }))
+        const { sessionId, selectionId } = msg as { sessionId: string; selectionId?: string }
+        if (selectionId) {
+          const pinned = recentSelections.get(selectionId)
+          if (pinned) {
+            ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId, selectionId, selection: pinned }))
+          } else {
+            // Requested a selection we no longer have — tell the caller to re-resolve.
+            ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId, selectionId, selection: [], stale: true }))
+          }
+          return
+        }
+        ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId, selectionId: latestSelectionId, selection: latestSelection }))
         return
       }
 
       // ── MCP screenshot verify: forward request to extension, route result back ──
       if (msg.type === MSG.SCREENSHOT_REQUEST) {
-        const { sessionId } = msg as { sessionId: string }
+        const { sessionId, patchlySrc } = msg as { sessionId: string; patchlySrc?: string }
         if (extensionClients.size === 0) {
           ws.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot: null }))
           return
         }
         screenshotCallbacks.set(sessionId, ws)
         for (const extWs of extensionClients) {
-          extWs.send(JSON.stringify({ type: MSG.SCREENSHOT_REQUEST, sessionId }))
+          extWs.send(JSON.stringify({ type: MSG.SCREENSHOT_REQUEST, sessionId, patchlySrc }))
         }
         return
       }

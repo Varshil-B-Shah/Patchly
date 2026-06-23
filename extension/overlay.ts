@@ -760,11 +760,20 @@ async function pushSelectionPerception(el: Element, patchlySrc: string): Promise
 }
 
 // MCP on-demand recapture: the coding agent calls patchly_screenshot() after an
-// edit to visually verify the result. We capture the selected element if one exists,
-// otherwise respond with null so the agent knows nothing is selected.
-window.__patchlyHandleScreenshotRequest = async function(sessionId: string): Promise<void> {
-  const screenshot = selectedElement ? await captureElementScreenshot(selectedElement) : null
-  window.__patchlySendToAgent?.({ type: 'PATCHLY_SCREENSHOT_RESULT', sessionId, screenshot })
+// edit to visually verify the result. If a patchlySrc is given we find that element
+// in the live DOM by its data-patchly-src — this survives HMR reloads (which reset
+// the JS `selectedElement`) and the user clicking elsewhere. Otherwise we fall back
+// to the currently selected element.
+window.__patchlyHandleScreenshotRequest = async function(sessionId: string, patchlySrc?: string): Promise<void> {
+  let target: Element | null = selectedElement
+  if (patchlySrc) {
+    // Match on dataset rather than a CSS selector — the value contains / : . which
+    // would need escaping in querySelector.
+    target = [...document.querySelectorAll('[data-patchly-src]')]
+      .find((el) => (el as HTMLElement).dataset.patchlySrc === patchlySrc) ?? null
+  }
+  const screenshot = target ? await captureElementScreenshot(target) : null
+  window.__patchlySendToAgent?.({ type: 'PATCHLY_SCREENSHOT_RESULT', sessionId, screenshot, patchlySrc })
 }
 
 async function captureElementScreenshot(element: Element): Promise<string | null> {

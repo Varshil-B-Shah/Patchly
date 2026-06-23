@@ -334,6 +334,8 @@ export interface GetSelectionMessage {
   type: typeof MSG.GET_SELECTION
   /** Echo'd back in SelectionMessage so the MCP client can correlate by sessionId. */
   sessionId: string
+  /** Pin to a specific prior selection snapshot. Omit for the latest. */
+  selectionId?: string
 }
 
 /** Agent → MCP: the cached browser selection (empty array if nothing selected). */
@@ -342,6 +344,8 @@ export interface SelectionMessage {
   sessionId: string
   /** Monotonically changes on each SELECTION_UPDATE. Agent uses this to detect stale selections. */
   selectionId?: string
+  /** True when a requested selectionId was not found (evicted/unknown) — caller should re-resolve. */
+  stale?: boolean
   selection: SelectionItem[]
 }
 
@@ -382,14 +386,19 @@ export interface UndoDoneMessage {
 export interface ScreenshotRequestMessage {
   type: typeof MSG.SCREENSHOT_REQUEST
   sessionId: string
+  /** Capture the element with this data-patchly-src. Survives HMR reload + click-away.
+   *  Omit to capture the currently selected element. */
+  patchlySrc?: string
 }
 
 /** Extension → agent → MCP: the capture result. */
 export interface ScreenshotResultMessage {
   type: typeof MSG.SCREENSHOT_RESULT
   sessionId: string
-  /** base64 PNG, or null if capture failed or nothing was selected. */
+  /** base64 PNG, or null if capture failed or the target wasn't found. */
   screenshot: string | null
+  /** Echo of the requested patchlySrc, if any. */
+  patchlySrc?: string
 }
 
 export type ExtensionToAgentMessage =

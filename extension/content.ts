@@ -96,7 +96,7 @@ function connect(): void {
       }
 
       if (msg.type === 'PATCHLY_SCREENSHOT_REQUEST') {
-        window.__patchlyHandleScreenshotRequest?.(String(msg.sessionId ?? ''))
+        window.__patchlyHandleScreenshotRequest?.(String(msg.sessionId ?? ''), msg.patchlySrc as string | undefined)
       }
     }
 
