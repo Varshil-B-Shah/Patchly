@@ -1,7 +1,8 @@
 // agent/server.ts
-import { WebSocketServer } from 'ws'
+import { WebSocketServer, WebSocket } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import type { BatchEditEntry, ThemeTokens, ClassInfo, SelectionItem } from '../shared/protocol.js'
+import { CommentStore } from './comments/store.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
@@ -73,6 +74,17 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
   // MCP client that asked for it.
   const extensionClients = new Set<import('ws').WebSocket>()
   const screenshotCallbacks = new Map<string, import('ws').WebSocket>() // sessionId → requesting ws
+
+  const commentStore = new CommentStore(config.projectRoot)
+
+  function broadcast(msg: object): void {
+    const payload = JSON.stringify(msg)
+    for (const client of extensionClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload)
+      }
+    }
+  }
 
   wss.on('connection', (ws) => {
     console.log('Client connected')
@@ -149,7 +161,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         const { sessionId, screenshot } = msg as { sessionId: string; screenshot: string | null }
         const requester = screenshotCallbacks.get(sessionId)
         screenshotCallbacks.delete(sessionId)
-        if (requester && requester.readyState === 1 /* OPEN */) {
+        if (requester && requester.readyState === WebSocket.OPEN) {
           requester.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot }))
         }
         return
@@ -575,6 +587,48 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         editHistory.delete(editId)
 
         ws.send(JSON.stringify({ type: MSG.UNDO_DONE, editId }))
+      }
+
+      // ── Comment system ────────────────────────────────────────────────────────
+      if (msg.type === MSG.ADD_COMMENT) {
+        // TODO(PhaseB): validate per-link token from msg.token before storing
+        const comment = commentStore.add(msg.comment)
+        broadcast({ type: MSG.COMMENT_ADDED, comment })
+        return
+      }
+
+      if (msg.type === MSG.LIST_COMMENTS) {
+        const { sessionId, status } = msg as { sessionId: string; status?: 'open' | 'resolved' | 'all' }
+        const comments = commentStore.list(status)
+        ws.send(JSON.stringify({ type: MSG.COMMENTS, sessionId, comments }))
+        return
+      }
+
+      if (msg.type === MSG.RESOLVE_COMMENT) {
+        const { sessionId, id, resolvedBy } = msg as { sessionId?: string; id: string; resolvedBy?: 'dev' | 'agent' }
+        const comment = commentStore.resolve(id, resolvedBy ?? 'dev')
+        if (!comment) return
+        broadcast({ type: MSG.COMMENT_RESOLVED, id, comment })
+        // Only unicast back to MCP callers (not in extensionClients — they get it via broadcast)
+        if (sessionId && !extensionClients.has(ws)) ws.send(JSON.stringify({ type: MSG.COMMENT_RESOLVED, sessionId, id, comment }))
+        return
+      }
+
+      if (msg.type === MSG.DELETE_COMMENT) {
+        const { id } = msg as { id: string }
+        if (!commentStore.delete(id)) return
+        broadcast({ type: MSG.COMMENT_DELETED, id })
+        return
+      }
+
+      if (msg.type === MSG.CLEAR_COMMENTS) {
+        const { sessionId } = msg as { sessionId?: string }
+        const count = commentStore.clearResolved()
+        broadcast({ type: MSG.COMMENTS_CLEARED, count })
+        if (sessionId && !extensionClients.has(ws)) {
+          ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))
+        }
+        return
       }
     })
 

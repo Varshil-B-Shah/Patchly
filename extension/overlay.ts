@@ -19,7 +19,19 @@ interface SelectionRect { x: number; y: number; width: number; height: number }
 
 // ─── State ──────────────────────────────────────────────────────────────────────
 let isActive = false            // editing mode on/off
-let activeMode: 'ai' | 'tailwind' = 'ai'
+let activeMode: 'ai' | 'tailwind' | 'comment' = 'ai'
+
+// Comment mode state
+let commentComposerEl: HTMLDivElement | null = null
+let commentPendingEl: Element | null = null
+let commentPendingPatchlySrc: string | null = null
+let commentPendingScreenshot: string | null = null
+let commentPendingReactInfo: ReturnType<typeof getReactInfo> | null = null
+let commentAreaRect: { x: number; y: number; w: number; h: number } | null = null
+let cachedComments: import('../shared/comments').ReviewComment[] = []
+let pinsContainerEl: HTMLDivElement | null = null
+let commentSidebarEl: HTMLDivElement | null = null
+let listCommentsSessionId: string | null = null
 let mouseDown = false
 let isDragging = false
 let startX = 0, startY = 0
@@ -93,6 +105,8 @@ function init(): void {
   root.addEventListener('mouseup', onMouseUp)
 
   initClassPanel()
+  initCommentComposer()
+  initPinsLayer()
 }
 
 // ─── Floating toolbar ────────────────────────────────────────────────────────
@@ -104,6 +118,7 @@ function buildToolbar(): void {
     <div class="patchly-tb-tabs">
       <button class="patchly-tb-tab active" data-mode="ai">AI Mode</button>
       <button class="patchly-tb-tab" data-mode="tailwind">Tailwind Mode</button>
+      <button class="patchly-tb-tab" data-mode="comment">Comment</button>
     </div>
     <span class="patchly-tb-sep"></span>
     <button class="patchly-tb-undo" title="Undo">↶</button>
@@ -131,7 +146,7 @@ function buildToolbar(): void {
   document.body.appendChild(toolbar)
 
   toolbar.querySelectorAll<HTMLButtonElement>('.patchly-tb-tab').forEach((tab) => {
-    tab.addEventListener('click', () => setMode(tab.getAttribute('data-mode') as 'ai' | 'tailwind'))
+    tab.addEventListener('click', () => setMode(tab.getAttribute('data-mode') as 'ai' | 'tailwind' | 'comment'))
   })
   ;(toolbar.querySelector('.patchly-tb-undo') as HTMLButtonElement).addEventListener('click', onUndo)
   ;(toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement).addEventListener('click', onRedo)
@@ -175,6 +190,10 @@ function updateToolbar(): void {
     // AI is undo-only; redo is hidden.
     undoBtn.style.display = ''
     undoBtn.disabled = false
+    redoBtn.style.display = 'none'
+  } else if (activeMode === 'comment') {
+    // Comment mode has no undo/redo.
+    undoBtn.style.display = 'none'
     redoBtn.style.display = 'none'
   } else {
     undoBtn.style.display = ''
@@ -266,7 +285,12 @@ function onViewportChange(): void {
 
 // ─── Modes ───────────────────────────────────────────────────────────────────
 
-function setMode(mode: 'ai' | 'tailwind'): void {
+function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
+  // Cleanup when leaving comment mode.
+  if (activeMode === 'comment') {
+    hideCommentComposer()
+  }
+
   activeMode = mode
   updateToolbar()
 
@@ -279,6 +303,20 @@ function setMode(mode: 'ai' | 'tailwind'): void {
     hideClassPanel()
     clearSelHighlights()
     selectedSet = []
+  } else if (mode === 'comment') {
+    // Mirror AI-mode teardown: hide class panel, clear selection state
+    hideClassPanel()
+    clearSelHighlights()
+    selectedElement = null
+    selectedPatchlySrc = null
+    selectedTargets = null
+    selectedSet = []
+    if (promptBar) promptBar.style.display = 'none'
+    if (promptInput) promptInput.value = ''
+    if (elementHighlight) elementHighlight.style.display = 'none'
+    if (componentLabel) componentLabel.style.display = 'none'
+    // Load comments so pins can render
+    requestCommentList()
   } else {
     // Entering Tailwind: if Tailwind isn't configured, tell the user.
     if (window.__patchlyGetTailwindConfigured?.() === false) {
@@ -292,6 +330,225 @@ function setMode(mode: 'ai' | 'tailwind'): void {
       inspectCurrentSelection()
     }
   }
+}
+
+function requestCommentList(): void {
+  listCommentsSessionId = Math.random().toString(36).slice(2)
+  window.__patchlyListComments?.(listCommentsSessionId, 'open')
+}
+
+function initPinsLayer(): void {
+  pinsContainerEl = document.createElement('div')
+  pinsContainerEl.id = 'patchly-pins'
+  pinsContainerEl.style.cssText =
+    'position:fixed;inset:0;pointer-events:none;z-index:2147483647;'
+  document.body.appendChild(pinsContainerEl)
+  window.addEventListener('scroll', refreshPins, { passive: true })
+  window.addEventListener('resize', refreshPins, { passive: true })
+}
+
+function refreshPins(): void {
+  if (!pinsContainerEl || !isActive) return
+  // Close any open pin card before re-rendering
+  closePinCard()
+  pinsContainerEl.innerHTML = ''
+  const openComments = cachedComments.filter((c) => c.status === 'open')
+  openComments.forEach((comment, i) => {
+    let anchorX: number | null = null
+    let anchorY: number | null = null
+
+    if (comment.kind === 'element' && comment.patchlySrc) {
+      const el = document.querySelector(
+        `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
+      )
+      if (el) {
+        const r = el.getBoundingClientRect()
+        anchorX = r.left + r.width / 2
+        anchorY = r.top
+      }
+    } else if (comment.kind === 'area' && comment.rect) {
+      anchorX = comment.rect.x + comment.rect.w / 2
+      anchorY = comment.rect.y
+    }
+
+    if (anchorX === null || anchorY === null) return
+
+    const pin = document.createElement('div')
+    pin.className = 'patchly-pin'
+    pin.setAttribute('data-comment-id', comment.id)
+    pin.textContent = String(i + 1)
+    pin.style.cssText = `
+      position:fixed;
+      left:${anchorX - 12}px;
+      top:${anchorY - 12}px;
+      width:24px;height:24px;
+      background:#7c3aed;color:#fff;
+      border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:700;font-family:sans-serif;
+      pointer-events:auto;cursor:pointer;
+      box-shadow:0 2px 8px rgba(0,0,0,.4);
+      border:2px solid #fff;
+      z-index:2147483621;
+      user-select:none;
+    `
+    pin.addEventListener('click', (e) => {
+      e.stopPropagation()
+      openPinCard(comment, i + 1)
+    })
+    pinsContainerEl!.appendChild(pin)
+  })
+}
+
+let pinCardEl: HTMLDivElement | null = null
+
+function closePinCard(): void {
+  pinCardEl?.remove()
+  pinCardEl = null
+}
+
+function openPinCard(
+  comment: import('../shared/comments').ReviewComment,
+  pinNumber: number,
+): void {
+  closePinCard()
+
+  pinCardEl = document.createElement('div')
+  pinCardEl.className = 'patchly-pin-card'
+  pinCardEl.style.cssText = `
+    position:fixed;z-index:2147483647;
+    background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;
+    padding:12px;width:280px;
+    box-shadow:0 4px 24px rgba(0,0,0,.5);
+    font-family:sans-serif;font-size:13px;color:#e0e0f0;
+    display:flex;flex-direction:column;gap:8px;
+  `
+  // Position near the pin
+  const pinEl = pinsContainerEl?.querySelector(`[data-comment-id="${comment.id}"]`)
+  if (pinEl) {
+    const r = (pinEl as HTMLElement).getBoundingClientRect()
+    const top = Math.min(r.bottom + 6, window.innerHeight - 200)
+    const left = Math.max(8, Math.min(r.left - 8, window.innerWidth - 296))
+    pinCardEl.style.top = `${top}px`
+    pinCardEl.style.left = `${left}px`
+  }
+
+  // Close button
+  const closeBtn = document.createElement('button')
+  closeBtn.textContent = '×'
+  closeBtn.style.cssText =
+    'position:absolute;top:6px;right:8px;background:none;border:none;color:#a0a0c0;font-size:16px;cursor:pointer;line-height:1;'
+  closeBtn.addEventListener('click', closePinCard)
+
+  // Pin number + meta header
+  const header = document.createElement('div')
+  header.style.cssText = 'display:flex;align-items:center;gap:6px;padding-right:20px;'
+  const badge = document.createElement('span')
+  badge.style.cssText =
+    'background:#7c3aed;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;'
+  badge.textContent = String(pinNumber)
+  const metaText = document.createElement('span')
+  metaText.style.cssText = 'color:#a0a0c0;font-size:11px;'
+  metaText.textContent = [
+    comment.author,
+    comment.tag ? `<${comment.tag}>` : null,
+    comment.componentName ?? null,
+    new Date(comment.createdAt).toLocaleString(),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  header.append(badge, metaText)
+
+  // Note text — UNTRUSTED: textContent only, never innerHTML
+  const noteEl = document.createElement('p')
+  noteEl.style.cssText = 'margin:0;line-height:1.5;word-break:break-word;'
+  noteEl.textContent = comment.note  // SECURITY: textContent, never innerHTML
+
+  // Screenshot thumbnail
+  let imgEl: HTMLImageElement | null = null
+  if (comment.screenshot) {
+    imgEl = document.createElement('img')
+    imgEl.alt = ''
+    imgEl.style.cssText =
+      'width:100%;border-radius:4px;border:1px solid #3b3b5c;max-height:140px;object-fit:cover;'
+    imgEl.src = `data:image/png;base64,${comment.screenshot}`
+  }
+
+  // Action buttons
+  const actions = document.createElement('div')
+  actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
+
+  if (comment.status === 'open') {
+    const fixAIBtn = document.createElement('button')
+    fixAIBtn.textContent = 'Fix with AI'
+    fixAIBtn.style.cssText =
+      'padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600;'
+    fixAIBtn.addEventListener('click', () => fixWithAI(comment))
+
+    const editClassBtn = document.createElement('button')
+    editClassBtn.textContent = 'Edit classes'
+    editClassBtn.style.cssText =
+      'padding:4px 10px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#e0e0f0;cursor:pointer;font-size:12px;'
+    editClassBtn.addEventListener('click', () => editClasses(comment))
+
+    const resolveBtn = document.createElement('button')
+    resolveBtn.textContent = 'Resolve'
+    resolveBtn.style.cssText =
+      'padding:4px 10px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:12px;'
+    resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
+
+    actions.append(fixAIBtn, editClassBtn, resolveBtn)
+  } else {
+    const resolvedLabel = document.createElement('span')
+    resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;'
+    resolvedLabel.textContent = '✓ Resolved'
+    actions.appendChild(resolvedLabel)
+  }
+
+  pinCardEl.append(closeBtn, header, noteEl)
+  if (imgEl) pinCardEl.appendChild(imgEl)
+  pinCardEl.appendChild(actions)
+  pinCardEl.addEventListener('mousedown', (e) => e.stopPropagation())
+  document.body.appendChild(pinCardEl)
+}
+
+function fixWithAI(comment: import('../shared/comments').ReviewComment): void {
+  closePinCard()
+  setMode('ai')
+  if (comment.patchlySrc) {
+    const el = document.querySelector(
+      `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
+    ) as HTMLElement | null
+    if (el) selectElement(el, el.getBoundingClientRect())
+  }
+  // Pre-fill prompt with note as plain text — dev reads and confirms before sending
+  if (promptInput) {
+    promptInput.value = comment.note  // plain text assignment, never DOM injection
+    autoGrowPrompt()
+    setTimeout(() => promptInput?.focus(), 50)
+  }
+}
+
+function editClasses(comment: import('../shared/comments').ReviewComment): void {
+  closePinCard()
+  setMode('tailwind')
+  if (comment.patchlySrc) {
+    const el = document.querySelector(
+      `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
+    ) as HTMLElement | null
+    if (el) {
+      selectedSet = [el]
+      inspectCurrentSelection()
+    }
+  }
+}
+
+function resolveComment(id: string, _resolvedBy: 'dev' | 'agent'): void {
+  closePinCard()
+  window.__patchlyDeleteComment?.(id)
+  // Optimistic delete — COMMENT_DELETED broadcast also triggers __patchlyOnCommentDeleted
+  cachedComments = cachedComments.filter((c) => c.id !== id)
+  refreshPins()
 }
 
 function currentSelectionSrcs(): string[] {
@@ -314,6 +571,7 @@ function inspectCurrentSelection(): void {
 // ─── Mouse handling ──────────────────────────────────────────────────────────
 
 function onMouseDown(e: MouseEvent): void {
+  if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
   if (!isActive) return
   e.preventDefault()
   mouseDown = true
@@ -326,12 +584,13 @@ function onMouseDown(e: MouseEvent): void {
 }
 
 function onMouseMove(e: MouseEvent): void {
+  if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
   if (!isActive) return
   currentX = e.clientX
   currentY = e.clientY
 
-  // AI mode: a held drag past the threshold becomes an area box.
-  if (mouseDown && activeMode === 'ai') {
+  // AI/comment mode: a held drag past the threshold becomes an area box.
+  if (mouseDown && (activeMode === 'ai' || activeMode === 'comment')) {
     const moved = Math.abs(currentX - startX) > DRAG_THRESHOLD || Math.abs(currentY - startY) > DRAG_THRESHOLD
     if (moved) {
       isDragging = true
@@ -362,6 +621,43 @@ function onMouseUp(e: MouseEvent): void {
       const el = elementAtPoint(e.clientX, e.clientY)
       if (el) selectElement(el, pointRect(e.clientX, e.clientY))
     }
+    return
+  }
+
+  if (activeMode === 'comment' && !isDragging) {
+    // Ignore clicks that land inside the composer itself; a click on any other
+    // page element re-targets the composer to the newly clicked element.
+    if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
+    const el = elementAtPoint(e.clientX, e.clientY)
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    commentPendingEl = el
+    commentPendingPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
+    commentPendingReactInfo = getReactInfo(el)
+    commentPendingScreenshot = null
+    captureElementScreenshot(el).then((shot) => {
+      commentPendingScreenshot = shot ?? null
+      showCommentComposer({ x: rect.left, y: rect.top, width: rect.width, height: rect.height }, 'element')
+    }).catch(() => {
+      showCommentComposer({ x: rect.left, y: rect.top, width: rect.width, height: rect.height }, 'element')
+    })
+    return
+  }
+
+  if (activeMode === 'comment' && isDragging) {
+    if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
+    const selRect = getSelectionRect()
+    if (selectionRect) selectionRect.style.display = 'none'
+    isDragging = false
+    if (selRect.width < 5 || selRect.height < 5) return
+    commentAreaRect = { x: selRect.x, y: selRect.y, w: selRect.width, h: selRect.height }
+    commentPendingEl = null
+    commentPendingPatchlySrc = null
+    commentPendingReactInfo = null
+    captureElementScreenshot(document.body).then((shot) => {
+      commentPendingScreenshot = shot ?? null
+    })
+    showCommentComposer({ x: selRect.x, y: selRect.y, width: selRect.width, height: selRect.height }, 'area')
     return
   }
 
@@ -889,6 +1185,104 @@ function resetPromptBar(): void {
   if (componentLabel) componentLabel.style.display = 'none'
 }
 
+// ─── Comment composer ────────────────────────────────────────────────────────
+
+function initCommentComposer(): void {
+  commentComposerEl = document.createElement('div')
+  commentComposerEl.id = 'patchly-comment-composer'
+  // Max z-index + appended after #patchly-root so it stacks ABOVE the full-screen
+  // capture layer (which has pointer-events:all + cursor:crosshair). cursor:default
+  // overrides the page-level crosshair while the pointer is over the composer.
+  commentComposerEl.style.cssText = 'display:none;position:fixed;z-index:2147483647;cursor:default;flex-direction:column;gap:6px;background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:300px;box-shadow:0 4px 24px rgba(0,0,0,.4);'
+  commentComposerEl.innerHTML = `
+    <textarea id="patchly-cc-note" rows="3" placeholder="Describe the change needed…" style="resize:vertical;width:100%;box-sizing:border-box;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;"></textarea>
+    <input id="patchly-cc-author" type="text" placeholder="Your name (optional)" style="background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button id="patchly-cc-cancel" style="padding:4px 12px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:13px;">Cancel</button>
+      <button id="patchly-cc-submit" style="padding:4px 12px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Add Comment</button>
+    </div>
+  `
+  document.body.appendChild(commentComposerEl)
+  document.getElementById('patchly-cc-submit')!.addEventListener('click', submitComment)
+  document.getElementById('patchly-cc-cancel')!.addEventListener('click', hideCommentComposer)
+  // Stop clicks inside composer from triggering overlay selection
+  commentComposerEl.addEventListener('mousedown', (e) => e.stopPropagation())
+}
+
+function showCommentComposer(
+  rect: { x: number; y: number; width?: number; height?: number },
+  _kind: 'element' | 'area',
+): void {
+  if (!commentComposerEl) return
+  const top = Math.min(rect.y + (rect.height ?? 0) + 8, window.innerHeight - 200)
+  const left = Math.max(8, Math.min(rect.x, window.innerWidth - 316))
+  commentComposerEl.style.top = `${top}px`
+  commentComposerEl.style.left = `${left}px`
+  commentComposerEl.style.display = 'flex'
+  const noteEl = document.getElementById('patchly-cc-note') as HTMLTextAreaElement
+  const authorEl = document.getElementById('patchly-cc-author') as HTMLInputElement
+  noteEl.value = ''
+  authorEl.value = ''
+  setTimeout(() => noteEl.focus(), 50)
+}
+
+function hideCommentComposer(): void {
+  if (commentComposerEl) commentComposerEl.style.display = 'none'
+  commentPendingEl = null
+  commentPendingPatchlySrc = null
+  commentPendingScreenshot = null
+  commentPendingReactInfo = null
+  commentAreaRect = null
+}
+
+function buildCommentFingerprint(el: Element): import('../shared/comments').ReviewComment['fingerprint'] {
+  const attrs: Record<string, string> = {}
+  if ((el as HTMLElement).id) attrs['id'] = (el as HTMLElement).id
+  const testid = el.getAttribute('data-testid')
+  if (testid) attrs['data-testid'] = testid
+  return {
+    tagName: el.tagName.toLowerCase(),
+    identifyingAttrs: Object.keys(attrs).length ? attrs : undefined,
+    textSnippet: el.textContent?.trim().slice(0, 40) || undefined,
+  }
+}
+
+function submitComment(): void {
+  const noteEl = document.getElementById('patchly-cc-note') as HTMLTextAreaElement
+  const authorEl = document.getElementById('patchly-cc-author') as HTMLInputElement
+  const note = noteEl.value.trim()
+  if (!note) { noteEl.focus(); return }
+  const author = authorEl.value.trim() || undefined
+
+  type CommentData = Omit<import('../shared/comments').ReviewComment, 'id' | 'createdAt' | 'status'>
+  const data: CommentData = commentPendingPatchlySrc
+    ? {
+        kind: 'element' as const,
+        patchlySrc: commentPendingPatchlySrc,
+        tag: commentPendingEl?.tagName.toLowerCase(),
+        componentName: commentPendingReactInfo?.componentName ?? null,
+        fingerprint: commentPendingEl ? buildCommentFingerprint(commentPendingEl) : undefined,
+        pageUrl: window.location.href,
+        note,   // plain text — rendered via textContent elsewhere, never innerHTML
+        author,
+        screenshot: commentPendingScreenshot ?? undefined,
+      }
+    : {
+        kind: 'area' as const,
+        rect: commentAreaRect ?? undefined,
+        pageUrl: window.location.href,
+        note,
+        author,
+        screenshot: commentPendingScreenshot ?? undefined,
+      }
+
+  window.__patchlyAddComment?.(data)
+  hideCommentComposer()
+}
+
+// ─── Comments sidebar ────────────────────────────────────────────────────────
+// Sidebar removed — pins layer is sufficient for discovery.
+
 // ─── Globals (content → overlay) ─────────────────────────────────────────────
 window.__patchlyResetPromptBar = resetPromptBar
 window.__patchlyActivate = activate
@@ -896,6 +1290,34 @@ window.__patchlyToggle = toggle
 window.__patchlyCancel = exitEditing
 window.__patchlySetConnected = setConnectedDot
 window.__patchlyHistoryChanged = updateToolbar
+
+// Comment mode inbound handlers
+window.__patchlyOnCommentAdded = (comment) => {
+  if (!cachedComments.find((c) => c.id === comment.id)) {
+    cachedComments = [...cachedComments, comment]
+  }
+  refreshPins()
+}
+window.__patchlyOnComments = (sessionId, comments) => {
+  if (sessionId !== listCommentsSessionId) return
+  listCommentsSessionId = null
+  cachedComments = comments
+  refreshPins()
+}
+window.__patchlyOnCommentResolved = (id) => {
+  // Comment is marked resolved (still in JSON); remove from open-comments cache
+  cachedComments = cachedComments.filter((c) => c.id !== id)
+  refreshPins()
+}
+window.__patchlyOnCommentDeleted = (id) => {
+  cachedComments = cachedComments.filter((c) => c.id !== id)
+  refreshPins()
+}
+window.__patchlyOnCommentsCleared = () => {
+  // COMMENTS_CLEARED only fires for resolved comments, which aren't in cachedComments
+  // (extension cache only holds open ones), so no cache update needed — just refresh.
+  refreshPins()
+}
 
 // ─── Diff / preview rendering ────────────────────────────────────────────────
 
@@ -1165,6 +1587,22 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePa
         window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO', editId })
       }
     }
+  }
+
+  // Offer to resolve a matching open comment for the edited element
+  const matchingComment = cachedComments.find(
+    (c) => c.status === 'open' && c.kind === 'element' && c.patchlySrc === selectedPatchlySrc,
+  )
+  if (matchingComment) {
+    const resolveOfferBtn = document.createElement('button')
+    resolveOfferBtn.textContent = 'Resolve comment?'
+    resolveOfferBtn.style.cssText =
+      'margin-left:6px;padding:2px 8px;border-radius:4px;border:1px solid #7c3aed;background:transparent;color:#a78bfa;cursor:pointer;font-size:12px;'
+    resolveOfferBtn.addEventListener('click', () => {
+      resolveComment(matchingComment.id, 'dev')
+      resolveOfferBtn.remove()
+    })
+    toast.appendChild(resolveOfferBtn)
   }
 
   setTimeout(() => {

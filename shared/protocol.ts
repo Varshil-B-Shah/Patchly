@@ -3,6 +3,7 @@
 // Both sides must use these exact strings — no magic strings elsewhere
 
 import type { EditOperation } from './operations.js'
+import type { ReviewComment } from './comments.js'
 
 export const MSG = {
   // Extension → Agent
@@ -38,6 +39,18 @@ export const MSG = {
   SELECTION:           'PATCHLY_SELECTION',           // agent → mcp: the cached browser selection
   SCREENSHOT_REQUEST:  'PATCHLY_SCREENSHOT_REQUEST',  // mcp → agent → ext: capture current element
   SCREENSHOT_RESULT:   'PATCHLY_SCREENSHOT_RESULT',   // ext → agent → mcp: the capture result
+
+  // Comment system (Phase A — local single-machine)
+  ADD_COMMENT:      'PATCHLY_ADD_COMMENT',
+  COMMENT_ADDED:    'PATCHLY_COMMENT_ADDED',
+  LIST_COMMENTS:    'PATCHLY_LIST_COMMENTS',
+  COMMENTS:         'PATCHLY_COMMENTS',
+  RESOLVE_COMMENT:  'PATCHLY_RESOLVE_COMMENT',
+  COMMENT_RESOLVED: 'PATCHLY_COMMENT_RESOLVED',
+  DELETE_COMMENT:   'PATCHLY_DELETE_COMMENT',
+  COMMENT_DELETED:  'PATCHLY_COMMENT_DELETED',
+  CLEAR_COMMENTS: 'PATCHLY_CLEAR_COMMENTS',
+  COMMENTS_CLEARED: 'PATCHLY_COMMENTS_CLEARED',
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -401,6 +414,66 @@ export interface ScreenshotResultMessage {
   patchlySrc?: string
 }
 
+// ── Comment system ────────────────────────────────────────────────────────────
+
+export interface AddCommentMessage {
+  type: typeof MSG.ADD_COMMENT
+  comment: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>
+}
+
+export interface CommentAddedMessage {
+  type: typeof MSG.COMMENT_ADDED
+  comment: ReviewComment
+}
+
+export interface ListCommentsMessage {
+  type: typeof MSG.LIST_COMMENTS
+  sessionId: string
+  status?: 'open' | 'resolved' | 'all'
+}
+
+export interface CommentsMessage {
+  type: typeof MSG.COMMENTS
+  sessionId: string
+  comments: ReviewComment[]
+}
+
+export interface ResolveCommentMessage {
+  type: typeof MSG.RESOLVE_COMMENT
+  sessionId?: string
+  id: string
+  resolvedBy?: 'dev' | 'agent'
+}
+
+export interface CommentResolvedMessage {
+  type: typeof MSG.COMMENT_RESOLVED
+  sessionId?: string
+  id: string
+  comment: ReviewComment
+}
+
+export interface DeleteCommentMessage {
+  type: typeof MSG.DELETE_COMMENT
+  id: string
+}
+
+export interface CommentDeletedMessage {
+  type: typeof MSG.COMMENT_DELETED
+  id: string
+}
+
+/** MCP → Agent: delete all resolved comments. */
+export interface ClearCommentsMessage {
+  type: typeof MSG.CLEAR_COMMENTS
+  sessionId?: string
+}
+/** Agent → Extension (broadcast) + MCP (unicast): resolved comments deleted. */
+export interface CommentsClearedMessage {
+  type: typeof MSG.COMMENTS_CLEARED
+  sessionId?: string
+  count: number
+}
+
 export type ExtensionToAgentMessage =
   | PingMessage
   | EditRequestMessage
@@ -412,6 +485,11 @@ export type ExtensionToAgentMessage =
   | SelectionUpdateMessage
   | GetSelectionMessage
   | ScreenshotResultMessage
+  | AddCommentMessage
+  | ListCommentsMessage
+  | ResolveCommentMessage
+  | DeleteCommentMessage
+  | ClearCommentsMessage
 
 /** Any message the agent sends back to a client (extension or MCP bridge). */
 export type AgentToExtensionMessage =
@@ -429,3 +507,8 @@ export type AgentToExtensionMessage =
   | OpsAppliedMessage
   | SelectionMessage
   | ScreenshotRequestMessage
+  | CommentAddedMessage
+  | CommentsMessage
+  | CommentResolvedMessage
+  | CommentDeletedMessage
+  | CommentsClearedMessage
