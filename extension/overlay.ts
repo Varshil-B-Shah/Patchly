@@ -57,6 +57,34 @@ function escapeHtml(s: string): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function urlMatches(pageUrl: string): boolean {
+  try {
+    const stored = new URL(pageUrl)
+    return stored.origin === window.location.origin &&
+           stored.pathname === window.location.pathname
+  } catch {
+    return false
+  }
+}
+
+function checkFingerprint(
+  el: Element,
+  fp: import('../shared/comments').ReviewComment['fingerprint'],
+): boolean {
+  if (!fp) return true
+  if (el.tagName.toLowerCase() !== fp.tagName) return false
+  if (fp.identifyingAttrs) {
+    for (const [attr, val] of Object.entries(fp.identifyingAttrs)) {
+      if (el.getAttribute(attr) !== val) return false
+    }
+  }
+  if (fp.textSnippet) {
+    const current = el.textContent?.trim().slice(0, 40) ?? ''
+    if (current !== fp.textSnippet) return false
+  }
+  return true
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 function init(): void {
@@ -236,6 +264,7 @@ function activate(): void {
   updateToolbar()
   window.addEventListener('scroll', onViewportChange, true)
   window.addEventListener('resize', onViewportChange)
+  requestCommentList()
 }
 
 function exitEditing(): void {
@@ -345,13 +374,26 @@ function initPinsLayer(): void {
   document.body.appendChild(pinsContainerEl)
   window.addEventListener('scroll', updatePinPositions, { passive: true })
   window.addEventListener('resize', updatePinPositions, { passive: true })
+  window.addEventListener('popstate', buildPins)
+  window.addEventListener('hashchange', buildPins)
+}
+
+function updateCommentBadge(): void {
+  const tab = toolbar?.querySelector<HTMLButtonElement>('[data-mode="comment"]')
+  if (!tab) return
+  const openCount = cachedComments.filter(
+    (c) => c.status === 'open' && urlMatches(c.pageUrl),
+  ).length
+  tab.textContent = openCount > 0 ? `Comment · ${openCount}` : 'Comment'
 }
 
 function buildPins(): void {
   if (!pinsContainerEl || !isActive) return
   closePinCard()
   pinsContainerEl.innerHTML = ''
-  const openComments = cachedComments.filter((c) => c.status === 'open')
+  const openComments = cachedComments.filter(
+    (c) => c.status === 'open' && urlMatches(c.pageUrl),
+  )
   openComments.forEach((comment, i) => {
     const pin = document.createElement('div')
     pin.className = 'patchly-pin'
@@ -373,11 +415,14 @@ function buildPins(): void {
     pinsContainerEl!.appendChild(pin)
   })
   updatePinPositions()
+  updateCommentBadge()
 }
 
 function updatePinPositions(): void {
   if (!pinsContainerEl || !isActive) return
-  const openComments = cachedComments.filter((c) => c.status === 'open')
+  const openComments = cachedComments.filter(
+    (c) => c.status === 'open' && urlMatches(c.pageUrl),
+  )
   const pins = pinsContainerEl.querySelectorAll<HTMLElement>('.patchly-pin')
   pins.forEach((pin, i) => {
     const comment = openComments[i]
@@ -414,10 +459,15 @@ function updatePinPositions(): void {
 }
 
 let pinCardEl: HTMLDivElement | null = null
+let pinCardKeyHandler: ((e: KeyboardEvent) => void) | null = null
 
 function closePinCard(): void {
   pinCardEl?.remove()
   pinCardEl = null
+  if (pinCardKeyHandler) {
+    document.removeEventListener('keydown', pinCardKeyHandler, true)
+    pinCardKeyHandler = null
+  }
 }
 
 function openPinCard(
@@ -487,6 +537,14 @@ function openPinCard(
     imgEl.src = `data:image/png;base64,${comment.screenshot}`
   }
 
+  // Fingerprint drift check
+  const targetEl = comment.kind === 'element' && comment.patchlySrc
+    ? document.querySelector(`[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`)
+    : null
+  const drifted = targetEl && comment.fingerprint
+    ? !checkFingerprint(targetEl, comment.fingerprint)
+    : false
+
   // Action buttons
   const actions = document.createElement('div')
   actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
@@ -520,9 +578,36 @@ function openPinCard(
 
   pinCardEl.append(closeBtn, header, noteEl)
   if (imgEl) pinCardEl.appendChild(imgEl)
+
+  if (drifted) {
+    const driftWarning = document.createElement('div')
+    driftWarning.style.cssText =
+      'color:#f59e0b;font-size:11px;padding:4px 6px;background:#2a2010;border-radius:4px;'
+    driftWarning.textContent = '⚠ Element may have changed since this comment was left'
+    pinCardEl.appendChild(driftWarning)
+  }
+
   pinCardEl.appendChild(actions)
+
+  if (comment.status === 'open') {
+    const hints = document.createElement('div')
+    hints.style.cssText = 'color:#555577;font-size:10px;margin-top:2px;'
+    hints.textContent = 'A · Fix with AI  T · Tailwind  R · Resolve  Esc · Close'
+    pinCardEl.appendChild(hints)
+  }
+
   pinCardEl.addEventListener('mousedown', (e) => e.stopPropagation())
   document.body.appendChild(pinCardEl)
+
+  if (comment.status === 'open') {
+    pinCardKeyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
+      else if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
+      else if (e.key === 't' || e.key === 'T') { e.preventDefault(); editClasses(comment) }
+      else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resolveComment(comment.id, 'dev') }
+    }
+    document.addEventListener('keydown', pinCardKeyHandler, true)
+  }
 }
 
 function fixWithAI(comment: import('../shared/comments').ReviewComment): void {
