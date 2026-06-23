@@ -301,6 +301,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'boolean',
             description: 'Must be true to execute structural ops (wrapElement/insertChild/replaceElement/removeElement) after reviewing the dry-run diff.',
           },
+          selectionId: {
+            type: 'string',
+            description: 'When omitting operation.target, pin the edit to the selectionId from a prior patchly_current_selection so it targets exactly that element even if the user clicked elsewhere. Errors if that selection has expired.',
+          },
         },
         required: ['operation'],
       },
@@ -469,14 +473,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: 'operation is required.' }], isError: true }
     }
 
-    // Auto-fill target from current selection if omitted.
+    // Auto-fill target from the selection if omitted. A selectionId pins to the
+    // exact element resolved earlier, even if the user has since clicked elsewhere.
     if (!rawOp.target) {
+      const selectionId = rawArgs?.selectionId as string | undefined
       const sid = mkSid()
       let selResponse: Record<string, unknown>
       try {
-        selResponse = await agent.request({ type: MSG.GET_SELECTION, sessionId: sid })
+        selResponse = await agent.request({ type: MSG.GET_SELECTION, sessionId: sid, ...(selectionId ? { selectionId } : {}) })
       } catch (err: unknown) {
         return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
+      }
+
+      if (selResponse.stale) {
+        return {
+          content: [{ type: 'text', text: 'That selection has expired (the user changed selection since it was resolved). Call patchly_current_selection again to re-resolve, then retry.' }],
+          isError: true,
+        }
       }
 
       const selection = (selResponse.selection ?? []) as SelectionItem[]
