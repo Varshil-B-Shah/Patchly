@@ -175,10 +175,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_current_selection',
       description:
-        'Returns the element(s) the user currently has selected in the browser (via the Patchly Chrome extension). ' +
-        'Includes the source file/line, tag name, and source-accurate className breakdown ' +
-        '(classNameKind: static | dynamic | none, plus the class token list). ' +
-        'Call this first before patchly_apply — you get everything you need to make an edit in one shot.',
+        'THE PRIMARY TOOL. Returns what the user is pointing at in the browser (via the Patchly ' +
+        'Chrome extension): the exact source location (file/line/column), tag name, source-accurate ' +
+        'className breakdown (classNameKind: static | dynamic | none + class tokens), the element\'s ' +
+        'computed CSS styles, AND a screenshot of the element as an image block so you can SEE it. ' +
+        'Call this to resolve "what am I looking at" — then open that file and edit it yourself with ' +
+        'your normal editing tools. You do NOT need patchly_apply for that; you have the precise ' +
+        'location and a picture of the current visual state.',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
     {
@@ -201,11 +204,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_apply',
       description:
-        'Applies one EditOperation to the source file and hot-reloads the page via HMR. ' +
-        'Always returns the unified diff of what changed. ' +
-        'If operation.target is omitted, the current browser selection is used automatically — ' +
-        'so after patchly_current_selection you can apply without repeating the target. ' +
-        'Set dryRun:true to validate and preview the diff without writing to disk.',
+        'OPTIONAL deterministic fast-path. In most cases you should edit the source file yourself ' +
+        'using the location from patchly_current_selection — you already know exactly where it is. ' +
+        'Use this tool only for trivial, mechanical tweaks (a className/style/text change) where you ' +
+        'want Patchly\'s AST-safe edit + drift guard instead of editing by hand. ' +
+        'Applies one EditOperation and hot-reloads via HMR; always returns the unified diff. ' +
+        'If operation.target is omitted, the current browser selection is used. ' +
+        'Set dryRun:true to preview the diff without writing.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -283,10 +288,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         classNameKind: info?.classNameKind ?? 'unknown',
         classes: info?.classes ?? s.classes.split(/\s+/).filter(Boolean),
         ...(info?.dynamicText ? { dynamicText: info.dynamicText } : {}),
+        // Visual state (perception): curated computed styles from the live DOM.
+        ...(s.computedStyles ? { computedStyles: s.computedStyles } : {}),
       }
     })
 
-    return { content: [{ type: 'text', text: JSON.stringify(items, null, 2) }] }
+    // Mixed content: the structured pointer/styles as text, plus a screenshot
+    // IMAGE block per element so the agent can literally SEE what it's editing.
+    const content: Array<Record<string, unknown>> = [
+      { type: 'text', text: JSON.stringify(items, null, 2) },
+    ]
+    for (const s of selection) {
+      if (s.screenshot) {
+        content.push({ type: 'image', data: s.screenshot, mimeType: 'image/png' })
+      }
+    }
+
+    return { content }
   }
 
   // ── patchly_inspect ───────────────────────────────────────────────────────

@@ -486,13 +486,7 @@ function selectElement(el: Element, rect: SelectionRect): void {
   selectedSet = []
   selectedPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
 
-  if (selectedPatchlySrc) {
-    window.__patchlySelectionUpdate?.([{
-      patchlySrc: selectedPatchlySrc,
-      tag: el.tagName.toLowerCase(),
-      classes: (el as HTMLElement).className || '',
-    }])
-  }
+  if (selectedPatchlySrc) pushSelectionPerception(el, selectedPatchlySrc)
 
   const elRect = el.getBoundingClientRect()
   if (elementHighlight) { positionBox(elementHighlight, elRect); elementHighlight.style.display = 'block' }
@@ -678,6 +672,48 @@ function hidePicker(): void {
 }
 
 // ─── Screenshot + AI edit dispatch ───────────────────────────────────────────
+
+// Curated getComputedStyle subset the coding agent actually reasons over. Full
+// computed style is ~300 props — we keep ~24 visual/layout ones to stay token-cheap.
+const PERCEPTION_STYLE_PROPS = [
+  'display', 'position', 'color', 'backgroundColor', 'backgroundImage',
+  'fontSize', 'fontWeight', 'fontFamily', 'lineHeight', 'letterSpacing', 'textAlign',
+  'padding', 'margin', 'borderWidth', 'borderColor', 'borderStyle', 'borderRadius',
+  'width', 'height', 'flexDirection', 'alignItems', 'justifyContent', 'gap',
+  'boxShadow', 'opacity',
+] as const
+
+function collectComputedStyles(el: Element): Record<string, string> {
+  const cs = getComputedStyle(el as HTMLElement)
+  const out: Record<string, string> = {}
+  for (const prop of PERCEPTION_STYLE_PROPS) {
+    const v = cs.getPropertyValue(
+      // camelCase → kebab-case for getPropertyValue
+      prop.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()),
+    )
+    if (v && v !== 'none' && v !== 'normal') out[prop] = v.trim()
+  }
+  return out
+}
+
+// MCP perception bridge: push the selected element to the agent cache in two
+// stages so selection stays responsive — synchronous styles immediately, then
+// the (async) screenshot once it resolves. Cache is last-write-wins on the agent.
+async function pushSelectionPerception(el: Element, patchlySrc: string): Promise<void> {
+  const base = {
+    patchlySrc,
+    tag: el.tagName.toLowerCase(),
+    classes: (el as HTMLElement).className || '',
+    computedStyles: collectComputedStyles(el),
+  }
+  window.__patchlySelectionUpdate?.([base])
+
+  const screenshot = await captureElementScreenshot(el)
+  // Guard: if the user moved to another element while we captured, don't clobber.
+  if (selectedElement === el && selectedPatchlySrc === patchlySrc) {
+    window.__patchlySelectionUpdate?.([{ ...base, screenshot }])
+  }
+}
 
 async function captureElementScreenshot(element: Element): Promise<string | null> {
   try {
