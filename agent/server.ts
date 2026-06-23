@@ -60,8 +60,14 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
     wss.once('listening', onListening)
   })
 
+  // Track which connected ws clients are extensions (sent PING) vs MCP clients.
+  // Needed to route SCREENSHOT_REQUEST to the extension and the result back to the
+  // MCP client that asked for it.
+  const extensionClients = new Set<import('ws').WebSocket>()
+  const screenshotCallbacks = new Map<string, import('ws').WebSocket>() // sessionId → requesting ws
+
   wss.on('connection', (ws) => {
-    console.log('Extension connected')
+    console.log('Client connected')
 
     if (!cachedTheme) cachedTheme = loadThemeTokens(config.projectRoot)
     if (cachedTailwindConfigured === null) cachedTailwindConfigured = isTailwindConfigured(config.projectRoot)
@@ -86,6 +92,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       console.log('Received:', msg.type)
 
       if (msg.type === MSG.PING) {
+        extensionClients.add(ws)
         ws.send(JSON.stringify({ type: MSG.PONG }))
       }
 
@@ -98,6 +105,30 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       if (msg.type === MSG.GET_SELECTION) {
         ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId: msg.sessionId, selectionId: latestSelectionId, selection: latestSelection }))
+        return
+      }
+
+      // ── MCP screenshot verify: forward request to extension, route result back ──
+      if (msg.type === MSG.SCREENSHOT_REQUEST) {
+        const { sessionId } = msg as { sessionId: string }
+        if (extensionClients.size === 0) {
+          ws.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot: null }))
+          return
+        }
+        screenshotCallbacks.set(sessionId, ws)
+        for (const extWs of extensionClients) {
+          extWs.send(JSON.stringify({ type: MSG.SCREENSHOT_REQUEST, sessionId }))
+        }
+        return
+      }
+
+      if (msg.type === MSG.SCREENSHOT_RESULT) {
+        const { sessionId, screenshot } = msg as { sessionId: string; screenshot: string | null }
+        const requester = screenshotCallbacks.get(sessionId)
+        screenshotCallbacks.delete(sessionId)
+        if (requester && requester.readyState === 1 /* OPEN */) {
+          requester.send(JSON.stringify({ type: MSG.SCREENSHOT_RESULT, sessionId, screenshot }))
+        }
         return
       }
 
@@ -512,7 +543,8 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
     })
 
     ws.on('close', () => {
-      console.log('Extension disconnected')
+      extensionClients.delete(ws)
+      console.log('Client disconnected')
     })
   })
 

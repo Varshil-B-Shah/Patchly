@@ -94,6 +94,10 @@ function connect(): void {
       if (msg.type === 'PATCHLY_UNDO_DONE') {
         window.__patchlyShowSuccess?.({ filePath: 'Undone', showUndo: false })
       }
+
+      if (msg.type === 'PATCHLY_SCREENSHOT_REQUEST') {
+        window.__patchlyHandleScreenshotRequest?.(String(msg.sessionId ?? ''))
+      }
     }
 
     ws.onclose = () => {

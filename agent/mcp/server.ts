@@ -270,6 +270,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['operation'],
       },
     },
+    {
+      name: 'patchly_screenshot',
+      description:
+        'Captures a fresh screenshot of the currently selected element and returns it as an image ' +
+        'block. Call this AFTER making an edit and waiting a moment for HMR to reload the page, to ' +
+        'visually confirm the change looks correct. Returns null if no element is selected.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+    },
   ],
 }))
 
@@ -371,6 +379,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: `Inspect failed: ${response.message}` }], isError: true }
     }
     return { content: [{ type: 'text', text: JSON.stringify(response.elements, null, 2) }] }
+  }
+
+  // ── patchly_screenshot ────────────────────────────────────────────────────
+  if (name === 'patchly_screenshot') {
+    const sessionId = mkSid()
+    let response: Record<string, unknown>
+    try {
+      response = await agent.request({ type: MSG.SCREENSHOT_REQUEST, sessionId })
+    } catch (err: unknown) {
+      return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
+    }
+
+    const screenshot = response.screenshot as string | null
+    if (!screenshot) {
+      return {
+        content: [{ type: 'text', text: 'No screenshot available — no element is currently selected in the browser.' }],
+      }
+    }
+    return {
+      content: [
+        { type: 'text', text: 'Current element state:' },
+        { type: 'image', data: screenshot, mimeType: 'image/png' },
+      ],
+    }
   }
 
   // ── patchly_apply ─────────────────────────────────────────────────────────

@@ -759,6 +759,14 @@ async function pushSelectionPerception(el: Element, patchlySrc: string): Promise
   }
 }
 
+// MCP on-demand recapture: the coding agent calls patchly_screenshot() after an
+// edit to visually verify the result. We capture the selected element if one exists,
+// otherwise respond with null so the agent knows nothing is selected.
+window.__patchlyHandleScreenshotRequest = async function(sessionId: string): Promise<void> {
+  const screenshot = selectedElement ? await captureElementScreenshot(selectedElement) : null
+  window.__patchlySendToAgent?.({ type: 'PATCHLY_SCREENSHOT_RESULT', sessionId, screenshot })
+}
+
 async function captureElementScreenshot(element: Element): Promise<string | null> {
   try {
     const rect = element.getBoundingClientRect()

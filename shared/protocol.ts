@@ -33,9 +33,11 @@ export const MSG = {
   OPS_APPLIED:  'PATCHLY_OPS_APPLIED',   // agent → ext: ops applied (NOT recorded in AI history)
 
   // MCP bridge (any MCP-capable coding agent → agent, via the stdio MCP server)
-  SELECTION_UPDATE: 'PATCHLY_SELECTION_UPDATE', // ext → agent: the browser selection changed
-  GET_SELECTION:    'PATCHLY_GET_SELECTION',    // mcp → agent: what is currently selected?
-  SELECTION:        'PATCHLY_SELECTION',        // agent → mcp: the cached browser selection
+  SELECTION_UPDATE:    'PATCHLY_SELECTION_UPDATE',    // ext → agent: the browser selection changed
+  GET_SELECTION:       'PATCHLY_GET_SELECTION',       // mcp → agent: what is currently selected?
+  SELECTION:           'PATCHLY_SELECTION',           // agent → mcp: the cached browser selection
+  SCREENSHOT_REQUEST:  'PATCHLY_SCREENSHOT_REQUEST',  // mcp → agent → ext: capture current element
+  SCREENSHOT_RESULT:   'PATCHLY_SCREENSHOT_RESULT',   // ext → agent → mcp: the capture result
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -367,6 +369,22 @@ export interface UndoDoneMessage {
 }
 
 /** Any message a client (extension or MCP bridge) sends to the agent. */
+/** MCP → agent → extension: ask the extension to capture a fresh screenshot of the
+ *  currently selected element (or the viewport if nothing is selected). Lets an
+ *  agent visually verify its edit after HMR reloads the page. */
+export interface ScreenshotRequestMessage {
+  type: typeof MSG.SCREENSHOT_REQUEST
+  sessionId: string
+}
+
+/** Extension → agent → MCP: the capture result. */
+export interface ScreenshotResultMessage {
+  type: typeof MSG.SCREENSHOT_RESULT
+  sessionId: string
+  /** base64 PNG, or null if capture failed or nothing was selected. */
+  screenshot: string | null
+}
+
 export type ExtensionToAgentMessage =
   | PingMessage
   | EditRequestMessage
@@ -377,6 +395,7 @@ export type ExtensionToAgentMessage =
   | ApplyOpsMessage
   | SelectionUpdateMessage
   | GetSelectionMessage
+  | ScreenshotResultMessage
 
 /** Any message the agent sends back to a client (extension or MCP bridge). */
 export type AgentToExtensionMessage =
@@ -393,3 +412,4 @@ export type AgentToExtensionMessage =
   | ElementInfoMessage
   | OpsAppliedMessage
   | SelectionMessage
+  | ScreenshotRequestMessage
