@@ -3,6 +3,8 @@
 // content scripts (content.ts defines the send functions; overlay.ts defines the
 // UI functions). Both bundles must honour this contract.
 
+import type { ReviewComment } from '../shared/comments'
+
 export {}
 
 declare global {
@@ -56,5 +58,16 @@ declare global {
     __patchlyClassPanelClosed?: () => void
     // Defined by overlay, called by classPanel after any undo/redo stack change.
     __patchlyHistoryChanged?: () => void
+
+    // Comment mode — send bridges (overlay → content → agent)
+    __patchlyAddComment?: (data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>) => void
+    __patchlyListComments?: (sessionId: string, status?: 'open' | 'resolved' | 'all') => void
+    __patchlyResolveComment?: (sessionId: string, id: string, resolvedBy: 'dev' | 'agent') => void
+    __patchlyDeleteComment?: (id: string) => void
+    // Comment mode — inbound handlers (content → overlay)
+    __patchlyOnCommentAdded?: (comment: ReviewComment) => void
+    __patchlyOnComments?: (sessionId: string, comments: ReviewComment[]) => void
+    __patchlyOnCommentResolved?: (id: string, comment: ReviewComment) => void
+    __patchlyOnCommentDeleted?: (id: string) => void
   }
 }

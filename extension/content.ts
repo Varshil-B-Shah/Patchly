@@ -3,6 +3,7 @@
 // messages to the overlay UI (via window.__patchly* globals).
 
 import { DEFAULT_PORT, PORT_SCAN_RANGE } from '../shared/agentInfo.js'
+import type { ReviewComment } from '../shared/comments'
 
 // Browsers can't read the agent's lockfile, so we scan a small port range and
 // connect to the first agent that responds. STATUS.projectRoot then tells us
@@ -98,6 +99,19 @@ function connect(): void {
       if (msg.type === 'PATCHLY_SCREENSHOT_REQUEST') {
         window.__patchlyHandleScreenshotRequest?.(String(msg.sessionId ?? ''), msg.patchlySrc as string | undefined)
       }
+
+      if (msg.type === 'PATCHLY_COMMENT_ADDED') {
+        window.__patchlyOnCommentAdded?.(msg.comment as ReviewComment)
+      }
+      if (msg.type === 'PATCHLY_COMMENTS') {
+        window.__patchlyOnComments?.(msg.sessionId as string, msg.comments as ReviewComment[])
+      }
+      if (msg.type === 'PATCHLY_COMMENT_RESOLVED') {
+        window.__patchlyOnCommentResolved?.(msg.id as string, msg.comment as ReviewComment)
+      }
+      if (msg.type === 'PATCHLY_COMMENT_DELETED') {
+        window.__patchlyOnCommentDeleted?.(msg.id as string)
+      }
     }
 
     ws.onclose = () => {
@@ -169,6 +183,23 @@ window.__patchlyApplyOps = function (
 ): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return
   ws.send(JSON.stringify({ type: 'PATCHLY_APPLY_OPS', sessionId, operations, explanation }))
+}
+
+window.__patchlyAddComment = function (data) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_ADD_COMMENT', comment: data }))
+}
+window.__patchlyListComments = function (sessionId, status) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_LIST_COMMENTS', sessionId, status }))
+}
+window.__patchlyResolveComment = function (sessionId, id, resolvedBy) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_RESOLVE_COMMENT', sessionId, id, resolvedBy }))
+}
+window.__patchlyDeleteComment = function (id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ type: 'PATCHLY_DELETE_COMMENT', id }))
 }
 
 // Expose cached agent state for overlay.ts (theme, tailwind gate, connection).
