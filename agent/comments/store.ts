@@ -76,4 +76,13 @@ export class CommentStore {
     this.write(comments)
     return true
   }
+
+  clearResolved(): number {
+    const comments = this.read()
+    const remaining = comments.filter((c) => c.status !== 'resolved')
+    const count = comments.length - remaining.length
+    if (count > 0) this.write(remaining)
+    return count
+  }
 }
+

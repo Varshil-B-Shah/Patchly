@@ -306,6 +306,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   } else if (mode === 'comment') {
     // Mirror AI-mode teardown: hide class panel, clear selection state
     hideClassPanel()
+    clearSelHighlights()
     selectedElement = null
     selectedPatchlySrc = null
     selectedTargets = null
@@ -542,14 +543,11 @@ function editClasses(comment: import('../shared/comments').ReviewComment): void 
   }
 }
 
-function resolveComment(id: string, resolvedBy: 'dev' | 'agent'): void {
+function resolveComment(id: string, _resolvedBy: 'dev' | 'agent'): void {
   closePinCard()
-  const sessionId = Math.random().toString(36).slice(2)
-  window.__patchlyResolveComment?.(sessionId, id, resolvedBy)
-  // Optimistic update
-  cachedComments = cachedComments.map((c) =>
-    c.id === id ? { ...c, status: 'resolved' as const } : c,
-  )
+  window.__patchlyDeleteComment?.(id)
+  // Optimistic delete — COMMENT_DELETED broadcast also triggers __patchlyOnCommentDeleted
+  cachedComments = cachedComments.filter((c) => c.id !== id)
   refreshPins()
 }
 
@@ -1307,13 +1305,17 @@ window.__patchlyOnComments = (sessionId, comments) => {
   refreshPins()
 }
 window.__patchlyOnCommentResolved = (id) => {
-  cachedComments = cachedComments.map((c) =>
-    c.id === id ? { ...c, status: 'resolved' as const } : c,
-  )
+  // Comment is marked resolved (still in JSON); remove from open-comments cache
+  cachedComments = cachedComments.filter((c) => c.id !== id)
   refreshPins()
 }
 window.__patchlyOnCommentDeleted = (id) => {
   cachedComments = cachedComments.filter((c) => c.id !== id)
+  refreshPins()
+}
+window.__patchlyOnCommentsCleared = () => {
+  // COMMENTS_CLEARED only fires for resolved comments, which aren't in cachedComments
+  // (extension cache only holds open ones), so no cache update needed — just refresh.
   refreshPins()
 }
 

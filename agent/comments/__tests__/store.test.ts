@@ -82,6 +82,17 @@ describe('CommentStore', () => {
     assert.ok(!store.delete(c.id), 'deleting again returns false')
   })
 
+  test('clearResolved removes only resolved comments', () => {
+    const a = store.add({ kind: 'element', patchlySrc: 'src/A.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'x' })
+    const b = store.add({ kind: 'element', patchlySrc: 'src/B.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'y' })
+    store.resolve(a.id, 'agent')
+    const cleared = store.clearResolved()
+    assert.equal(cleared, 1)
+    const remaining = store.list()
+    assert.equal(remaining.length, 1)
+    assert.equal(remaining[0].id, b.id)
+  })
+
   test('resolve non-existent id returns undefined', () => {
     assert.equal(store.resolve('no-such-id', 'agent'), undefined)
   })

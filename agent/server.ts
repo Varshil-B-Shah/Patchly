@@ -620,6 +620,16 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         broadcast({ type: MSG.COMMENT_DELETED, id })
         return
       }
+
+      if (msg.type === MSG.CLEAR_COMMENTS) {
+        const { sessionId } = msg as { sessionId?: string }
+        const count = commentStore.clearResolved()
+        broadcast({ type: MSG.COMMENTS_CLEARED, count })
+        if (sessionId && !extensionClients.has(ws)) {
+          ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))
+        }
+        return
+      }
     })
 
     ws.on('close', () => {

@@ -349,6 +349,11 @@ Also returns a screenshot image block for each comment that has one.`,
         required: ['id'],
       },
     },
+    {
+      name: 'patchly_clear_comments',
+      description: `Delete all resolved Patchly review comments from the store (.patchly/comments.json). Only removes comments already marked resolved — open comments are untouched. Use as a housekeeping step after a review session to keep the store small.`,
+      inputSchema: { type: 'object', properties: {} },
+    },
   ],
 }))
 
@@ -630,6 +635,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const sid = mkSid()
     await agent.request({ type: MSG.RESOLVE_COMMENT, sessionId: sid, id, resolvedBy: 'agent' })
     return { content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, id }) }] }
+  }
+
+  // ── patchly_clear_comments ─────────────────────────────────────────────────
+  if (name === 'patchly_clear_comments') {
+    const sid = mkSid()
+    const res = await agent.request({ type: MSG.CLEAR_COMMENTS, sessionId: sid })
+    const count = (res as { count?: number }).count ?? 0
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, cleared: count }) }] }
   }
 
   return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }

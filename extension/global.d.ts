@@ -69,5 +69,6 @@ declare global {
     __patchlyOnComments?: (sessionId: string, comments: ReviewComment[]) => void
     __patchlyOnCommentResolved?: (id: string, comment: ReviewComment) => void
     __patchlyOnCommentDeleted?: (id: string) => void
+    __patchlyOnCommentsCleared?: () => void
   }
 }

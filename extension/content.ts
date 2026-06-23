@@ -112,6 +112,9 @@ function connect(): void {
       if (msg.type === 'PATCHLY_COMMENT_DELETED') {
         window.__patchlyOnCommentDeleted?.(msg.id as string)
       }
+      if (msg.type === 'PATCHLY_COMMENTS_CLEARED') {
+        window.__patchlyOnCommentsCleared?.()
+      }
     }
 
     ws.onclose = () => {
