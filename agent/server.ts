@@ -11,6 +11,10 @@ import { inspectElement } from './ast/inspect.js'
 import { loadThemeTokens, isTailwindConfigured } from './contextBuilder.js'
 import type { ResolvedConfig } from './config.js'
 
+/** Ops that inject or remove JSX nodes. These require explicit `confirmed:true` from
+ *  the MCP caller when not running as a dry-run; auto-converted to dry-run otherwise. */
+const STRUCTURAL_OPS = new Set(['wrapElement', 'insertChild', 'replaceElement', 'removeElement'])
+
 // Theme is loaded once on first connection and cached for the lifetime of the
 // server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
@@ -467,12 +471,19 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
       // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
-        const { sessionId, operations, dryRun } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean }
+        const { sessionId, operations, dryRun, confirmed } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean; confirmed?: boolean }
 
         if (!Array.isArray(operations) || operations.length === 0) {
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: 'NO_OPERATIONS', message: 'No operations provided.' }))
           return
         }
+
+        // Trust gate: structural ops (JSX injection/removal) must be explicitly confirmed
+        // when executing for real. Without confirmed:true we auto-convert to dry-run so the
+        // caller sees the diff and can decide before anything is written.
+        const hasStructural = operations.some((op) => STRUCTURAL_OPS.has(op.op))
+        const forcedDryRun = hasStructural && !dryRun && !confirmed
+        const effectiveDryRun = !!dryRun || forcedDryRun
 
         // Pin each op's file via source-mapper (per-op, so a spoofed path can't
         // escape and multi-file selections resolve correctly), then group by file.
@@ -494,7 +505,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         // Apply (or dry-run) each file's ops in one pass. First failure stops.
         let combinedDiff = ''
         for (const fileOps of opsByFile.values()) {
-          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: !!dryRun })
+          const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: effectiveDryRun })
           if (!editResult.ok) {
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
@@ -502,7 +513,13 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           combinedDiff += editResult.diff  // always collect; MCP uses it to show what changed
         }
 
-        ws.send(JSON.stringify({ type: MSG.OPS_APPLIED, sessionId, ok: true, diff: combinedDiff }))
+        ws.send(JSON.stringify({
+          type: MSG.OPS_APPLIED,
+          sessionId,
+          ok: true,
+          diff: combinedDiff,
+          ...(forcedDryRun ? { requiresConfirmation: true } : {}),
+        }))
         return
       }
 

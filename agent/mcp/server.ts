@@ -247,11 +247,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         'OPTIONAL deterministic fast-path. In most cases you should edit the source file yourself ' +
         'using the location from patchly_current_selection — you already know exactly where it is. ' +
-        'Use this tool only for trivial, mechanical tweaks (a className/style/text change) where you ' +
-        'want Patchly\'s AST-safe edit + drift guard instead of editing by hand. ' +
+        'Use this tool only for trivial, mechanical tweaks (className/style/text) where you want ' +
+        'Patchly\'s AST-safe edit + drift guard instead of editing by hand. ' +
         'Applies one EditOperation and hot-reloads via HMR; always returns the unified diff. ' +
-        'If operation.target is omitted, the current browser selection is used. ' +
-        'Set dryRun:true to preview the diff without writing.',
+        'If operation.target is omitted, the current selection is used. ' +
+        'SAFETY: structural ops (wrapElement/insertChild/replaceElement/removeElement) without ' +
+        'dryRun automatically return a dry-run diff and requiresConfirmation:true — call again ' +
+        'with confirmed:true after reviewing the diff.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -265,6 +267,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           dryRun: {
             type: 'boolean',
             description: 'Preview the diff without writing to disk.',
+          },
+          confirmed: {
+            type: 'boolean',
+            description: 'Must be true to execute structural ops (wrapElement/insertChild/replaceElement/removeElement) after reviewing the dry-run diff.',
           },
         },
         required: ['operation'],
@@ -449,6 +455,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    const confirmed = rawArgs?.confirmed === true
     const sessionId = mkSid()
     let response: Record<string, unknown>
     try {
@@ -458,6 +465,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         operations: [parsed.data],
         explanation: `MCP: ${parsed.data.op}`,
         dryRun,
+        confirmed,
       })
     } catch (err: unknown) {
       return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
@@ -470,6 +478,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const diffBlock = response.diff
       ? `\n\n\`\`\`diff\n${response.diff}\n\`\`\``
       : ''
+
+    // Trust gate: structural op was auto-converted to dry-run — show the diff and
+    // ask the agent to call again with confirmed:true if the change looks correct.
+    if (response.requiresConfirmation) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Structural operation \`${parsed.data.op}\` requires confirmation.\n\nReview the diff:${diffBlock || ' (no diff)'}\n\nIf the change looks correct, call patchly_apply again with the same operation and \`confirmed: true\`.`,
+        }],
+      }
+    }
 
     if (dryRun) {
       return {

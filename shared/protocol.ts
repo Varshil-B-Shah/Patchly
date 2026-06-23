@@ -278,6 +278,10 @@ export interface ApplyOpsMessage {
   explanation: string
   /** When true: validate + diff without writing. Reply is still OPS_APPLIED. */
   dryRun?: boolean
+  /** Required to be true for structural ops (wrapElement/insertChild/replaceElement/removeElement)
+   *  when dryRun is false. Without it the server auto-converts to dry-run and sets
+   *  requiresConfirmation on the reply so the caller can review the diff first. */
+  confirmed?: boolean
 }
 
 /** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
@@ -288,6 +292,9 @@ export interface OpsAppliedMessage {
   ok: true
   /** Unified diff of what was (or would be) changed. Always present. */
   diff: string
+  /** True when a structural op was intercepted and run as a dry-run pending confirmation.
+   *  Caller must review the diff and call again with confirmed:true to execute for real. */
+  requiresConfirmation?: boolean
 }
 
 /** React fiber info extracted at selection time. Gives the agent the component
