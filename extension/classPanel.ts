@@ -372,7 +372,7 @@ function renderPanel(): void {
       const rows = t.classes.length
         ? t.classes.map((cls) => classRowHtml(cls, scope)).join('')
         : '<div class="patchly-cp-empty">No classes yet — add below.</div>'
-      return `<div class="patchly-cp-section">${head}` +
+      return `<div class="patchly-cp-section" data-scope="${scope}">${head}` +
         `<div class="patchly-cp-classlist">${rows}</div>${searchHtml(scope)}</div>`
     })
     .join('')
@@ -428,5 +428,14 @@ function renderPanel(): void {
     })
     input.addEventListener('mousedown', (e) => e.stopPropagation())
     renderResultsFor(scope)
+  })
+
+  // Per-element section hover → highlight the corresponding DOM element
+  panelEl.querySelectorAll<HTMLElement>('.patchly-cp-section[data-scope]').forEach((section) => {
+    const scope = section.getAttribute('data-scope')!
+    const src = scopeToSrc.get(scope)
+    if (!src) return
+    section.addEventListener('mouseenter', () => window.__patchlyHoverBySrc?.(src))
+    section.addEventListener('mouseleave', () => window.__patchlyHoverBySrc?.(null))
   })
 }

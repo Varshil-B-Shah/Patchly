@@ -258,7 +258,7 @@ function activate(): void {
   if (isActive) return
   isActive = true
   init()
-  root?.classList.add('active')
+  root?.classList.add('active', `mode-${activeMode}`)
   if (toolbar) toolbar.style.display = 'flex'
   setConnectedDot(window.__patchlyIsConnected?.() ?? false)
   updateToolbar()
@@ -321,6 +321,8 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   }
 
   activeMode = mode
+  root?.classList.remove('mode-ai', 'mode-tailwind', 'mode-comment')
+  root?.classList.add(`mode-${mode}`)
   updateToolbar()
 
   // Clear any in-flight selection visuals when switching models.
@@ -1881,4 +1883,24 @@ window.__patchlyClassPanelClosed = function (): void {
   selectedSet = []
   selectedTargets = null
   clearSelHighlights()
+}
+
+// classPanel calls this on section mouseenter/mouseleave to highlight the hovered element.
+window.__patchlyHoverBySrc = (src: string | null): void => {
+  if (!src) {
+    if (elementHighlight) elementHighlight.style.display = 'none'
+    if (componentLabel) componentLabel.style.display = 'none'
+    return
+  }
+  const el = document.querySelector(`[data-patchly-src="${CSS.escape(src)}"]`)
+  if (!el || !elementHighlight) return
+  const r = el.getBoundingClientRect()
+  positionBox(elementHighlight, r)
+  elementHighlight.style.display = 'block'
+  if (componentLabel) {
+    componentLabel.textContent = src.split(':')[0].split('/').pop() ?? ''
+    componentLabel.style.left = r.left + 'px'
+    componentLabel.style.top = (r.top - 22) + 'px'
+    componentLabel.style.display = 'block'
+  }
 }
