@@ -179,6 +179,35 @@ function parsePatchlySrc(src: string): { file: string; line: number; column: num
   return { file, line, column }
 }
 
+/** Read ±15 lines of source around `targetLine` from a project-relative path.
+ *  The MCP server runs with cwd === projectRoot (enforced by lockfile verification),
+ *  so we can resolve files directly without a WS round-trip to the agent.
+ *  Returns null on any error so callers can skip gracefully. */
+function readSourceContext(
+  relPath: string,
+  targetLine: number,
+  radius = 15,
+): { startLine: number; endLine: number; code: string } | null {
+  try {
+    const abs = path.resolve(process.cwd(), relPath)
+    const lines = fs.readFileSync(abs, 'utf8').split('\n')
+    const start = Math.max(1, targetLine - radius)
+    const end = Math.min(lines.length, targetLine + radius)
+    const pad = String(end).length
+    const code = lines
+      .slice(start - 1, end)
+      .map((l, i) => {
+        const n = start + i
+        const prefix = n === targetLine ? '→' : ' '
+        return `${prefix} ${String(n).padStart(pad)} | ${l}`
+      })
+      .join('\n')
+    return { startLine: start, endLine: end, code }
+  } catch {
+    return null
+  }
+}
+
 // ─── zod schemas for EditOperation (mirrors shared/operations.ts) ─────────────
 
 const EditTargetSchema = z.object({
@@ -216,13 +245,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'patchly_current_selection',
       description:
-        'THE PRIMARY TOOL. Returns what the user is pointing at in the browser (via the Patchly ' +
-        'Chrome extension): the exact source location (file/line/column), tag name, source-accurate ' +
-        'className breakdown (classNameKind: static | dynamic | none + class tokens), the element\'s ' +
-        'computed CSS styles, AND a screenshot of the element as an image block so you can SEE it. ' +
-        'Call this to resolve "what am I looking at" — then open that file and edit it yourself with ' +
-        'your normal editing tools. You do NOT need patchly_apply for that; you have the precise ' +
-        'location and a picture of the current visual state.',
+        'THE PRIMARY TOOL. Returns everything about what the user is pointing at in the browser: ' +
+        'exact source location (file/line/column), tag name, source-accurate className breakdown ' +
+        '(classNameKind: static | dynamic | none + class tokens), computed CSS styles, React component ' +
+        'name + props (from the fiber tree), a screenshot IMAGE BLOCK so you can SEE the element, ' +
+        'AND a sourceContext block with ±15 lines of source around the element (arrow-marked) so you ' +
+        'can understand the surrounding JSX without opening the file yourself. ' +
+        'Call this once — you will have everything you need to make a precise edit directly.',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
     {
@@ -333,6 +362,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const items = selection.map((s) => {
       const parsed = parsePatchlySrc(s.patchlySrc)
       const info = classInfoBySrc.get(s.patchlySrc)
+      const sourceContext = info?.filePath && info?.lineNumber
+        ? readSourceContext(info.filePath, info.lineNumber)
+        : null
       return {
         patchlySrc: s.patchlySrc,
         file: parsed?.file ?? s.patchlySrc,
@@ -346,6 +378,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Visual state: curated computed styles + React component identity.
         ...(s.computedStyles ? { computedStyles: s.computedStyles } : {}),
         ...(s.reactInfo ? { reactInfo: s.reactInfo } : {}),
+        // Surrounding source: ±15 lines so the agent can edit without opening the file.
+        ...(sourceContext ? { sourceContext } : {}),
       }
     })
 
