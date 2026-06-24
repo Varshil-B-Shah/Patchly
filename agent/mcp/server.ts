@@ -617,15 +617,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ),
     }
 
-    // Phase A: screenshot is a base64 string → embed as image block.
-    // Phase B: screenshot is { url, key } → skip here (Step 3 CloudCommentClient handles it).
-    const imageBlocks = comments
-      .filter((c) => typeof c.screenshot === 'string')
-      .map((c) => ({
-        type: 'image' as const,
-        data: c.screenshot as string,
-        mimeType: 'image/png' as const,
-      }))
+    // Phase A: screenshot is a base64 string → embed directly.
+    // Phase B: screenshot is { url, key } → fetch CDN URL and convert to base64.
+    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: 'image/png' }> = []
+    for (const c of comments) {
+      if (typeof c.screenshot === 'string') {
+        imageBlocks.push({ type: 'image', data: c.screenshot, mimeType: 'image/png' })
+      } else if (c.screenshot?.url) {
+        try {
+          const res = await fetch(c.screenshot.url)
+          if (res.ok) {
+            const buf = await res.arrayBuffer()
+            imageBlocks.push({
+              type: 'image',
+              data: Buffer.from(buf).toString('base64'),
+              mimeType: 'image/png',
+            })
+          }
+        } catch { /* skip — failed screenshot fetch must not break the tool */ }
+      }
+    }
 
     return { content: [textContent, ...imageBlocks] }
   }

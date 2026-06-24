@@ -24,8 +24,8 @@ describe('CommentStore', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  test('add → list → resolve → list again', () => {
-    const c = store.add({
+  test('add → list → resolve → list again', async () => {
+    const c = await store.add({
       kind: 'element',
       patchlySrc: 'src/Button.tsx:10:2',
       tag: 'button',
@@ -36,71 +36,71 @@ describe('CommentStore', () => {
     assert.equal(c.status, 'open')
     assert.ok(c.createdAt)
 
-    const open = store.list('open')
+    const open = await store.list('open')
     assert.equal(open.length, 1)
     assert.equal(open[0].id, c.id)
 
-    const resolved = store.resolve(c.id, 'dev')
+    const resolved = await store.resolve(c.id, 'dev')
     assert.ok(resolved)
     assert.equal(resolved!.status, 'resolved')
     assert.equal(resolved!.resolvedBy, 'dev')
     assert.ok(resolved!.resolvedAt)
 
-    assert.equal(store.list('open').length, 0)
-    assert.equal(store.list('resolved').length, 1)
-    assert.equal(store.list('all').length, 1)
+    assert.equal((await store.list('open')).length, 0)
+    assert.equal((await store.list('resolved')).length, 1)
+    assert.equal((await store.list('all')).length, 1)
   })
 
-  test('missing file returns empty list', () => {
-    assert.deepEqual(store.list(), [])
+  test('missing file returns empty list', async () => {
+    assert.deepEqual(await store.list(), [])
   })
 
-  test('corrupt JSON returns empty list', () => {
+  test('corrupt JSON returns empty list', async () => {
     const dir = path.join(tmpDir, '.patchly')
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, 'comments.json'), 'NOT JSON', 'utf-8')
-    assert.deepEqual(store.list(), [])
+    assert.deepEqual(await store.list(), [])
   })
 
-  test('non-array JSON returns empty list', () => {
+  test('non-array JSON returns empty list', async () => {
     const dir = path.join(tmpDir, '.patchly')
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, 'comments.json'), '{"bad":"data"}', 'utf-8')
-    assert.deepEqual(store.list(), [])
+    assert.deepEqual(await store.list(), [])
   })
 
-  test('atomic write: tmp file is cleaned up', () => {
-    store.add({ kind: 'area', rect: { x: 0, y: 0, w: 100, h: 50 }, pageUrl: 'http://localhost/', note: 'area note' })
+  test('atomic write: tmp file is cleaned up', async () => {
+    await store.add({ kind: 'area', rect: { x: 0, y: 0, w: 100, h: 50 }, pageUrl: 'http://localhost/', note: 'area note' })
     const tmp = path.join(tmpDir, '.patchly', 'comments.json.tmp')
     assert.ok(!fs.existsSync(tmp), 'tmp file should not remain after write')
   })
 
-  test('delete removes comment', () => {
-    const c = store.add({ kind: 'element', patchlySrc: 'src/A.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'x' })
-    assert.ok(store.delete(c.id))
-    assert.equal(store.list().length, 0)
-    assert.ok(!store.delete(c.id), 'deleting again returns false')
+  test('delete removes comment', async () => {
+    const c = await store.add({ kind: 'element', patchlySrc: 'src/A.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'x' })
+    assert.ok(await store.delete(c.id))
+    assert.equal((await store.list()).length, 0)
+    assert.ok(!await store.delete(c.id), 'deleting again returns false')
   })
 
-  test('clearResolved removes only resolved comments', () => {
-    const a = store.add({ kind: 'element', patchlySrc: 'src/A.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'x' })
-    const b = store.add({ kind: 'element', patchlySrc: 'src/B.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'y' })
-    store.resolve(a.id, 'agent')
-    const cleared = store.clearResolved()
+  test('clearResolved removes only resolved comments', async () => {
+    const a = await store.add({ kind: 'element', patchlySrc: 'src/A.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'x' })
+    const b = await store.add({ kind: 'element', patchlySrc: 'src/B.tsx:1:1', tag: 'div', pageUrl: 'http://localhost/', note: 'y' })
+    await store.resolve(a.id, 'agent')
+    const cleared = await store.clearResolved()
     assert.equal(cleared, 1)
-    const remaining = store.list()
+    const remaining = await store.list()
     assert.equal(remaining.length, 1)
     assert.equal(remaining[0].id, b.id)
   })
 
-  test('resolve non-existent id returns undefined', () => {
-    assert.equal(store.resolve('no-such-id', 'agent'), undefined)
+  test('resolve non-existent id returns undefined', async () => {
+    assert.equal(await store.resolve('no-such-id', 'agent'), undefined)
   })
 
-  test('get by id', () => {
-    const c = store.add({ kind: 'element', patchlySrc: 'src/X.tsx:5:2', tag: 'span', pageUrl: 'http://localhost/', note: 'test' })
-    assert.deepEqual(store.get(c.id)?.id, c.id)
-    assert.equal(store.get('missing'), undefined)
+  test('get by id', async () => {
+    const c = await store.add({ kind: 'element', patchlySrc: 'src/X.tsx:5:2', tag: 'span', pageUrl: 'http://localhost/', note: 'test' })
+    assert.deepEqual((await store.get(c.id))?.id, c.id)
+    assert.equal(await store.get('missing'), undefined)
   })
 })
 

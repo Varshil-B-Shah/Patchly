@@ -2,7 +2,8 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import type { BatchEditEntry, ThemeTokens, ClassInfo, SelectionItem } from '../shared/protocol.js'
-import { CommentStore } from './comments/store.js'
+import { CommentStore, type CommentStoreInterface } from './comments/store.js'
+import { CloudCommentClient } from './comments/cloudClient.js'
 import type { EditOperation } from '../shared/operations.js'
 import { resolveSource, type ResolvedSource } from './sourceMapper.js'
 import { getEditInstruction, getBatchEditInstruction, type BatchItem } from './llm.js'
@@ -75,7 +76,18 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
   const extensionClients = new Set<import('ws').WebSocket>()
   const screenshotCallbacks = new Map<string, import('ws').WebSocket>() // sessionId → requesting ws
 
-  const commentStore = new CommentStore(config.projectRoot)
+  const cloudUrl = process.env.PATCHLY_CLOUD_API_URL
+  const cloudDevToken = process.env.PATCHLY_DEV_TOKEN
+  const cloudProjectId = process.env.PATCHLY_PROJECT_ID
+
+  const commentStore: CommentStoreInterface = (cloudUrl && cloudDevToken && cloudProjectId)
+    ? new CloudCommentClient(cloudUrl, cloudDevToken, cloudProjectId)
+    : new CommentStore(config.projectRoot)
+
+  console.log(cloudUrl
+    ? `Comment store: cloud (${cloudUrl}, project ${cloudProjectId})`
+    : `Comment store: local (.patchly/comments.json)`,
+  )
 
   function broadcast(msg: object): void {
     const payload = JSON.stringify(msg)
@@ -592,21 +604,21 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // ── Comment system ────────────────────────────────────────────────────────
       if (msg.type === MSG.ADD_COMMENT) {
         // TODO(PhaseB): validate per-link token from msg.token before storing
-        const comment = commentStore.add(msg.comment)
+        const comment = await commentStore.add(msg.comment)
         broadcast({ type: MSG.COMMENT_ADDED, comment })
         return
       }
 
       if (msg.type === MSG.LIST_COMMENTS) {
         const { sessionId, status } = msg as { sessionId: string; status?: 'open' | 'resolved' | 'all' }
-        const comments = commentStore.list(status)
+        const comments = await commentStore.list(status)
         ws.send(JSON.stringify({ type: MSG.COMMENTS, sessionId, comments }))
         return
       }
 
       if (msg.type === MSG.RESOLVE_COMMENT) {
         const { sessionId, id, resolvedBy } = msg as { sessionId?: string; id: string; resolvedBy?: 'dev' | 'agent' }
-        const comment = commentStore.resolve(id, resolvedBy ?? 'dev')
+        const comment = await commentStore.resolve(id, resolvedBy ?? 'dev')
         if (!comment) return
         broadcast({ type: MSG.COMMENT_RESOLVED, id, comment })
         // Only unicast back to MCP callers (not in extensionClients — they get it via broadcast)
@@ -616,14 +628,14 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
       if (msg.type === MSG.DELETE_COMMENT) {
         const { id } = msg as { id: string }
-        if (!commentStore.delete(id)) return
+        if (!await commentStore.delete(id)) return
         broadcast({ type: MSG.COMMENT_DELETED, id })
         return
       }
 
       if (msg.type === MSG.CLEAR_COMMENTS) {
         const { sessionId } = msg as { sessionId?: string }
-        const count = commentStore.clearResolved()
+        const count = await commentStore.clearResolved()
         broadcast({ type: MSG.COMMENTS_CLEARED, count })
         if (sessionId && !extensionClients.has(ws)) {
           ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))

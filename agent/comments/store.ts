@@ -4,9 +4,18 @@ import path from 'path'
 import crypto from 'crypto'
 import type { ReviewComment } from '../../shared/comments.js'
 
-// TODO(PhaseB): swap JSON file read/write for a remote API call
+// TODO(PhaseB): swap JSON file read/write for a remote API call — see CloudCommentClient.
 
-export class CommentStore {
+export interface CommentStoreInterface {
+  add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): Promise<ReviewComment>
+  list(status?: 'open' | 'resolved' | 'all'): Promise<ReviewComment[]>
+  get(id: string): Promise<ReviewComment | undefined>
+  resolve(id: string, resolvedBy: 'dev' | 'agent'): Promise<ReviewComment | undefined>
+  delete(id: string): Promise<boolean>
+  clearResolved(): Promise<number>
+}
+
+export class CommentStore implements CommentStoreInterface {
   private readonly filePath: string
 
   constructor(projectRoot: string) {
@@ -31,7 +40,7 @@ export class CommentStore {
     fs.renameSync(tmp, this.filePath) // atomic on POSIX; best-effort on Windows
   }
 
-  add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): ReviewComment {
+  async add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): Promise<ReviewComment> {
     const comment: ReviewComment = {
       ...data,
       id: crypto.randomUUID(),
@@ -44,17 +53,17 @@ export class CommentStore {
     return comment
   }
 
-  list(status?: 'open' | 'resolved' | 'all'): ReviewComment[] {
+  async list(status?: 'open' | 'resolved' | 'all'): Promise<ReviewComment[]> {
     const all = this.read()
     if (!status || status === 'all') return all
     return all.filter((c) => c.status === status)
   }
 
-  get(id: string): ReviewComment | undefined {
+  async get(id: string): Promise<ReviewComment | undefined> {
     return this.read().find((c) => c.id === id)
   }
 
-  resolve(id: string, resolvedBy: 'dev' | 'agent'): ReviewComment | undefined {
+  async resolve(id: string, resolvedBy: 'dev' | 'agent'): Promise<ReviewComment | undefined> {
     const comments = this.read()
     const idx = comments.findIndex((c) => c.id === id)
     if (idx === -1) return undefined
@@ -68,7 +77,7 @@ export class CommentStore {
     return comments[idx]
   }
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     const comments = this.read()
     const idx = comments.findIndex((c) => c.id === id)
     if (idx === -1) return false
@@ -77,7 +86,7 @@ export class CommentStore {
     return true
   }
 
-  clearResolved(): number {
+  async clearResolved(): Promise<number> {
     const comments = this.read()
     const remaining = comments.filter((c) => c.status !== 'resolved')
     const count = comments.length - remaining.length
@@ -85,4 +94,3 @@ export class CommentStore {
     return count
   }
 }
-
