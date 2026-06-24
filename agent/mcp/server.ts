@@ -617,11 +617,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ),
     }
 
+    // Phase A: screenshot is a base64 string → embed as image block.
+    // Phase B: screenshot is { url, key } → skip here (Step 3 CloudCommentClient handles it).
     const imageBlocks = comments
-      .filter((c) => c.screenshot)
+      .filter((c) => typeof c.screenshot === 'string')
       .map((c) => ({
         type: 'image' as const,
-        data: c.screenshot!,
+        data: c.screenshot as string,
         mimeType: 'image/png' as const,
       }))
 

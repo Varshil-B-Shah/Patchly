@@ -40,8 +40,12 @@ export async function POST(req: Request) {
     authorId = project.ownerId
   }
 
-  // TODO(Step2): when screenshotUploadKey is present, look up the UploadThing
-  // file (url + key) and store as screenshot. Ignored for now.
+  // When the reviewer uploaded a screenshot via UploadThing before submitting,
+  // derive the CDN URL from the key — utfs.io CDN URLs are stable and predictable.
+  const screenshot = d.screenshotUploadKey
+    ? { key: d.screenshotUploadKey, url: `https://utfs.io/f/${d.screenshotUploadKey}` }
+    : undefined
+
   const doc = await Comment.create({
     projectId: d.projectId,
     kind: d.kind,
@@ -56,6 +60,7 @@ export async function POST(req: Request) {
     authorId,
     authorDisplayName: d.authorDisplayName,
     reviewerId: d.reviewerId,
+    screenshot,
     status: 'open',
   })
 

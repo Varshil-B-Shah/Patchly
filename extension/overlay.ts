@@ -536,7 +536,12 @@ function openPinCard(
     imgEl.alt = ''
     imgEl.style.cssText =
       'width:100%;border-radius:4px;border:1px solid #3b3b5c;max-height:140px;object-fit:cover;'
-    imgEl.src = `data:image/png;base64,${comment.screenshot}`
+    // Phase A: base64 string. Phase B: { url, key } from UploadThing CDN.
+    if (typeof comment.screenshot === 'string') {
+      imgEl.src = `data:image/png;base64,${comment.screenshot}`
+    } else {
+      imgEl.src = comment.screenshot.url
+    }
   }
 
   // Fingerprint drift check

@@ -18,7 +18,12 @@ export interface ReviewComment {
   pageUrl: string
   note: string                  // UNTRUSTED reviewer text
   author?: string
-  screenshot?: string           // base64 PNG
+  /**
+   * Phase A (local store): base64 PNG string.
+   * Phase B (cloud):       { url: UploadThing CDN URL, key: UploadThing file key }.
+   * Both shapes coexist — consumers must check `typeof screenshot`.
+   */
+  screenshot?: string | { url: string; key: string }
   status: 'open' | 'resolved'
   createdAt: string             // ISO 8601
   resolvedAt?: string
