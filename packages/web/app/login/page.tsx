@@ -1,6 +1,14 @@
 import { signIn } from '@/lib/auth'
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string }>
+}) {
+  const { callbackUrl } = await searchParams
+  // Only allow same-origin redirects to prevent open redirect abuse.
+  const redirectTo = callbackUrl?.startsWith('/') ? callbackUrl : '/dashboard'
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-10 rounded-2xl shadow-md text-center space-y-6 w-80">
@@ -10,7 +18,7 @@ export default function LoginPage() {
         </div>
         <form action={async () => {
           'use server'
-          await signIn('github', { redirectTo: '/dashboard' })
+          await signIn('github', { redirectTo })
         }}>
           <button
             type="submit"

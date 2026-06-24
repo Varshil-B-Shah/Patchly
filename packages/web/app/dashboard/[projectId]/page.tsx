@@ -29,10 +29,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const openCount = await Comment.countDocuments({ projectId: project._id, status: 'open' })
 
-  // Members (+ make sure the owner always appears even on legacy docs).
-  const members = project.members?.length
-    ? project.members
-    : [{ userId: project.ownerId, role: 'owner' as const }]
+  // Always put the owner first, then other members. Legacy projects may have an
+  // empty members[] (created before D1), or the owner may not be seeded in it yet.
+  const ownerInList = (project.members ?? []).some((m) => m.userId === project.ownerId)
+  const members: { userId: string; role: 'owner' | 'member' }[] = [
+    ...(ownerInList ? [] : [{ userId: project.ownerId, role: 'owner' as const }]),
+    ...(project.members ?? []).map((m) => ({ userId: m.userId, role: m.role as 'owner' | 'member' })),
+  ]
   const userMap = await getUsers(members.map((m) => m.userId))
 
   const links = owner
