@@ -135,7 +135,7 @@
       );
       pin.textContent = String(i + 1);  // textContent — never innerHTML
       pin.addEventListener('click', (function (comment, num) {
-        return function (e) { e.stopPropagation(); openPinCard(comment, num); };
+        return function (e) { e.stopPropagation(); openPinCard(comment, num, e.currentTarget); };
       })(c, i + 1));
       pinsEl.appendChild(pin);
     });
@@ -145,10 +145,10 @@
   window.addEventListener('resize', renderPins, { passive: true });
 
   // ── Pin card (read-only) ──────────────────────────────────────────────────────
-  function openPinCard(c, num) {
+  function openPinCard(c, num, pinEl) {
     closePinCard();
     pinCardEl = el('div',
-      'position:fixed;bottom:80px;right:16px;z-index:2147483647;' +
+      'position:fixed;z-index:2147483647;' +
       'background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:280px;' +
       'box-shadow:0 4px 24px rgba(0,0,0,.5);font-family:sans-serif;font-size:13px;color:#e0e0f0;' +
       'display:flex;flex-direction:column;gap:8px;'
@@ -197,6 +197,19 @@
         }).catch(function () { deleteBtn.disabled = false; deleteBtn.textContent = 'Delete my comment'; });
       };
       pinCardEl.appendChild(deleteBtn);
+    }
+
+    // Position near the pin that was clicked, same logic as the extension.
+    if (pinEl) {
+      var r = pinEl.getBoundingClientRect();
+      var top  = Math.min(r.bottom + 6, window.innerHeight - 220);
+      var left = Math.max(8, Math.min(r.left - 8, window.innerWidth - 296));
+      pinCardEl.style.top  = top  + 'px';
+      pinCardEl.style.left = left + 'px';
+    } else {
+      // Fallback if no pin element
+      pinCardEl.style.bottom = '80px';
+      pinCardEl.style.right  = '16px';
     }
 
     pinCardEl.addEventListener('mousedown', function (e) { e.stopPropagation(); });
