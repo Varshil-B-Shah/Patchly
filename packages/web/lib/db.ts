@@ -26,7 +26,13 @@ export async function connectDb(): Promise<typeof mongoose> {
     if (!MONGODB_URI) {
       throw new Error('MONGODB_URI is not set. Copy .env.example to .env.local and fill it in.')
     }
-    cache.promise = mongoose.connect(MONGODB_URI, { bufferCommands: false })
+    cache.promise = mongoose.connect(MONGODB_URI, {
+      bufferCommands: false,
+      // Windows + Node.js 18+ sometimes fails TLS negotiation with Atlas.
+      // These options force the driver to be more lenient.
+      tls: true,
+      tlsAllowInvalidCertificates: true,
+    })
   }
 
   try {

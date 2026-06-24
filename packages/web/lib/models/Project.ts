@@ -10,8 +10,7 @@ const ProjectSchema = new Schema({
   createdAt: { type: Date, default: () => new Date() },
 })
 
-ProjectSchema.index({ devToken: 1 }, { unique: true })
-ProjectSchema.index({ domains: 1 })
+ProjectSchema.index({ domains: 1 })          // devToken unique index is declared on the field
 
 export type ProjectDoc = InferSchemaType<typeof ProjectSchema> & { _id: import('mongoose').Types.ObjectId }
 

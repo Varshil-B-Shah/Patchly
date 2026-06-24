@@ -69,15 +69,27 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const a = await resolveAuth(req)
-  if (a.kind !== 'devToken') return err('Unauthorized', 401)
+  // devToken → full read access; linkToken → read open comments for their project+pageUrl only
+  if (a.kind !== 'devToken' && a.kind !== 'linkToken') return err('Unauthorized', 401)
 
   const url = new URL(req.url)
   const projectId = url.searchParams.get('projectId')
-  const status = url.searchParams.get('status') ?? 'open'
+  const status    = url.searchParams.get('status') ?? 'open'
+  const pageUrl   = url.searchParams.get('pageUrl') // required for linkToken callers
+
   if (!projectId) return err('projectId is required', 400)
   if (projectId !== a.projectId) return err('Project mismatch for this token', 403)
 
   await connectDb()
+
+  if (a.kind === 'linkToken') {
+    // Client overlay: read-only, always open status, must be page-scoped
+    if (!pageUrl) return err('pageUrl is required for link-scoped reads', 400)
+    const docs = await Comment.find({ projectId, status: 'open', pageUrl }).sort({ createdAt: -1 })
+    return ok(docs.map(toComment))
+  }
+
+  // devToken: full access with status filter
   const filter: Record<string, unknown> = { projectId }
   if (status !== 'all') filter.status = status
   const docs = await Comment.find(filter).sort({ createdAt: -1 })

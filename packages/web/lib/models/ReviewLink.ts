@@ -12,8 +12,7 @@ const ReviewLinkSchema = new Schema({
   revokedAt: { type: Date },                          // set to revoke; checked on every comment write
 })
 
-ReviewLinkSchema.index({ token: 1 }, { unique: true })
-ReviewLinkSchema.index({ projectId: 1 })
+ReviewLinkSchema.index({ projectId: 1 })    // token unique index is declared on the field
 
 export type ReviewLinkDoc = InferSchemaType<typeof ReviewLinkSchema> & { _id: Types.ObjectId }
 
