@@ -45,12 +45,21 @@
       localStorage.setItem('patchly_reviewer_id', reviewerId);
     }
     reviewerName = localStorage.getItem('patchly_reviewer_name') || '';
-    if (!reviewerName) reviewerName = await promptNameOnce();
+    if (!reviewerName) {
+      // content.ts stamps data-patchly-ext on <html> immediately on load (DOM is
+      // shared across worlds; window.* vars are not). Check it after a brief tick
+      // so the content script has had time to run.
+      await new Promise(function (r) { setTimeout(r, 200); });
+      var extPresent = document.documentElement.getAttribute('data-patchly-ext') === '1';
+      if (!extPresent) reviewerName = await promptNameOnce();
+    }
 
     buildPinsLayer();
     buildHighlight();
     buildComposer();
-    buildAddButton();
+    // Only show the + button for reviewers without the extension (tunnel/beta).
+    // data-patchly-ext is stamped by content.ts on load — visible cross-world.
+    if (document.documentElement.getAttribute('data-patchly-ext') !== '1') buildAddButton();
     await loadComments();
 
     window.addEventListener('popstate', loadComments);

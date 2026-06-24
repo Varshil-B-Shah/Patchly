@@ -16,8 +16,8 @@
   ],
   "scripts": {
     "agent": "tsx agent/index.ts",
-    "dev": "tsx watch agent/index.ts",
-    "mcp": "tsx agent/mcp/server.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch agent/index.ts",
+    "mcp": "node --env-file-if-exists=.env --import tsx agent/mcp/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "build:ext": "node scripts/build-ext.mjs",

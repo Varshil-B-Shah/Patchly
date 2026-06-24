@@ -2,6 +2,14 @@
 // Manages the WebSocket connection to the local agent and routes incoming
 // messages to the overlay UI (via window.__patchly* globals).
 
+// Stamp the DOM so page scripts (like patchly-overlay.js) can detect the extension.
+// Skip on the Patchly dashboard itself to avoid Next.js SSR hydration mismatches.
+const _isDashboard = window.location.hostname === 'patchly.app' ||
+  (window.location.hostname === 'localhost' && window.location.port === '3000')
+if (!_isDashboard) {
+  document.documentElement.setAttribute('data-patchly-ext', '1')
+}
+
 import { DEFAULT_PORT, PORT_SCAN_RANGE } from '../shared/agentInfo.js'
 import type { ReviewComment } from '../shared/comments'
 
@@ -247,6 +255,9 @@ window.__patchlySignOut = function (): void {
 
 // Start connecting when page loads
 connect()
+
+// Push any stored member identity on page load (covers page refresh after sign-in).
+pushIdentity()
 
 // Esc exits editing mode.
 document.addEventListener('keydown', (e: KeyboardEvent) => {

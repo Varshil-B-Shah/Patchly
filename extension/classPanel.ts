@@ -332,6 +332,25 @@ function renderPanel(): void {
     return
   }
 
+  // Block editing if Tailwind isn't in the project — classes would be written to
+  // source but have no visual effect, which is confusing.
+  if (window.__patchlyGetTailwindConfigured?.() === false) {
+    panelEl.innerHTML = `
+      <div class="patchly-cp-toolbar">
+        <span class="patchly-cp-title">Inspector</span>
+        <button class="patchly-cp-close" title="Close">×</button>
+      </div>
+      <div style="padding:16px;font-size:13px;color:#f59e0b;line-height:1.5;">
+        ⚠ Tailwind CSS is not detected in this project.<br/>
+        <span style="color:#a0a0c0;font-size:12px;">Install Tailwind and re-run the agent to enable class editing.</span>
+      </div>
+    `
+    ;(panelEl.querySelector('.patchly-cp-close') as HTMLButtonElement | null)?.addEventListener('click', () => {
+      window.__patchlyClassPanelClosed?.()
+    })
+    return
+  }
+
   const editable = editableTargets()
   const multi = targets.length > 1
   const showApplyAll = editable.length > 1

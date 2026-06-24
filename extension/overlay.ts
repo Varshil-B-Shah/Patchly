@@ -282,6 +282,9 @@ function updateIdentityChip(): void {
 window.__patchlyOnIdentity = (identity): void => {
   currentIdentity = identity
   updateIdentityChip()
+  // Force a second update after a tick — storage-change event sometimes races
+  // with the auth tab closing, so the chip may render before identity is settled.
+  setTimeout(updateIdentityChip, 100)
 }
 
 function onUndo(): void {
@@ -398,10 +401,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     // Load comments so pins can render
     requestCommentList()
   } else {
-    // Entering Tailwind: if Tailwind isn't configured, tell the user.
-    if (window.__patchlyGetTailwindConfigured?.() === false) {
-      showInfoToast('Tailwind not detected in this project — class editing may not apply.')
-    }
+    // Tailwind gate is shown inside the class panel (renderPanel checks tailwindConfigured).
     // If something is already selected from AI, inspect it in the sidebar.
     if (selectedElement) {
       selectedSet = [selectedElement]
@@ -1389,7 +1389,14 @@ function showCommentComposer(
   const noteEl = document.getElementById('patchly-cc-note') as HTMLTextAreaElement
   const authorEl = document.getElementById('patchly-cc-author') as HTMLInputElement
   noteEl.value = ''
-  authorEl.value = ''
+  if (currentIdentity) {
+    // Signed-in member — identity comes from the verified token; hide the name field.
+    authorEl.value = currentIdentity.name
+    authorEl.style.display = 'none'
+  } else {
+    authorEl.value = ''
+    authorEl.style.display = ''
+  }
   setTimeout(() => noteEl.focus(), 50)
 }
 
