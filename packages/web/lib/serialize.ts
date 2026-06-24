@@ -67,18 +67,20 @@ export interface SerializedProject {
   id: string
   name: string
   ownerId: string
+  members: { userId: string; role: 'owner' | 'member' }[]
   domains: string[]
-  devToken: string
+  devToken?: string // only included for the owner (it's a full-access secret)
   createdAt: string
 }
 
-export function toProject(doc: ProjectDoc): SerializedProject {
+export function toProject(doc: ProjectDoc, opts: { includeDevToken?: boolean } = {}): SerializedProject {
   return {
     id: String(doc._id),
     name: doc.name,
     ownerId: doc.ownerId,
+    members: (doc.members ?? []).map((m) => ({ userId: m.userId, role: m.role as 'owner' | 'member' })),
     domains: doc.domains ?? [],
-    devToken: doc.devToken,
+    ...(opts.includeDevToken ? { devToken: doc.devToken } : {}),
     createdAt: iso(doc.createdAt)!,
   }
 }

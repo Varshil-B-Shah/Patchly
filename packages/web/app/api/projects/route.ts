@@ -22,8 +22,10 @@ export async function POST(req: Request) {
     name: parsed.data.name,
     domains: parsed.data.domains,
     ownerId: a.userId,
+    members: [{ userId: a.userId, role: 'owner' }],
   })
-  return ok(toProject(doc), 201)
+  // Caller is the owner — include the devToken once on creation.
+  return ok(toProject(doc, { includeDevToken: true }), 201)
 }
 
 export async function GET(req: Request) {
@@ -31,6 +33,9 @@ export async function GET(req: Request) {
   if (a.kind !== 'session') return err('Unauthorized', 401)
 
   await connectDb()
-  const docs = await Project.find({ ownerId: a.userId }).sort({ createdAt: -1 })
-  return ok(docs.map(toProject))
+  // Projects I own or am a member of. devToken included only for projects I own.
+  const docs = await Project.find({
+    $or: [{ ownerId: a.userId }, { 'members.userId': a.userId }],
+  }).sort({ createdAt: -1 })
+  return ok(docs.map((d) => toProject(d, { includeDevToken: d.ownerId === a.userId })))
 }

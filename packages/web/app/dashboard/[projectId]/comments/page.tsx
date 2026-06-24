@@ -5,6 +5,7 @@ import { Comment } from '@/lib/models/Comment'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { resolveComment, deleteComment, clearResolved } from '@/app/actions'
+import { isMember } from '@/lib/projectAccess'
 
 function relTime(d: Date | string) {
   const diff = Date.now() - new Date(d).getTime()
@@ -30,7 +31,7 @@ export default async function CommentsPage({
 
   await connectDb()
   const project = await Project.findById(projectId).lean()
-  if (!project || project.ownerId !== userId) notFound()
+  if (!project || !isMember(project, userId)) notFound()
 
   const status = (rawStatus ?? 'open') as 'open' | 'resolved' | 'all'
   const filter: Record<string, unknown> = { projectId: project._id }

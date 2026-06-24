@@ -4,13 +4,18 @@ import { Project } from '@/lib/models/Project'
 import { Comment } from '@/lib/models/Comment'
 import Link from 'next/link'
 import { createProject } from '@/app/actions'
+import { ensureUser } from '@/lib/users'
 
 export default async function DashboardPage() {
   const session = await auth()
   const userId  = session!.user!.id as string
 
+  await ensureUser(session)
   await connectDb()
-  const projects = await Project.find({ ownerId: userId }).sort({ createdAt: -1 }).lean()
+  // Projects I own OR am a member of.
+  const projects = await Project.find({
+    $or: [{ ownerId: userId }, { 'members.userId': userId }],
+  }).sort({ createdAt: -1 }).lean()
 
   // Open comment count per project
   const counts = await Promise.all(
