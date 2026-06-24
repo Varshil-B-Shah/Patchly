@@ -4,7 +4,7 @@ import generate from '@babel/generator'
 import * as t from '@babel/types'
 import path from 'path'
 
-export function patchlyPlugin() {
+export function patchlyPlugin(options = {}) {
   let projectRoot = process.cwd()
 
   return {
@@ -15,13 +15,36 @@ export function patchlyPlugin() {
       projectRoot = config.root
     },
 
+    // Auto-inject the client review overlay in dev/serve when a review token is
+    // configured. ctx.server is undefined during `vite build`, so this never
+    // leaks into a production bundle.
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html, ctx) {
+        if (!ctx.server) return html
+        const token = options.reviewToken ?? process.env.PATCHLY_REVIEW_TOKEN
+        const host  = options.cloudHost   ?? process.env.PATCHLY_CLOUD_HOST
+        if (!token || !host) return html
+        return {
+          html,
+          tags: [{
+            tag: 'script',
+            attrs: {
+              src: `${host.replace(/\/+$/, '')}/patchly-overlay.js`,
+              'data-patchly-token': token,
+            },
+            injectTo: 'body',
+          }],
+        }
+      },
+    },
+
     transform(code, id) {
       if (process.env.NODE_ENV === 'production') return null
       if (!id.match(/\.(jsx|tsx)$/)) return null
       if (id.includes('node_modules')) return null
       if (!id.includes('/src/') && !id.includes('\\src\\')) return null
 
-      // Relative path from project root, normalized to forward slashes
       const relPath = path.relative(projectRoot, id).replace(/\\/g, '/')
 
       let ast
@@ -37,23 +60,18 @@ export function patchlyPlugin() {
       traverse.default(ast, {
         JSXOpeningElement(nodePath) {
           const { node } = nodePath
-
-          // Skip if already has the attribute (e.g. re-transforms)
           const already = node.attributes.some(
             a => t.isJSXAttribute(a) && t.isJSXIdentifier(a.name, { name: 'data-patchly-src' })
           )
           if (already) return
-
           const line = node.loc?.start.line ?? 0
-          const col = node.loc?.start.column ?? 0
-          const value = `${relPath}:${line}:${col}`
-
-          const attr = t.jsxAttribute(
-            t.jsxIdentifier('data-patchly-src'),
-            t.stringLiteral(value)
+          const col  = node.loc?.start.column ?? 0
+          node.attributes.push(
+            t.jsxAttribute(
+              t.jsxIdentifier('data-patchly-src'),
+              t.stringLiteral(`${relPath}:${line}:${col}`)
+            )
           )
-
-          node.attributes.push(attr)
         },
       })
 

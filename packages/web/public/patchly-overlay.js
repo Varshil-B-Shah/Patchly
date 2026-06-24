@@ -30,8 +30,9 @@
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────────
   async function init() {
-    var domain = window.location.host;
-    var r = await fetch(API_BASE + '/api/overlay/project?domain=' + encodeURIComponent(domain));
+    // Discover the project from the link token — works on any domain (tunnels,
+    // beta deploys) without a pre-registered domain list.
+    var r = await fetch(API_BASE + '/api/overlay/project?token=' + encodeURIComponent(TOKEN));
     if (!r.ok) return;
     var data = await r.json();
     projectId = data.projectId;
@@ -174,6 +175,28 @@
       img.src = c.screenshot.url;
       img.alt = '';
       pinCardEl.appendChild(img);
+    }
+
+    // Delete button — only shown for comments this reviewer authored.
+    if (c.reviewerId && c.reviewerId === reviewerId) {
+      var deleteBtn = el('button',
+        'padding:4px 10px;border-radius:4px;border:1px solid #ef4444;background:transparent;' +
+        'color:#ef4444;cursor:pointer;font-size:12px;align-self:flex-start;'
+      );
+      deleteBtn.textContent = 'Delete my comment';
+      deleteBtn.onclick = function () {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting…';
+        fetch(API_BASE + '/api/comments/' + c.id, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+          body: JSON.stringify({ reviewerId: reviewerId }),
+        }).then(function (r) {
+          if (r.ok) { closePinCard(); loadComments(); }
+          else { deleteBtn.disabled = false; deleteBtn.textContent = 'Delete my comment'; }
+        }).catch(function () { deleteBtn.disabled = false; deleteBtn.textContent = 'Delete my comment'; });
+      };
+      pinCardEl.appendChild(deleteBtn);
     }
 
     pinCardEl.addEventListener('mousedown', function (e) { e.stopPropagation(); });
