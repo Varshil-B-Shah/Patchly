@@ -21,6 +21,7 @@ const buildOptions = {
     background: path.join(EXT_DIR, 'background.ts'),
     content:    path.join(EXT_DIR, 'content.ts'),
     overlay:    path.join(EXT_DIR, 'overlay.ts'),
+    authBridge: path.join(EXT_DIR, 'authBridge.ts'),
   },
   bundle: true,
   format: /** @type {const} */ ('iife'),

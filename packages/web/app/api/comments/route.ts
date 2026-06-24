@@ -13,9 +13,14 @@ import { toComment } from '@/lib/serialize'
 import { deleteScreenshot } from '@/lib/uploadthing'
 import { ok, err } from '@/lib/http'
 
+// Derive an origin-independent path for cross-origin (localhost/tunnel/beta) matching.
+function pathOf(u: string): string {
+  try { return new URL(u).pathname } catch { return u }
+}
+
 export async function POST(req: Request) {
   const a = await resolveAuth(req)
-  if (a.kind !== 'linkToken' && a.kind !== 'devToken') return err('Unauthorized', 401)
+  if (a.kind !== 'linkToken' && a.kind !== 'devToken' && a.kind !== 'member') return err('Unauthorized', 401)
 
   const body = await req.json().catch(() => null)
   const parsed = createCommentSchema.safeParse(body)
@@ -27,17 +32,30 @@ export async function POST(req: Request) {
 
   await connectDb()
 
-  // Resolve author identity from the token context.
+  // Resolve author identity from the token context (server-trusted, not from the body).
   let authorType: 'member' | 'link-reviewer'
   let authorId: string
+  let authorUserId: string | undefined
+  let authorDisplayName: string
+  let authorAvatar: string | undefined
   if (a.kind === 'linkToken') {
     authorType = 'link-reviewer'
     authorId = a.linkId
+    authorDisplayName = d.authorDisplayName
+  } else if (a.kind === 'member') {
+    // Authenticated teammate — identity comes from the verified member token.
+    authorType = 'member'
+    authorId = a.userId
+    authorUserId = a.userId
+    authorDisplayName = a.name || d.authorDisplayName
+    authorAvatar = a.image
   } else {
+    // devToken (agent automation without a signed-in member) → generic dev.
     const project = await Project.findById(a.projectId).lean()
     if (!project) return err('Project not found', 404)
     authorType = 'member'
     authorId = project.ownerId
+    authorDisplayName = d.authorDisplayName
   }
 
   // When the reviewer uploaded a screenshot via UploadThing before submitting,
@@ -55,10 +73,13 @@ export async function POST(req: Request) {
     fingerprint: d.fingerprint,
     rect: d.rect,
     pageUrl: d.pageUrl,
+    pagePath: pathOf(d.pageUrl),
     note: d.note, // stored verbatim — untrusted
     authorType,
     authorId,
-    authorDisplayName: d.authorDisplayName,
+    authorUserId,
+    authorDisplayName,
+    authorAvatar,
     reviewerId: d.reviewerId,
     screenshot,
     status: 'open',
@@ -83,9 +104,10 @@ export async function GET(req: Request) {
   await connectDb()
 
   if (a.kind === 'linkToken') {
-    // Client overlay: read-only, always open status, must be page-scoped
+    // Client overlay: read-only, always open status, scoped by PATH (origin-independent).
     if (!pageUrl) return err('pageUrl is required for link-scoped reads', 400)
-    const docs = await Comment.find({ projectId, status: 'open', pageUrl }).sort({ createdAt: -1 })
+    const pagePath = pathOf(pageUrl)
+    const docs = await Comment.find({ projectId, status: 'open', pagePath }).sort({ createdAt: -1 })
     return ok(docs.map(toComment))
   }
 

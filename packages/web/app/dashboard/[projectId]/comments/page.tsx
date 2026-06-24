@@ -42,6 +42,7 @@ export default async function CommentsPage({
     id: String(d._id),
     note: d.note,
     authorDisplayName: d.authorDisplayName,
+    authorAvatar: d.authorAvatar ?? undefined,
     tag: d.tag ?? undefined,
     componentName: d.componentName ?? undefined,
     patchlySrc: d.patchlySrc ?? undefined,
@@ -103,6 +104,10 @@ export default async function CommentsPage({
                     <p className="text-gray-900 text-sm leading-relaxed">{c.note}</p>
                     {/* Meta */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
+                      {c.authorAvatar && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.authorAvatar} alt="" className="w-4 h-4 rounded-full" />
+                      )}
                       <span className="font-medium text-gray-600">{c.authorDisplayName}</span>
                       {c.tag && <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">&lt;{c.tag}&gt;</span>}
                       {c.componentName && <span className="text-gray-500">{c.componentName}</span>}

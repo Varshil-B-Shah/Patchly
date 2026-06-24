@@ -95,9 +95,10 @@ export async function createLink(projectId: string, formData: FormData) {
   const expiresAt = formData.get('expiresAt') ? new Date(String(formData.get('expiresAt'))) : undefined
   if (!label) return { error: 'Label is required' }
   const link = await ReviewLink.create({ projectId, label, createdBy: userId, expiresAt })
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  // The token goes in the dev's .env (PATCHLY_REVIEW_TOKEN); the Vite plugin injects
+  // the overlay. There's no /review page — clients open the tunnel URL directly.
   revalidatePath(`/dashboard/${projectId}`)
-  return { token: link.token, shareUrl: `${appUrl}/review/${link.token}` }
+  return { token: link.token }
 }
 
 export async function revokeLink(projectId: string, linkId: string) {

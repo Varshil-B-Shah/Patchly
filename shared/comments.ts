@@ -18,6 +18,7 @@ export interface ReviewComment {
   pageUrl: string
   note: string                  // UNTRUSTED reviewer text
   author?: string
+  authorAvatar?: string         // GitHub avatar URL for authenticated members (Phase D2)
   /**
    * Phase A (local store): base64 PNG string.
    * Phase B (cloud):       { url: UploadThing CDN URL, key: UploadThing file key }.

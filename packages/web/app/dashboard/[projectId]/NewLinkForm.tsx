@@ -3,21 +3,20 @@ import { useState, useTransition } from 'react'
 import { createLink } from '@/app/actions'
 
 export function NewLinkForm({ projectId }: { projectId: string }) {
-  const [result, setResult] = useState<{ token: string; shareUrl: string } | null>(null)
+  const [result, setResult] = useState<{ token: string } | null>(null)
   const [pending, startTransition] = useTransition()
 
   async function handleSubmit(formData: FormData) {
     const res = await createLink(projectId, formData)
-    if (res && res.token && res.shareUrl) setResult({ token: res.token, shareUrl: res.shareUrl })
+    if (res && res.token) setResult({ token: res.token })
   }
 
   if (result) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2 text-sm">
         <p className="font-semibold text-green-800">Review link created!</p>
-        <p className="text-green-700">Share URL: <span className="font-mono break-all">{result.shareUrl}</span></p>
-        <p className="text-green-600 text-xs">⚠ Copy the token now — it won&apos;t be shown again.</p>
-        <p className="text-green-700">Token: <span className="font-mono">{result.token}</span></p>
+        <p className="text-green-600 text-xs">⚠ Copy the token now — it won&apos;t be shown again. Put it in your app&apos;s <span className="font-mono">.env.local</span> as <span className="font-mono">PATCHLY_REVIEW_TOKEN</span>; the Vite plugin injects the overlay. Then share your tunnel URL with the client.</p>
+        <p className="text-green-700 break-all">Token: <span className="font-mono">{result.token}</span></p>
         <button onClick={() => setResult(null)} className="text-xs text-green-600 underline">
           Create another
         </button>

@@ -161,6 +161,11 @@
     var hdr   = el('div', 'display:flex;align-items:center;gap:6px;padding-right:20px;');
     var badge = el('span', 'background:#7c3aed;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;');
     badge.textContent = String(num);
+    if (c.authorAvatar) {
+      var av = el('img', 'width:16px;height:16px;border-radius:50%;flex-shrink:0;');
+      av.src = c.authorAvatar; av.alt = '';
+      hdr.appendChild(av);
+    }
     var meta  = el('span', 'color:#a0a0c0;font-size:11px;');
     meta.textContent = [c.authorDisplayName, new Date(c.createdAt).toLocaleString()].filter(Boolean).join(' · ');
     hdr.append(badge, meta);

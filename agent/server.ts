@@ -110,6 +110,9 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       projectRoot: config.projectRoot,
       theme: cachedTheme,
       tailwindConfigured: cachedTailwindConfigured,
+      // Cloud info so the extension knows where to sign in + which project to bind.
+      cloudApiUrl: cloudUrl ?? null,
+      cloudProjectId: cloudProjectId ?? null,
     }))
 
     ws.on('message', async (data) => {
@@ -639,6 +642,16 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         broadcast({ type: MSG.COMMENTS_CLEARED, count })
         if (sessionId && !extensionClients.has(ws)) {
           ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))
+        }
+        return
+      }
+
+      // Extension teammate signed in (or out) — set the member token so cloud
+      // comment writes are attributed to the verified member. Cloud mode only.
+      if (msg.type === 'PATCHLY_SET_IDENTITY') {
+        const { token } = msg as { token: string | null }
+        if (commentStore instanceof CloudCommentClient) {
+          commentStore.setMemberToken(token ?? null)
         }
         return
       }

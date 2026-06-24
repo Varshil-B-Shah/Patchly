@@ -30,6 +30,11 @@ declare global {
     __patchlyGetTheme?: () => Record<string, unknown> | null
     __patchlyGetTailwindConfigured?: () => boolean | null
     __patchlyIsConnected?: () => boolean
+    // Cloud identity (Phase D2): cloud info from STATUS + sign-out + identity callback
+    __patchlyGetCloudApiUrl?: () => string | null
+    __patchlyGetCloudProjectId?: () => string | null
+    __patchlySignOut?: () => void
+    __patchlyOnIdentity?: (identity: { userId: string; name: string; image?: string } | null) => void
 
     // ── Defined by overlay.ts, called by content.ts ──────────────────────────
     __patchlyActivate?: () => void

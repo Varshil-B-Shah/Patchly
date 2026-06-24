@@ -23,7 +23,9 @@ export interface SerializedComment {
   note: string
   authorType: 'member' | 'link-reviewer'
   authorId: string
+  authorUserId?: string
   authorDisplayName: string
+  authorAvatar?: string
   reviewerId?: string
   screenshot?: { url: string; key: string }
   status: 'open' | 'resolved'
@@ -53,7 +55,9 @@ export function toComment(doc: CommentDoc): SerializedComment {
     note: doc.note,
     authorType: doc.authorType as 'member' | 'link-reviewer',
     authorId: doc.authorId,
+    authorUserId: doc.authorUserId ?? undefined,
     authorDisplayName: doc.authorDisplayName,
+    authorAvatar: doc.authorAvatar ?? undefined,
     reviewerId: doc.reviewerId ?? undefined,
     screenshot: doc.screenshot ? { url: doc.screenshot.url, key: doc.screenshot.key } : undefined,
     status: doc.status as 'open' | 'resolved',

@@ -59,9 +59,9 @@ function escapeHtml(s: string): string {
 
 function urlMatches(pageUrl: string): boolean {
   try {
-    const stored = new URL(pageUrl)
-    return stored.origin === window.location.origin &&
-           stored.pathname === window.location.pathname
+    // Match by pathname only — the same app is served on localhost, the tunnel,
+    // and beta deploys (different origins, same paths). Origin is intentionally ignored.
+    return new URL(pageUrl).pathname === window.location.pathname
   } catch {
     return false
   }
@@ -151,6 +151,7 @@ function buildToolbar(): void {
     <span class="patchly-tb-sep"></span>
     <button class="patchly-tb-undo" title="Undo">↶</button>
     <button class="patchly-tb-redo" title="Redo">↷</button>
+    <span class="patchly-tb-identity" style="display:none"></span>
     <span class="patchly-tb-sep"></span>
     <button class="patchly-tb-settings" title="Settings">⚙</button>
     <span class="patchly-tb-dot" title="Agent status"></span>
@@ -234,6 +235,53 @@ function updateToolbar(): void {
 function setConnectedDot(connected: boolean): void {
   const dot = toolbar?.querySelector('.patchly-tb-dot') as HTMLElement | null
   if (dot) dot.classList.toggle('connected', connected)
+}
+
+// ─── Cloud identity (Phase D2) ───────────────────────────────────────────────
+let currentIdentity: { userId: string; name: string; image?: string } | null = null
+
+// Toolbar identity chip — only in comment mode + cloud mode. Signed-in member
+// shows avatar+name+sign-out; otherwise a "Sign in with GitHub" button.
+function updateIdentityChip(): void {
+  const chip = toolbar?.querySelector('.patchly-tb-identity') as HTMLElement | null
+  if (!chip) return
+  const cloudApiUrl = window.__patchlyGetCloudApiUrl?.() ?? null
+  if (activeMode !== 'comment' || !cloudApiUrl) { chip.style.display = 'none'; return }
+
+  chip.style.cssText = 'display:flex;align-items:center;gap:6px;'
+  chip.textContent = ''  // clear; only controlled nodes appended below
+
+  if (currentIdentity) {
+    if (currentIdentity.image) {
+      const av = document.createElement('img')
+      av.src = currentIdentity.image; av.alt = ''
+      av.style.cssText = 'width:18px;height:18px;border-radius:50%;'
+      chip.appendChild(av)
+    }
+    const name = document.createElement('span')
+    name.textContent = currentIdentity.name  // textContent — never innerHTML
+    name.style.cssText = 'font-size:12px;'
+    const out = document.createElement('button')
+    out.textContent = 'Sign out'
+    out.style.cssText = 'background:none;border:none;color:#a0a0c0;font-size:11px;cursor:pointer;'
+    out.addEventListener('click', () => window.__patchlySignOut?.())
+    chip.append(name, out)
+  } else {
+    const btn = document.createElement('button')
+    btn.textContent = 'Sign in with GitHub'
+    btn.style.cssText = 'background:#24292e;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;'
+    btn.addEventListener('click', () => {
+      const url = window.__patchlyGetCloudApiUrl?.()
+      const pid = window.__patchlyGetCloudProjectId?.()
+      if (url && pid) window.open(`${url}/extension-auth?projectId=${encodeURIComponent(pid)}`, '_blank')
+    })
+    chip.appendChild(btn)
+  }
+}
+
+window.__patchlyOnIdentity = (identity): void => {
+  currentIdentity = identity
+  updateIdentityChip()
 }
 
 function onUndo(): void {
@@ -324,6 +372,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   root?.classList.remove('mode-ai', 'mode-tailwind', 'mode-comment')
   root?.classList.add(`mode-${mode}`)
   updateToolbar()
+  updateIdentityChip()
 
   // Clear any in-flight selection visuals when switching models.
   if (promptBar) promptBar.style.display = 'none'
@@ -512,6 +561,14 @@ function openPinCard(
   badge.style.cssText =
     'background:#7c3aed;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;'
   badge.textContent = String(pinNumber)
+  header.append(badge)
+  if (comment.authorAvatar) {
+    const av = document.createElement('img')
+    av.src = comment.authorAvatar
+    av.alt = ''
+    av.style.cssText = 'width:16px;height:16px;border-radius:50%;flex-shrink:0;'
+    header.append(av)
+  }
   const metaText = document.createElement('span')
   metaText.style.cssText = 'color:#a0a0c0;font-size:11px;'
   metaText.textContent = [
@@ -522,7 +579,7 @@ function openPinCard(
   ]
     .filter(Boolean)
     .join(' · ')
-  header.append(badge, metaText)
+  header.append(metaText)
 
   // Note text — UNTRUSTED: textContent only, never innerHTML
   const noteEl = document.createElement('p')

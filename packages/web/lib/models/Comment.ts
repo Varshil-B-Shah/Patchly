@@ -37,10 +37,13 @@ const CommentSchema = new Schema({
   fingerprint: { type: FingerprintSchema },
   rect: { type: RectSchema },
   pageUrl: { type: String, required: true },
+  pagePath: { type: String },                         // derived pathname — origin-independent matching
   note: { type: String, required: true },             // UNTRUSTED — never eval, never innerHTML
   authorType: { type: String, enum: ['member', 'link-reviewer'], required: true },
   authorId: { type: String, required: true },         // NextAuth user.id OR reviewLink._id
+  authorUserId: { type: String },                     // GitHub id for authenticated members
   authorDisplayName: { type: String, required: true },// ALWAYS denormalized
+  authorAvatar: { type: String },                     // GitHub avatar URL for authed members
   reviewerId: { type: String },                       // persistent UUID from client localStorage
   screenshot: { type: ScreenshotSchema },
   status: { type: String, enum: ['open', 'resolved'], default: 'open' },
@@ -50,7 +53,7 @@ const CommentSchema = new Schema({
 })
 
 CommentSchema.index({ projectId: 1, status: 1 })      // hot query path
-CommentSchema.index({ projectId: 1, pageUrl: 1 })
+CommentSchema.index({ projectId: 1, pagePath: 1 })    // overlay reads by path
 
 export type CommentDoc = InferSchemaType<typeof CommentSchema> & { _id: Types.ObjectId }
 

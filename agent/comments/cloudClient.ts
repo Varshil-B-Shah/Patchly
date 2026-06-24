@@ -23,6 +23,7 @@ function toReviewComment(c: Record<string, unknown>): ReviewComment {
     note: c.note as string,
     // Cloud uses authorDisplayName; ReviewComment uses author — map here once.
     author: c.authorDisplayName as string | undefined,
+    authorAvatar: c.authorAvatar as string | undefined,
     // Cloud screenshots are { url, key }; local are base64 strings — union is fine.
     screenshot: c.screenshot as ReviewComment['screenshot'],
     status: c.status as 'open' | 'resolved',
@@ -33,23 +34,31 @@ function toReviewComment(c: Record<string, unknown>): ReviewComment {
 }
 
 export class CloudCommentClient implements CommentStoreInterface {
+  // Set when a teammate signs into the extension (PATCHLY_SET_IDENTITY). When present,
+  // comment writes use this verified member token so authorship is attributed to them.
+  private memberToken: string | null = null
+
   constructor(
     private readonly apiUrl: string,
     private readonly devToken: string,
     private readonly projectId: string,
   ) {}
 
-  private get headers(): Record<string, string> {
+  setMemberToken(token: string | null): void {
+    this.memberToken = token
+  }
+
+  private headers(token = this.devToken): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.devToken}`,
+      Authorization: `Bearer ${token}`,
     }
   }
 
-  private async apiFetch(urlPath: string, init?: RequestInit): Promise<unknown> {
+  private async apiFetch(urlPath: string, init?: RequestInit, token?: string): Promise<unknown> {
     const res = await fetch(`${this.apiUrl}${urlPath}`, {
       ...init,
-      headers: { ...this.headers, ...(init?.headers as Record<string, string> ?? {}) },
+      headers: { ...this.headers(token), ...(init?.headers as Record<string, string> ?? {}) },
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -69,12 +78,13 @@ export class CloudCommentClient implements CommentStoreInterface {
       rect: data.rect,
       pageUrl: data.pageUrl,
       note: data.note,
-      // Extension comments use author; cloud API requires authorDisplayName.
+      // Fallback display name for the devToken path; ignored when a member token is used
+      // (the cloud derives identity from the verified token instead).
       authorDisplayName: data.author ?? 'Dev',
-      // Extension screenshots are base64 — not uploaded to UploadThing.
-      // Phase B screenshots come from the client overlay via UploadThing only.
     }
-    const doc = await this.apiFetch('/api/comments', { method: 'POST', body: JSON.stringify(body) })
+    // Signed-in teammate → member token (verified authorship); else devToken (generic).
+    const token = this.memberToken ?? this.devToken
+    const doc = await this.apiFetch('/api/comments', { method: 'POST', body: JSON.stringify(body) }, token)
     return toReviewComment(doc as Record<string, unknown>)
   }
 
