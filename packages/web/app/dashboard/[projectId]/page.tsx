@@ -13,12 +13,13 @@ function fmt(d: Date | string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export default async function ProjectPage({ params }: { params: { projectId: string } }) {
+export default async function ProjectPage({ params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params
   const session = await auth()
   const userId  = session!.user!.id as string
 
   await connectDb()
-  const project = await Project.findById(params.projectId).lean()
+  const project = await Project.findById(projectId).lean()
   if (!project || project.ownerId !== userId) notFound()
 
   const links = await ReviewLink.find({ projectId: project._id }).sort({ createdAt: -1 }).lean()
@@ -38,7 +39,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">{project.name}</h1>
         <Link
-          href={`/dashboard/${params.projectId}/comments`}
+          href={`/dashboard/${projectId}/comments`}
           className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-100 transition"
         >
           {openCount > 0 && (
@@ -52,7 +53,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
       <section className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
         <h2 className="font-semibold text-gray-900">Domains</h2>
         <p className="text-xs text-gray-500">Comma-separated. The overlay auto-discovers the project from these.</p>
-        <form action={patchDomains.bind(null, params.projectId)} className="flex gap-3 items-start">
+        <form action={patchDomains.bind(null, projectId)} className="flex gap-3 items-start">
           <input
             name="domains"
             defaultValue={project.domains.join(', ')}
@@ -117,7 +118,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
                         {status === 'Active' && (
                           <>
                             <CopyButton text={shareUrl} label="Copy URL" />
-                            <form action={revokeLink.bind(null, params.projectId, String(l._id))}>
+                            <form action={revokeLink.bind(null, projectId, String(l._id))}>
                               <button className="text-xs px-2.5 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 transition">
                                 Revoke
                               </button>
@@ -135,7 +136,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
 
         <div className="pt-2 border-t border-gray-100">
           <h3 className="text-sm font-medium text-gray-700 mb-3">New review link</h3>
-          <NewLinkForm projectId={params.projectId} />
+          <NewLinkForm projectId={projectId} />
         </div>
       </section>
     </div>

@@ -20,8 +20,9 @@ async function assertOwner(req: Request, projectId: string) {
   return { project }
 }
 
-export async function POST(req: Request, { params }: { params: { projectId: string } }) {
-  const guard = await assertOwner(req, params.projectId)
+export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params
+  const guard = await assertOwner(req, projectId)
   if ('error' in guard) return guard.error
 
   const body = await req.json().catch(() => null)
@@ -44,8 +45,9 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   return ok({ linkId: String(doc._id), token: doc.token, shareUrl }, 201)
 }
 
-export async function GET(req: Request, { params }: { params: { projectId: string } }) {
-  const guard = await assertOwner(req, params.projectId)
+export async function GET(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params
+  const guard = await assertOwner(req, projectId)
   if ('error' in guard) return guard.error
 
   const docs = await ReviewLink.find({ projectId: guard.project._id }).sort({ createdAt: -1 })

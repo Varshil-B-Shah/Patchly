@@ -8,7 +8,8 @@ import { patchDomainsSchema } from '@/lib/schemas'
 import { toProject } from '@/lib/serialize'
 import { ok, err } from '@/lib/http'
 
-export async function PATCH(req: Request, { params }: { params: { projectId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params
   const a = await resolveAuth(req)
   if (a.kind !== 'session') return err('Unauthorized', 401)
 
@@ -17,7 +18,7 @@ export async function PATCH(req: Request, { params }: { params: { projectId: str
   if (!parsed.success) return err(parsed.error.message, 422)
 
   await connectDb()
-  const project = await Project.findById(params.projectId)
+  const project = await Project.findById(projectId)
   if (!project) return err('Project not found', 404)
   if (project.ownerId !== a.userId) return err('Forbidden', 403)
 

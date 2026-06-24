@@ -5,7 +5,6 @@ import { Comment } from '@/lib/models/Comment'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { resolveComment, deleteComment, clearResolved } from '@/app/actions'
-import type { SerializedComment } from '@/lib/serialize'
 
 function relTime(d: Date | string) {
   const diff = Date.now() - new Date(d).getTime()
@@ -21,20 +20,35 @@ export default async function CommentsPage({
   params,
   searchParams,
 }: {
-  params: { projectId: string }
-  searchParams: { status?: string }
+  params: Promise<{ projectId: string }>
+  searchParams: Promise<{ status?: string }>
 }) {
+  const { projectId } = await params
+  const { status: rawStatus } = await searchParams
   const session = await auth()
   const userId  = session!.user!.id as string
 
   await connectDb()
-  const project = await Project.findById(params.projectId).lean()
+  const project = await Project.findById(projectId).lean()
   if (!project || project.ownerId !== userId) notFound()
 
-  const status = (searchParams.status ?? 'open') as 'open' | 'resolved' | 'all'
+  const status = (rawStatus ?? 'open') as 'open' | 'resolved' | 'all'
   const filter: Record<string, unknown> = { projectId: project._id }
   if (status !== 'all') filter.status = status
-  const docs = await Comment.find(filter).sort({ createdAt: -1 }).lean()
+  const rawDocs = await Comment.find(filter).sort({ createdAt: -1 }).lean()
+  // Serialize inline — avoids the lean() FlattenMaps vs CommentDoc type mismatch
+  const docs = rawDocs.map((d) => ({
+    id: String(d._id),
+    note: d.note,
+    authorDisplayName: d.authorDisplayName,
+    tag: d.tag ?? undefined,
+    componentName: d.componentName ?? undefined,
+    patchlySrc: d.patchlySrc ?? undefined,
+    pageUrl: d.pageUrl,
+    screenshot: d.screenshot as { url: string; key: string } | undefined,
+    status: d.status as 'open' | 'resolved',
+    createdAt: (d.createdAt as Date).toISOString(),
+  }))
 
   const resolvedCount = await Comment.countDocuments({ projectId: project._id, status: 'resolved' })
 
@@ -44,7 +58,7 @@ export default async function CommentsPage({
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/dashboard" className="hover:text-gray-700">Projects</Link>
         <span>›</span>
-        <Link href={`/dashboard/${params.projectId}`} className="hover:text-gray-700">{project.name}</Link>
+        <Link href={`/dashboard/${projectId}`} className="hover:text-gray-700">{project.name}</Link>
         <span>›</span>
         <span className="text-gray-900 font-medium">Comments</span>
       </div>
@@ -55,7 +69,7 @@ export default async function CommentsPage({
           {(['open', 'resolved', 'all'] as const).map((s) => (
             <Link
               key={s}
-              href={`/dashboard/${params.projectId}/comments?status=${s}`}
+              href={`/dashboard/${projectId}/comments?status=${s}`}
               className={`px-3 py-1 rounded-md transition font-medium capitalize ${
                 status === s ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
@@ -65,7 +79,7 @@ export default async function CommentsPage({
           ))}
         </div>
         {resolvedCount > 0 && (
-          <form action={clearResolved.bind(null, params.projectId)}>
+          <form action={clearResolved.bind(null, projectId)}>
             <button className="text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
               Clear {resolvedCount} resolved
             </button>
@@ -78,7 +92,7 @@ export default async function CommentsPage({
         <p className="text-gray-400 text-sm text-center py-12">No {status === 'all' ? '' : status} comments.</p>
       ) : (
         <div className="space-y-3">
-          {(docs as unknown as SerializedComment[]).map((c) => {
+          {docs.map((c) => {
             const path = (() => { try { return new URL(c.pageUrl).pathname } catch { return c.pageUrl } })()
             return (
               <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
@@ -106,7 +120,7 @@ export default async function CommentsPage({
                     <img
                       src={c.screenshot.url}
                       alt=""
-                      className="w-20 h-14 object-cover rounded-lg border border-gray-100 flex-shrink-0"
+                      className="w-20 h-14 object-cover rounded-lg border border-gray-100 shrink-0"
                     />
                   )}
                 </div>
@@ -114,12 +128,12 @@ export default async function CommentsPage({
                 {/* Actions */}
                 {c.status === 'open' && (
                   <div className="flex gap-2 pt-1">
-                    <form action={resolveComment.bind(null, params.projectId, c.id)}>
+                    <form action={resolveComment.bind(null, projectId, c.id)}>
                       <button className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">
                         Resolve
                       </button>
                     </form>
-                    <form action={deleteComment.bind(null, params.projectId, c.id)}>
+                    <form action={deleteComment.bind(null, projectId, c.id)}>
                       <button className="text-xs px-3 py-1.5 border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition">
                         Delete
                       </button>

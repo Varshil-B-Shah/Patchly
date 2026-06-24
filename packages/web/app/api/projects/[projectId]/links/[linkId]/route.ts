@@ -10,17 +10,18 @@ import { ok, err } from '@/lib/http'
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { projectId: string; linkId: string } },
+  { params }: { params: Promise<{ projectId: string; linkId: string }> },
 ) {
+  const { projectId, linkId } = await params
   const a = await resolveAuth(req)
   if (a.kind !== 'session') return err('Unauthorized', 401)
 
   await connectDb()
-  const project = await Project.findById(params.projectId)
+  const project = await Project.findById(projectId)
   if (!project) return err('Project not found', 404)
   if (project.ownerId !== a.userId) return err('Forbidden', 403)
 
-  const link = await ReviewLink.findOne({ _id: params.linkId, projectId: project._id })
+  const link = await ReviewLink.findOne({ _id: linkId, projectId: project._id })
   if (!link) return err('Link not found', 404)
 
   if (!link.revokedAt) {

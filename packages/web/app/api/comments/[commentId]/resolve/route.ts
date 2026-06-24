@@ -9,7 +9,8 @@ import { toComment } from '@/lib/serialize'
 import { deleteScreenshot } from '@/lib/uploadthing'
 import { ok, err } from '@/lib/http'
 
-export async function PATCH(req: Request, { params }: { params: { commentId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ commentId: string }> }) {
+  const { commentId } = await params
   const a = await resolveAuth(req)
   if (a.kind !== 'devToken') return err('Unauthorized', 401)
 
@@ -18,7 +19,7 @@ export async function PATCH(req: Request, { params }: { params: { commentId: str
   if (!parsed.success) return err(parsed.error.message, 422)
 
   await connectDb()
-  const comment = await Comment.findById(params.commentId)
+  const comment = await Comment.findById(commentId)
   if (!comment) return err('Comment not found', 404)
   if (String(comment.projectId) !== a.projectId) return err('Forbidden', 403)
 
