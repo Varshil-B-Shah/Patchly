@@ -28,6 +28,19 @@ const ScreenshotSchema = new Schema(
   { _id: false },
 )
 
+const ReplySchema = new Schema(
+  {
+    authorType: { type: String, enum: ['member', 'link-reviewer'], required: true },
+    authorId: { type: String, required: true },
+    authorDisplayName: { type: String, required: true },
+    authorAvatar: { type: String },
+    reviewerId: { type: String },
+    note: { type: String, required: true },  // UNTRUSTED — never eval, never innerHTML
+    createdAt: { type: Date, default: () => new Date() },
+  },
+  { _id: true },
+)
+
 const CommentSchema = new Schema({
   projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
   kind: { type: String, enum: ['element', 'area'], required: true },
@@ -50,6 +63,7 @@ const CommentSchema = new Schema({
   createdAt: { type: Date, default: () => new Date() },
   resolvedAt: { type: Date },
   resolvedBy: { type: String, enum: ['dev', 'agent'] },
+  replies: { type: [ReplySchema], default: [] },
 })
 
 CommentSchema.index({ projectId: 1, status: 1 })      // hot query path

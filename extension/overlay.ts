@@ -322,6 +322,7 @@ function exitEditing(): void {
   isActive = false
   mouseDown = false
   isDragging = false
+  stopPoll()
   clearSelectionState()
 
   root?.classList.remove('active')
@@ -369,6 +370,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   // Cleanup when leaving comment mode.
   if (activeMode === 'comment') {
     hideCommentComposer()
+    stopPoll()
   }
 
   activeMode = mode
@@ -398,8 +400,9 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     if (promptInput) promptInput.value = ''
     if (elementHighlight) elementHighlight.style.display = 'none'
     if (componentLabel) componentLabel.style.display = 'none'
-    // Load comments so pins can render
+    // Load comments so pins can render, then poll every 5s for new ones.
     requestCommentList()
+    startPoll()
   } else {
     // Tailwind gate is shown inside the class panel (renderPanel checks tailwindConfigured).
     // If something is already selected from AI, inspect it in the sidebar.
@@ -415,6 +418,17 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
 function requestCommentList(): void {
   listCommentsSessionId = Math.random().toString(36).slice(2)
   window.__patchlyListComments?.(listCommentsSessionId, 'open')
+}
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+function startPoll(): void {
+  if (pollTimer) return
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') requestCommentList()
+  }, 5000)
+}
+function stopPoll(): void {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
 
 function initPinsLayer(): void {
@@ -643,6 +657,60 @@ function openPinCard(
   pinCardEl.append(closeBtn, header, noteEl)
   if (imgEl) pinCardEl.appendChild(imgEl)
 
+  // Reply thread (existing replies)
+  if (comment.replies && comment.replies.length > 0) {
+    const thread = document.createElement('div')
+    thread.style.cssText = 'border-top:1px solid #3b3b5c;padding-top:8px;display:flex;flex-direction:column;gap:6px;'
+    comment.replies.forEach((r) => {
+      const row = document.createElement('div')
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;'
+      if (r.authorAvatar) {
+        const av = document.createElement('img')
+        av.src = r.authorAvatar; av.alt = ''
+        av.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:2px;'
+        row.appendChild(av)
+      }
+      const body = document.createElement('div')
+      body.style.cssText = 'flex:1;min-width:0;'
+      const who = document.createElement('span')
+      who.style.cssText = 'font-size:11px;font-weight:600;color:#c0c0e0;'
+      who.textContent = r.authorDisplayName  // textContent — never innerHTML
+      const txt = document.createElement('span')
+      txt.style.cssText = 'font-size:12px;color:#e0e0f0;margin-left:6px;word-break:break-word;'
+      txt.textContent = r.note              // textContent — never innerHTML
+      body.append(who, txt)
+      row.appendChild(body)
+      thread.appendChild(row)
+    })
+    pinCardEl.appendChild(thread)
+  }
+
+  // Reply input (open comments only — requires sign-in in cloud mode)
+  if (comment.status === 'open') {
+    const replyRow = document.createElement('div')
+    replyRow.style.cssText = 'display:flex;gap:6px;border-top:1px solid #3b3b5c;padding-top:8px;'
+    const replyInput = document.createElement('input')
+    replyInput.type = 'text'
+    replyInput.placeholder = 'Reply…'
+    replyInput.style.cssText = 'flex:1;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;'
+    const replyBtn = document.createElement('button')
+    replyBtn.textContent = 'Reply'
+    replyBtn.style.cssText = 'padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600;'
+    const sendReply = (): void => {
+      const note = replyInput.value.trim()
+      if (!note) return
+      replyBtn.disabled = true
+      window.__patchlySendToAgent?.({ type: 'PATCHLY_ADD_REPLY', commentId: comment.id, note })
+      replyInput.value = ''
+      replyBtn.disabled = false
+    }
+    replyBtn.addEventListener('click', sendReply)
+    replyInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') sendReply() })
+    replyInput.addEventListener('mousedown', (e) => e.stopPropagation())
+    replyRow.append(replyInput, replyBtn)
+    pinCardEl.appendChild(replyRow)
+  }
+
   if (drifted) {
     const driftWarning = document.createElement('div')
     driftWarning.style.cssText =
@@ -792,6 +860,14 @@ function onMouseUp(e: MouseEvent): void {
     if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
     const el = elementAtPoint(e.clientX, e.clientY)
     if (!el) return
+
+    // Cloud mode requires a verified identity before allowing comments.
+    // Without it, every comment is attributed to a generic "Dev" with no trace.
+    const cloudApiUrl = window.__patchlyGetCloudApiUrl?.() ?? null
+    if (cloudApiUrl && !currentIdentity) {
+      showInfoToast('Sign in with GitHub to comment — click the chip in the toolbar.')
+      return
+    }
     const rect = el.getBoundingClientRect()
     commentPendingEl = el
     commentPendingPatchlySrc = (el as HTMLElement).dataset.patchlySrc ?? null
@@ -808,6 +884,14 @@ function onMouseUp(e: MouseEvent): void {
 
   if (activeMode === 'comment' && isDragging) {
     if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
+    // Same cloud-mode sign-in gate as the click path.
+    const _cloudUrl = window.__patchlyGetCloudApiUrl?.() ?? null
+    if (_cloudUrl && !currentIdentity) {
+      if (selectionRect) selectionRect.style.display = 'none'
+      isDragging = false
+      showInfoToast('Sign in with GitHub to comment — click the chip in the toolbar.')
+      return
+    }
     const selRect = getSelectionRect()
     if (selectionRect) selectionRect.style.display = 'none'
     isDragging = false

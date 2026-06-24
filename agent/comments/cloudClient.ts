@@ -24,8 +24,17 @@ function toReviewComment(c: Record<string, unknown>): ReviewComment {
     // Cloud uses authorDisplayName; ReviewComment uses author — map here once.
     author: c.authorDisplayName as string | undefined,
     authorAvatar: c.authorAvatar as string | undefined,
-    // Cloud screenshots are { url, key }; local are base64 strings — union is fine.
     screenshot: c.screenshot as ReviewComment['screenshot'],
+    replies: Array.isArray(c.replies)
+      ? (c.replies as Record<string, unknown>[]).map((r) => ({
+          id: String(r.id ?? ''),
+          authorType: r.authorType as 'member' | 'link-reviewer',
+          authorDisplayName: String(r.authorDisplayName ?? ''),
+          authorAvatar: r.authorAvatar as string | undefined,
+          note: String(r.note ?? ''),
+          createdAt: String(r.createdAt ?? ''),
+        }))
+      : [],
     status: c.status as 'open' | 'resolved',
     createdAt: c.createdAt as string,
     resolvedAt: c.resolvedAt as string | undefined,
@@ -125,5 +134,18 @@ export class CloudCommentClient implements CommentStoreInterface {
       { method: 'DELETE' },
     )
     return (result as { deleted: number }).deleted
+  }
+
+  async addReply(
+    commentId: string,
+    data: { note: string; authorDisplayName: string; authorAvatar?: string },
+  ): Promise<ReviewComment | undefined> {
+    const token = this.memberToken ?? this.devToken
+    const doc = await this.apiFetch(
+      `/api/comments/${encodeURIComponent(commentId)}/replies`,
+      { method: 'POST', body: JSON.stringify({ note: data.note, authorDisplayName: data.authorDisplayName }) },
+      token,
+    )
+    return toReviewComment(doc as Record<string, unknown>)
   }
 }

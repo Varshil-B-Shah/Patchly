@@ -80,6 +80,10 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
   const cloudDevToken = process.env.PATCHLY_DEV_TOKEN
   const cloudProjectId = process.env.PATCHLY_PROJECT_ID
 
+  // Current signed-in member identity (set via PATCHLY_SET_IDENTITY from the extension).
+  // Used to attribute replies with the correct display name + avatar.
+  let currentMemberIdentity: { name: string; image?: string } | null = null
+
   const commentStore: CommentStoreInterface = (cloudUrl && cloudDevToken && cloudProjectId)
     ? new CloudCommentClient(cloudUrl, cloudDevToken, cloudProjectId)
     : new CommentStore(config.projectRoot)
@@ -607,41 +611,61 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // ── Comment system ────────────────────────────────────────────────────────
       if (msg.type === MSG.ADD_COMMENT) {
         // TODO(PhaseB): validate per-link token from msg.token before storing
-        const comment = await commentStore.add(msg.comment)
-        broadcast({ type: MSG.COMMENT_ADDED, comment })
+        try {
+          const comment = await commentStore.add(msg.comment)
+          broadcast({ type: MSG.COMMENT_ADDED, comment })
+        } catch (err) {
+          console.error('ADD_COMMENT cloud error:', err instanceof Error ? err.message : err)
+        }
         return
       }
 
       if (msg.type === MSG.LIST_COMMENTS) {
         const { sessionId, status } = msg as { sessionId: string; status?: 'open' | 'resolved' | 'all' }
-        const comments = await commentStore.list(status)
-        ws.send(JSON.stringify({ type: MSG.COMMENTS, sessionId, comments }))
+        try {
+          const comments = await commentStore.list(status)
+          ws.send(JSON.stringify({ type: MSG.COMMENTS, sessionId, comments }))
+        } catch (err) {
+          console.error('LIST_COMMENTS cloud error:', err instanceof Error ? err.message : err)
+          ws.send(JSON.stringify({ type: MSG.COMMENTS, sessionId, comments: [] }))
+        }
         return
       }
 
       if (msg.type === MSG.RESOLVE_COMMENT) {
         const { sessionId, id, resolvedBy } = msg as { sessionId?: string; id: string; resolvedBy?: 'dev' | 'agent' }
-        const comment = await commentStore.resolve(id, resolvedBy ?? 'dev')
-        if (!comment) return
-        broadcast({ type: MSG.COMMENT_RESOLVED, id, comment })
-        // Only unicast back to MCP callers (not in extensionClients — they get it via broadcast)
-        if (sessionId && !extensionClients.has(ws)) ws.send(JSON.stringify({ type: MSG.COMMENT_RESOLVED, sessionId, id, comment }))
+        try {
+          const comment = await commentStore.resolve(id, resolvedBy ?? 'dev')
+          if (!comment) return
+          broadcast({ type: MSG.COMMENT_RESOLVED, id, comment })
+          if (sessionId && !extensionClients.has(ws)) ws.send(JSON.stringify({ type: MSG.COMMENT_RESOLVED, sessionId, id, comment }))
+        } catch (err) {
+          console.error('RESOLVE_COMMENT cloud error:', err instanceof Error ? err.message : err)
+        }
         return
       }
 
       if (msg.type === MSG.DELETE_COMMENT) {
         const { id } = msg as { id: string }
-        if (!await commentStore.delete(id)) return
-        broadcast({ type: MSG.COMMENT_DELETED, id })
+        try {
+          if (!await commentStore.delete(id)) return
+          broadcast({ type: MSG.COMMENT_DELETED, id })
+        } catch (err) {
+          console.error('DELETE_COMMENT cloud error:', err instanceof Error ? err.message : err)
+        }
         return
       }
 
       if (msg.type === MSG.CLEAR_COMMENTS) {
         const { sessionId } = msg as { sessionId?: string }
-        const count = await commentStore.clearResolved()
-        broadcast({ type: MSG.COMMENTS_CLEARED, count })
-        if (sessionId && !extensionClients.has(ws)) {
-          ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))
+        try {
+          const count = await commentStore.clearResolved()
+          broadcast({ type: MSG.COMMENTS_CLEARED, count })
+          if (sessionId && !extensionClients.has(ws)) {
+            ws.send(JSON.stringify({ type: MSG.COMMENTS_CLEARED, sessionId, count }))
+          }
+        } catch (err) {
+          console.error('CLEAR_COMMENTS cloud error:', err instanceof Error ? err.message : err)
         }
         return
       }
@@ -649,9 +673,23 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       // Extension teammate signed in (or out) — set the member token so cloud
       // comment writes are attributed to the verified member. Cloud mode only.
       if (msg.type === 'PATCHLY_SET_IDENTITY') {
-        const { token } = msg as { token: string | null }
+        const { token, identity } = msg as { token: string | null; identity?: { name: string; image?: string } | null }
         if (commentStore instanceof CloudCommentClient) {
           commentStore.setMemberToken(token ?? null)
+        }
+        currentMemberIdentity = token && identity ? identity : null
+        return
+      }
+
+      if (msg.type === MSG.ADD_REPLY) {
+        const { commentId, note } = msg as { commentId: string; note: string }
+        try {
+          const authorDisplayName = currentMemberIdentity?.name ?? 'Dev'
+          const authorAvatar = currentMemberIdentity?.image
+          const updated = await commentStore.addReply(commentId, { note, authorDisplayName, authorAvatar })
+          if (updated) broadcast({ type: MSG.REPLY_ADDED, comment: updated })
+        } catch (err) {
+          console.error('ADD_REPLY error:', err instanceof Error ? err.message : err)
         }
         return
       }

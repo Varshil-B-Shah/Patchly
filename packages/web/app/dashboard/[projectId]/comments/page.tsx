@@ -50,6 +50,17 @@ export default async function CommentsPage({
     screenshot: d.screenshot as { url: string; key: string } | undefined,
     status: d.status as 'open' | 'resolved',
     createdAt: (d.createdAt as Date).toISOString(),
+    replies: (d.replies ?? []).map((r) => {
+      const rv = r as unknown as Record<string, unknown>
+      return {
+        id: String(rv._id ?? ''),
+        authorType: String(rv.authorType ?? 'member'),
+        authorDisplayName: String(rv.authorDisplayName ?? ''),
+        authorAvatar: (rv.authorAvatar as string | undefined) ?? undefined,
+        note: String(rv.note ?? ''),
+        createdAt: rv.createdAt instanceof Date ? (rv.createdAt as Date).toISOString() : String(rv.createdAt ?? ''),
+      }
+    }),
   }))
 
   const resolvedCount = await Comment.countDocuments({ projectId: project._id, status: 'resolved' })
@@ -130,6 +141,23 @@ export default async function CommentsPage({
                     />
                   )}
                 </div>
+
+                {/* Reply thread */}
+                {c.replies && c.replies.length > 0 && (
+                  <div className="ml-4 pl-4 border-l border-gray-100 space-y-2">
+                    {c.replies.map((r) => (
+                      <div key={r.id} className="flex items-start gap-2 text-xs text-gray-500">
+                        {r.authorAvatar && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={r.authorAvatar} alt="" className="w-4 h-4 rounded-full mt-0.5 shrink-0" />
+                        )}
+                        <span className="font-medium text-gray-700">{r.authorDisplayName}</span>
+                        <span className="flex-1">{r.note}</span>
+                        <span className="text-gray-300 shrink-0">{relTime(r.createdAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Actions */}
                 {c.status === 'open' && (

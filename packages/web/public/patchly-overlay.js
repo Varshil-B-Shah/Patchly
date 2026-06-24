@@ -64,6 +64,11 @@
 
     window.addEventListener('popstate', loadComments);
     window.addEventListener('hashchange', loadComments);
+
+    // Near-live polling — new comments/replies appear within ~5s.
+    setInterval(function() {
+      if (document.visibilityState === 'visible') loadComments();
+    }, 5000);
   }
 
   // ── Name prompt ───────────────────────────────────────────────────────────────
@@ -189,6 +194,62 @@
       img.src = c.screenshot.url;
       img.alt = '';
       pinCardEl.appendChild(img);
+    }
+
+    // Reply thread
+    if (c.replies && c.replies.length > 0) {
+      var thread = el('div', 'border-top:1px solid #3b3b5c;padding-top:8px;display:flex;flex-direction:column;gap:6px;');
+      c.replies.forEach(function(r) {
+        var row = el('div', 'display:flex;align-items:flex-start;gap:6px;');
+        if (r.authorAvatar) {
+          var av = el('img', 'width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:2px;');
+          av.src = r.authorAvatar; av.alt = '';
+          row.appendChild(av);
+        }
+        var body = el('div', 'flex:1;min-width:0;');
+        var who = el('span', 'font-size:11px;font-weight:600;color:#c0c0e0;');
+        who.textContent = r.authorDisplayName;  // textContent — never innerHTML
+        var txt = el('span', 'font-size:12px;color:#e0e0f0;margin-left:6px;word-break:break-word;');
+        txt.textContent = r.note;               // textContent — never innerHTML
+        body.append(who, txt);
+        row.appendChild(body);
+        thread.appendChild(row);
+      });
+      pinCardEl.appendChild(thread);
+    }
+
+    // Reply input (open comments only)
+    if (c.status === 'open') {
+      var replyRow = el('div', 'display:flex;gap:6px;border-top:1px solid #3b3b5c;padding-top:8px;');
+      var replyInput = el('input', 'flex:1;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;');
+      replyInput.type = 'text'; replyInput.placeholder = 'Reply…';
+      var replyBtn = el('button', 'padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600;');
+      replyBtn.textContent = 'Reply';
+      replyBtn.onclick = function () {
+        var note = replyInput.value.trim();
+        if (!note) return;
+        replyBtn.disabled = true;
+        fetch(API_BASE + '/api/comments/' + c.id + '/replies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+          body: JSON.stringify({ note: note, authorDisplayName: reviewerName }),
+        }).then(function(r2) {
+          if (!r2.ok) { replyBtn.disabled = false; return; }
+          return r2.json();
+        }).then(function(updated) {
+          if (!updated) return;
+          // Update cached comment and re-render the card
+          for (var i = 0; i < comments.length; i++) {
+            if (comments[i].id === c.id) { comments[i] = updated; break; }
+          }
+          closePinCard();
+          openPinCard(updated, num, null);
+        }).catch(function() { replyBtn.disabled = false; });
+      };
+      replyInput.onkeydown = function(e) { if (e.key === 'Enter') replyBtn.onclick(); };
+      replyInput.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+      replyRow.append(replyInput, replyBtn);
+      pinCardEl.appendChild(replyRow);
     }
 
     // Delete button — only shown for comments this reviewer authored.

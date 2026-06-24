@@ -32,6 +32,7 @@ export interface SerializedComment {
   createdAt: string
   resolvedAt?: string
   resolvedBy?: 'dev' | 'agent'
+  replies: { id: string; authorType: string; authorDisplayName: string; authorAvatar?: string; note: string; createdAt: string }[]
 }
 
 export function toComment(doc: CommentDoc): SerializedComment {
@@ -64,6 +65,14 @@ export function toComment(doc: CommentDoc): SerializedComment {
     createdAt: iso(doc.createdAt)!,
     resolvedAt: iso(doc.resolvedAt),
     resolvedBy: (doc.resolvedBy ?? undefined) as 'dev' | 'agent' | undefined,
+    replies: (doc.replies ?? []).map((r) => ({
+      id: String((r as unknown as { _id: unknown })._id ?? ''),
+      authorType: r.authorType as 'member' | 'link-reviewer',
+      authorDisplayName: r.authorDisplayName,
+      authorAvatar: r.authorAvatar ?? undefined,
+      note: r.note,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ''),
+    })),
   }
 }
 

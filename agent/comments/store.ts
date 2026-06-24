@@ -13,6 +13,7 @@ export interface CommentStoreInterface {
   resolve(id: string, resolvedBy: 'dev' | 'agent'): Promise<ReviewComment | undefined>
   delete(id: string): Promise<boolean>
   clearResolved(): Promise<number>
+  addReply(commentId: string, data: { note: string; authorDisplayName: string; authorAvatar?: string }): Promise<ReviewComment | undefined>
 }
 
 export class CommentStore implements CommentStoreInterface {
@@ -84,6 +85,23 @@ export class CommentStore implements CommentStoreInterface {
     comments.splice(idx, 1)
     this.write(comments)
     return true
+  }
+
+  async addReply(commentId: string, data: { note: string; authorDisplayName: string; authorAvatar?: string }): Promise<ReviewComment | undefined> {
+    const comments = this.read()
+    const idx = comments.findIndex((c) => c.id === commentId)
+    if (idx === -1) return undefined
+    const reply: import('../../shared/comments.js').Reply = {
+      id: crypto.randomUUID(),
+      authorType: 'member',
+      authorDisplayName: data.authorDisplayName,
+      authorAvatar: data.authorAvatar,
+      note: data.note,
+      createdAt: new Date().toISOString(),
+    }
+    comments[idx] = { ...comments[idx], replies: [...(comments[idx].replies ?? []), reply] }
+    this.write(comments)
+    return comments[idx]
   }
 
   async clearResolved(): Promise<number> {

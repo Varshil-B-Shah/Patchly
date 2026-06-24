@@ -1,6 +1,15 @@
 // shared/comments.ts
 // Browser-safe: no Node.js imports. Imported by extension bundle and agent both.
 
+export interface Reply {
+  id: string
+  authorType: 'member' | 'link-reviewer'
+  authorDisplayName: string
+  authorAvatar?: string
+  note: string                  // UNTRUSTED reviewer text
+  createdAt: string             // ISO 8601
+}
+
 export interface ReviewComment {
   id: string
   kind: 'element' | 'area'
@@ -29,6 +38,7 @@ export interface ReviewComment {
   createdAt: string             // ISO 8601
   resolvedAt?: string
   resolvedBy?: 'dev' | 'agent'
+  replies?: Reply[]
 }
 
 /** Parse a data-patchly-src string into its components. Returns null on bad format. */

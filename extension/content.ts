@@ -146,6 +146,11 @@ function connect(): void {
       if (msg.type === 'PATCHLY_COMMENTS_CLEARED') {
         window.__patchlyOnCommentsCleared?.()
       }
+      // REPLY_ADDED carries the full updated comment — reuse COMMENT_ADDED handler
+      // so the pin rebuilds with the new reply visible.
+      if (msg.type === 'PATCHLY_REPLY_ADDED') {
+        window.__patchlyOnCommentAdded?.(msg.comment as ReviewComment)
+      }
     }
 
     ws.onclose = () => {

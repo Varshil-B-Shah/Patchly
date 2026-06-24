@@ -51,6 +51,8 @@ export const MSG = {
   COMMENT_DELETED:  'PATCHLY_COMMENT_DELETED',
   CLEAR_COMMENTS: 'PATCHLY_CLEAR_COMMENTS',
   COMMENTS_CLEARED: 'PATCHLY_COMMENTS_CLEARED',
+  ADD_REPLY:       'PATCHLY_ADD_REPLY',
+  REPLY_ADDED:     'PATCHLY_REPLY_ADDED',
 } as const
 
 /** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
@@ -474,6 +476,19 @@ export interface CommentsClearedMessage {
   count: number
 }
 
+/** Extension → Agent: add a reply to an existing comment. */
+export interface AddReplyMessage {
+  type: typeof MSG.ADD_REPLY
+  commentId: string
+  note: string
+}
+
+/** Agent → Extension (broadcast): a reply was added; full updated comment included. */
+export interface ReplyAddedMessage {
+  type: typeof MSG.REPLY_ADDED
+  comment: import('./comments.js').ReviewComment
+}
+
 export type ExtensionToAgentMessage =
   | PingMessage
   | EditRequestMessage
@@ -490,6 +505,7 @@ export type ExtensionToAgentMessage =
   | ResolveCommentMessage
   | DeleteCommentMessage
   | ClearCommentsMessage
+  | AddReplyMessage
 
 /** Any message the agent sends back to a client (extension or MCP bridge). */
 export type AgentToExtensionMessage =
@@ -512,3 +528,4 @@ export type AgentToExtensionMessage =
   | CommentResolvedMessage
   | CommentDeletedMessage
   | CommentsClearedMessage
+  | ReplyAddedMessage
