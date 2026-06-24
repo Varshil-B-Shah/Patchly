@@ -1,0 +1,33 @@
+{
+  "name": "@patchly/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.3.1",
+    "jose": "^6.2.3",
+    "mongoose": "^8.9.0",
+    "next": "^16.2.9",
+    "next-auth": "^5.0.0-beta.25",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "uploadthing": "^7.7.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.5.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^5.7.2"
+  }
+}

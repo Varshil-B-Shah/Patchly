@@ -1,6 +1,15 @@
 // shared/comments.ts
 // Browser-safe: no Node.js imports. Imported by extension bundle and agent both.
 
+export interface Reply {
+  id: string
+  authorType: 'member' | 'link-reviewer'
+  authorDisplayName: string
+  authorAvatar?: string
+  note: string                  // UNTRUSTED reviewer text
+  createdAt: string             // ISO 8601
+}
+
 export interface ReviewComment {
   id: string
   kind: 'element' | 'area'
@@ -18,11 +27,18 @@ export interface ReviewComment {
   pageUrl: string
   note: string                  // UNTRUSTED reviewer text
   author?: string
-  screenshot?: string           // base64 PNG
+  authorAvatar?: string         // GitHub avatar URL for authenticated members (Phase D2)
+  /**
+   * Phase A (local store): base64 PNG string.
+   * Phase B (cloud):       { url: UploadThing CDN URL, key: UploadThing file key }.
+   * Both shapes coexist — consumers must check `typeof screenshot`.
+   */
+  screenshot?: string | { url: string; key: string }
   status: 'open' | 'resolved'
   createdAt: string             // ISO 8601
   resolvedAt?: string
   resolvedBy?: 'dev' | 'agent'
+  replies?: Reply[]
 }
 
 /** Parse a data-patchly-src string into its components. Returns null on bad format. */

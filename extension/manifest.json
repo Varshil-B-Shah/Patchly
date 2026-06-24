@@ -28,6 +28,11 @@
       "js": ["content.js", "overlay.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost:3000/*", "https://patchly.app/*"],
+      "js": ["authBridge.js"],
+      "run_at": "document_idle"
     }
   ],
 

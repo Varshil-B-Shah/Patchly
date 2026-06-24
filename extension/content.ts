@@ -2,6 +2,14 @@
 // Manages the WebSocket connection to the local agent and routes incoming
 // messages to the overlay UI (via window.__patchly* globals).
 
+// Stamp the DOM so page scripts (like patchly-overlay.js) can detect the extension.
+// Skip on the Patchly dashboard itself to avoid Next.js SSR hydration mismatches.
+const _isDashboard = window.location.hostname === 'patchly.app' ||
+  (window.location.hostname === 'localhost' && window.location.port === '3000')
+if (!_isDashboard) {
+  document.documentElement.setAttribute('data-patchly-ext', '1')
+}
+
 import { DEFAULT_PORT, PORT_SCAN_RANGE } from '../shared/agentInfo.js'
 import type { ReviewComment } from '../shared/comments'
 
@@ -19,6 +27,26 @@ let ws: WebSocket | null = null
 let isConnected = false
 let cachedTheme: Record<string, unknown> | null = null         // ThemeTokens from STATUS
 let cachedTailwindConfigured: boolean | null = null            // from STATUS
+let cachedCloudApiUrl: string | null = null                    // from STATUS (cloud mode)
+let cachedCloudProjectId: string | null = null                 // from STATUS (cloud mode)
+
+// Read the stored member token (set by authBridge after GitHub sign-in) and push
+// it to the agent so cloud comment writes are attributed to the verified member.
+function pushIdentity(): void {
+  chrome.storage.local.get(['patchlyMemberToken', 'patchlyIdentity'], (r) => {
+    const token = (r.patchlyMemberToken as string | undefined) ?? null
+    const identity = (r.patchlyIdentity as { userId: string; name: string; image?: string } | undefined) ?? null
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'PATCHLY_SET_IDENTITY', token }))
+    }
+    window.__patchlyOnIdentity?.(identity)
+  })
+}
+
+// authBridge writes the token → forward to the agent + update the toolbar chip.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.patchlyMemberToken) pushIdentity()
+})
 
 function setConnected(connected: boolean): void {
   isConnected = connected
@@ -42,6 +70,9 @@ function connect(): void {
         if (msg.type === MSG_STATUS) {
           if (msg.theme) cachedTheme = msg.theme as Record<string, unknown>
           if (typeof msg.tailwindConfigured === 'boolean') cachedTailwindConfigured = msg.tailwindConfigured
+          cachedCloudApiUrl = (msg.cloudApiUrl as string | null) ?? null
+          cachedCloudProjectId = (msg.cloudProjectId as string | null) ?? null
+          pushIdentity() // send any stored member token now that we're connected
         }
       }
 
@@ -114,6 +145,11 @@ function connect(): void {
       }
       if (msg.type === 'PATCHLY_COMMENTS_CLEARED') {
         window.__patchlyOnCommentsCleared?.()
+      }
+      // REPLY_ADDED carries the full updated comment — reuse COMMENT_ADDED handler
+      // so the pin rebuilds with the new reply visible.
+      if (msg.type === 'PATCHLY_REPLY_ADDED') {
+        window.__patchlyOnCommentAdded?.(msg.comment as ReviewComment)
       }
     }
 
@@ -209,9 +245,24 @@ window.__patchlyDeleteComment = function (id) {
 ;(window as unknown as Record<string, unknown>).__patchlyGetTheme = (): Record<string, unknown> | null => cachedTheme
 ;(window as unknown as Record<string, unknown>).__patchlyGetTailwindConfigured = (): boolean | null => cachedTailwindConfigured
 ;(window as unknown as Record<string, unknown>).__patchlyIsConnected = (): boolean => isConnected
+;(window as unknown as Record<string, unknown>).__patchlyGetCloudApiUrl = (): string | null => cachedCloudApiUrl
+;(window as unknown as Record<string, unknown>).__patchlyGetCloudProjectId = (): string | null => cachedCloudProjectId
+
+// Sign out of the extension identity: clear storage + tell the agent to drop the token.
+window.__patchlySignOut = function (): void {
+  chrome.storage.local.remove(['patchlyMemberToken', 'patchlyIdentity'], () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'PATCHLY_SET_IDENTITY', token: null }))
+    }
+    window.__patchlyOnIdentity?.(null)
+  })
+}
 
 // Start connecting when page loads
 connect()
+
+// Push any stored member identity on page load (covers page refresh after sign-in).
+pushIdentity()
 
 // Esc exits editing mode.
 document.addEventListener('keydown', (e: KeyboardEvent) => {
