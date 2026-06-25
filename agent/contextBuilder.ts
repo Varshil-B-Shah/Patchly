@@ -96,12 +96,31 @@ function findGlobalCss(projectRoot: string): string | null {
   return null
 }
 
-// Find tailwind.config.js or .ts in the project root.
+// Find Tailwind config: v3 uses tailwind.config.*, v4 uses @tailwindcss/postcss
+// in postcss config or @import "tailwindcss" in a CSS file — no config file at all.
 function findTailwindConfig(projectRoot: string): string | null {
+  // Tailwind v3: explicit config file
   for (const name of ['tailwind.config.js', 'tailwind.config.ts', 'tailwind.config.mjs']) {
     const abs = path.join(projectRoot, name)
     if (fs.existsSync(abs)) return abs
   }
+
+  // Tailwind v4: detected via postcss config referencing @tailwindcss/postcss
+  for (const name of ['postcss.config.mjs', 'postcss.config.js', 'postcss.config.cjs']) {
+    const abs = path.join(projectRoot, name)
+    if (!fs.existsSync(abs)) continue
+    const content = tryRead(abs, 1000)
+    if (content?.includes('@tailwindcss/postcss')) return abs
+  }
+
+  // Tailwind v4: detected via @import "tailwindcss" in a global CSS file
+  for (const cssCandidate of ['app/globals.css', 'src/index.css', 'src/App.css', 'styles/globals.css']) {
+    const abs = path.join(projectRoot, cssCandidate)
+    if (!fs.existsSync(abs)) continue
+    const content = tryRead(abs, 500)
+    if (content?.includes('@import "tailwindcss"') || content?.includes("@import 'tailwindcss'")) return abs
+  }
+
   return null
 }
 

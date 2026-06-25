@@ -21,6 +21,7 @@ const fingerprintSchema = z.object({
   tagName: z.string(),
   identifyingAttrs: z.record(z.string(), z.string()).optional(),
   textSnippet: z.string().optional(),
+  domIndex: z.number().int().nonnegative().optional(),
 })
 
 const rectSchema = z.object({

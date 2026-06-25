@@ -49,17 +49,21 @@
       // content.ts stamps data-patchly-ext on <html> immediately on load (DOM is
       // shared across worlds; window.* vars are not). Check it after a brief tick
       // so the content script has had time to run.
-      await new Promise(function (r) { setTimeout(r, 200); });
-      var extPresent = document.documentElement.getAttribute('data-patchly-ext') === '1';
+      // sessionStorage is shared between isolated-world content scripts and the page —
+      // no DOM mutation, no hydration mismatch. No delay needed (storage is sync).
+      var extPresent = false;
+      try { extPresent = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
       if (!extPresent) reviewerName = await promptNameOnce();
     }
 
     buildPinsLayer();
     buildHighlight();
     buildComposer();
-    // Only show the + button for reviewers without the extension (tunnel/beta).
-    // data-patchly-ext is stamped by content.ts on load — visible cross-world.
-    if (document.documentElement.getAttribute('data-patchly-ext') !== '1') buildAddButton();
+    // Only show the + button for reviewers without the extension.
+    // sessionStorage is shared cross-world, no DOM mutation, no hydration impact.
+    var _hasExt = false;
+    try { _hasExt = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
+    if (!_hasExt) buildAddButton();
     await loadComments();
 
     window.addEventListener('popstate', loadComments);
@@ -119,14 +123,52 @@
     renderPins();
   }
 
+  var openCommentId = null;
+
+  // Resolve the exact element a comment points at. Multiple instances of one
+  // component share the same data-patchly-src, so disambiguate by the text snippet
+  // captured at comment time.
+  function findAnchorEl(c) {
+    if (!c.patchlySrc) return null;
+    var matches = document.querySelectorAll('[data-patchly-src="' + CSS.escape(c.patchlySrc) + '"]');
+    if (matches.length <= 1) return matches[0] || null;
+    var fp = c.fingerprint || {};
+    var snip = fp.textSnippet;
+    // 1. Unique text match (handles reordered lists with stable text).
+    if (snip) {
+      var textHits = [];
+      for (var i = 0; i < matches.length; i++) {
+        var t = (matches[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (t.slice(0, snip.length) === snip) textHits.push(matches[i]);
+      }
+      if (textHits.length === 1) return textHits[0];
+    }
+    // 2. DOM index (handles empty / identical-text elements).
+    if (typeof fp.domIndex === 'number' && fp.domIndex >= 0 && fp.domIndex < matches.length) {
+      return matches[fp.domIndex];
+    }
+    // 3. First text hit, else first element.
+    if (snip) {
+      for (var j = 0; j < matches.length; j++) {
+        var t2 = (matches[j].textContent || '').replace(/\s+/g, ' ').trim();
+        if (t2.slice(0, snip.length) === snip) return matches[j];
+      }
+    }
+    return matches[0];
+  }
+
   function renderPins() {
     if (!pinsEl) return;
-    closePinCard();
     pinsEl.innerHTML = '';
-    comments.forEach(function (c, i) {
+    // Oldest first → pin #1 is the earliest comment.
+    var ordered = comments.slice().sort(function (a, b) {
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    var placed = {}; // "x,y" → count, to spread overlapping pins
+    ordered.forEach(function (c, i) {
       var x = null, y = null;
       if (c.kind === 'element' && c.patchlySrc) {
-        var found = document.querySelector('[data-patchly-src="' + CSS.escape(c.patchlySrc) + '"]');
+        var found = findAnchorEl(c);
         if (found) {
           var r = found.getBoundingClientRect();
           x = r.left + r.width / 2;
@@ -137,6 +179,12 @@
         y = c.rect.y - window.scrollY;
       }
       if (x === null) return;
+
+      // Spread pins that land on the same spot so none get hidden behind another.
+      var key = Math.round(x) + ',' + Math.round(y);
+      var n = placed[key] || 0;
+      placed[key] = n + 1;
+      x += n * 26;
 
       var pin = el('div',
         'position:fixed;left:' + (x - 12) + 'px;top:' + (y - 12) + 'px;' +
@@ -153,6 +201,12 @@
       })(c, i + 1));
       pinsEl.appendChild(pin);
     });
+
+    // Don't close an open card on re-render (polling/scroll) — only if its comment
+    // was deleted. This lets the user read/reply without the card vanishing.
+    if (openCommentId && !comments.some(function (c) { return c.id === openCommentId; })) {
+      closePinCard();
+    }
   }
 
   window.addEventListener('scroll', renderPins, { passive: true });
@@ -161,6 +215,7 @@
   // ── Pin card (read-only) ──────────────────────────────────────────────────────
   function openPinCard(c, num, pinEl) {
     closePinCard();
+    openCommentId = c.id;
     pinCardEl = el('div',
       'position:fixed;z-index:2147483647;' +
       'background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:280px;' +
@@ -293,6 +348,7 @@
 
   function closePinCard() {
     if (pinCardEl) { pinCardEl.remove(); pinCardEl = null; }
+    openCommentId = null;
   }
 
   // ── Add button ────────────────────────────────────────────────────────────────
@@ -436,11 +492,22 @@
     var screenshotUploadKey;
     try { screenshotUploadKey = await captureAndUpload(selectedEl); } catch (e) { /* skip */ }
 
+    // Disambiguate THIS instance from other copies of the same component:
+    // a normalized text snippet + the element's index among same-src siblings.
+    var snippet = (selectedEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    var siblings = document.querySelectorAll('[data-patchly-src="' + CSS.escape(patchlySrc) + '"]');
+    var domIndex = Array.prototype.indexOf.call(siblings, selectedEl);
+
     var body = {
       projectId: projectId,
       kind: 'element',
       patchlySrc: patchlySrc,
       tag: selectedEl.tagName.toLowerCase(),
+      fingerprint: {
+        tagName: selectedEl.tagName.toLowerCase(),
+        textSnippet: snippet,
+        domIndex: domIndex >= 0 ? domIndex : undefined,
+      },
       pageUrl: window.location.href,
       note: note,  // stored verbatim — never eval'd
       authorDisplayName: authorName || reviewerName,

@@ -20,12 +20,12 @@ export default function Home() {
           <StatCard label="Uptime"         value="99.98%" delta="0.0%" up />
         </div>
 
-        <div style={{ background: 'linear-gradient(135deg,#6366f1 0%,#a855f7 100%)', borderRadius: 16, padding: '30px 34px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ background: "linear-gradient(135deg,#0ea5e9 0%,#22c55e 100%)", borderRadius: 16, padding: '30px 34px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ fontSize: 19, fontWeight: 800 }}>Ship faster with edge functions</h2>
             <p style={{ opacity: 0.9, marginTop: 6, fontSize: 14 }}>Deploy globally in seconds with zero cold starts.</p>
           </div>
-          <button style={{ background: '#fff', color: '#6366f1', border: 'none', borderRadius: 9, padding: '11px 24px', fontWeight: 800, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <button style={{ background: "#ef4444", color: "#ffffff", border: 'none', borderRadius: 9, padding: '11px 24px', fontWeight: 800, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Enable edge
           </button>
         </div>

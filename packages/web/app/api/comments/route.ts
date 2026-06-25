@@ -127,11 +127,12 @@ export async function DELETE(req: Request) {
   const status = url.searchParams.get('status') ?? 'resolved'
   if (!projectId) return err('projectId is required', 400)
   if (projectId !== a.projectId) return err('Project mismatch for this token', 403)
-  if (status !== 'resolved') return err('Bulk delete only supports status=resolved', 400)
+  if (status !== 'resolved' && status !== 'all') return err('Bulk delete only supports status=resolved or status=all', 400)
 
   await connectDb()
-  const docs = await Comment.find({ projectId, status: 'resolved' })
+  const filter = status === 'all' ? { projectId } : { projectId, status: 'resolved' }
+  const docs = await Comment.find(filter)
   for (const doc of docs) await deleteScreenshot(doc.screenshot?.key)
-  await Comment.deleteMany({ projectId, status: 'resolved' })
+  await Comment.deleteMany(filter)
   return ok({ deleted: docs.length })
 }

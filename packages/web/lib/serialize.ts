@@ -17,7 +17,7 @@ export interface SerializedComment {
   patchlySrc?: string
   tag?: string
   componentName?: string | null
-  fingerprint?: { tagName: string; identifyingAttrs?: Record<string, string>; textSnippet?: string }
+  fingerprint?: { tagName: string; identifyingAttrs?: Record<string, string>; textSnippet?: string; domIndex?: number }
   rect?: { x: number; y: number; w: number; h: number }
   pageUrl: string
   note: string
@@ -49,6 +49,7 @@ export function toComment(doc: CommentDoc): SerializedComment {
           tagName: fp.tagName,
           identifyingAttrs: fp.identifyingAttrs ? Object.fromEntries(fp.identifyingAttrs as Map<string, string>) : undefined,
           textSnippet: fp.textSnippet ?? undefined,
+          domIndex: (fp.domIndex ?? undefined) as number | undefined,
         }
       : undefined,
     rect: doc.rect ? { x: doc.rect.x, y: doc.rect.y, w: doc.rect.w, h: doc.rect.h } : undefined,

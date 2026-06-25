@@ -7,7 +7,7 @@ export function StatCard({ label, value, delta, up = true }: { label: string; va
           {up ? '▲' : '▼'} {delta}
         </span>
       </div>
-      <p style={{ fontSize: 30, fontWeight: 800, marginTop: 12 }}>{value}</p>
+      <p style={{ fontSize: 30, fontWeight: 800, marginTop: 12 }} className="">{value}</p>
     </div>
   )
 }

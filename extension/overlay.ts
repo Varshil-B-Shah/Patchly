@@ -452,13 +452,45 @@ function updateCommentBadge(): void {
   tab.textContent = openCount > 0 ? `Comment · ${openCount}` : 'Comment'
 }
 
+// Open comments for the current page, oldest first → pin #1 is the earliest.
+function openCommentsSorted(): import('../shared/comments').ReviewComment[] {
+  return cachedComments
+    .filter((c) => c.status === 'open' && urlMatches(c.pageUrl))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+// Resolve the exact element a comment points at. Multiple instances of one
+// component share the same data-patchly-src; disambiguate by the stored snippet.
+function findAnchorEl(comment: import('../shared/comments').ReviewComment): Element | null {
+  if (!comment.patchlySrc) return null
+  const matches = document.querySelectorAll(`[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`)
+  if (matches.length <= 1) return matches[0] ?? null
+  const fp = comment.fingerprint
+  const snip = fp?.textSnippet
+  // 1. Unique text match (handles reordered lists with stable text).
+  if (snip) {
+    const hits = [...matches].filter(
+      (m) => (m.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, snip.length) === snip,
+    )
+    if (hits.length === 1) return hits[0]
+  }
+  // 2. DOM index (handles empty / identical-text elements).
+  if (typeof fp?.domIndex === 'number' && fp.domIndex >= 0 && fp.domIndex < matches.length) {
+    return matches[fp.domIndex]
+  }
+  // 3. First text hit, else first element.
+  if (snip) {
+    for (const m of matches) {
+      if ((m.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, snip.length) === snip) return m
+    }
+  }
+  return matches[0]
+}
+
 function buildPins(): void {
   if (!pinsContainerEl || !isActive) return
-  closePinCard()
   pinsContainerEl.innerHTML = ''
-  const openComments = cachedComments.filter(
-    (c) => c.status === 'open' && urlMatches(c.pageUrl),
-  )
+  const openComments = openCommentsSorted()
   openComments.forEach((comment, i) => {
     const pin = document.createElement('div')
     pin.className = 'patchly-pin'
@@ -481,14 +513,19 @@ function buildPins(): void {
   })
   updatePinPositions()
   updateCommentBadge()
+
+  // Keep the open card alive across rebuilds (polling/nav) — only close it if its
+  // comment is gone, so the user can read/reply without it vanishing.
+  if (openPinCommentId && !openComments.some((c) => c.id === openPinCommentId)) {
+    closePinCard()
+  }
 }
 
 function updatePinPositions(): void {
   if (!pinsContainerEl || !isActive) return
-  const openComments = cachedComments.filter(
-    (c) => c.status === 'open' && urlMatches(c.pageUrl),
-  )
+  const openComments = openCommentsSorted()
   const pins = pinsContainerEl.querySelectorAll<HTMLElement>('.patchly-pin')
+  const placed: Record<string, number> = {}  // "x,y" → count, to spread overlaps
   pins.forEach((pin, i) => {
     const comment = openComments[i]
     if (!comment) { pin.style.display = 'none'; return }
@@ -497,21 +534,24 @@ function updatePinPositions(): void {
     let anchorY: number | null = null
 
     if (comment.kind === 'element' && comment.patchlySrc) {
-      const el = document.querySelector(
-        `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
-      )
+      const el = findAnchorEl(comment)
       if (el) {
         const r = el.getBoundingClientRect()
         anchorX = r.left + r.width / 2
         anchorY = r.top
       }
     } else if (comment.kind === 'area' && comment.rect) {
-      // rect stored in page coords; convert to current viewport
       anchorX = comment.rect.x - window.scrollX + comment.rect.w / 2
       anchorY = comment.rect.y - window.scrollY
     }
 
     if (anchorX !== null && anchorY !== null) {
+      // Spread pins landing on the same spot so none get hidden behind another.
+      const key = `${Math.round(anchorX)},${Math.round(anchorY)}`
+      const n = placed[key] ?? 0
+      placed[key] = n + 1
+      anchorX += n * 26
+
       const inView = anchorX > 0 && anchorX < window.innerWidth &&
                      anchorY > -24 && anchorY < window.innerHeight + 24
       pin.style.left = `${anchorX - 12}px`
@@ -525,10 +565,12 @@ function updatePinPositions(): void {
 
 let pinCardEl: HTMLDivElement | null = null
 let pinCardKeyHandler: ((e: KeyboardEvent) => void) | null = null
+let openPinCommentId: string | null = null
 
 function closePinCard(): void {
   pinCardEl?.remove()
   pinCardEl = null
+  openPinCommentId = null
   if (pinCardKeyHandler) {
     document.removeEventListener('keydown', pinCardKeyHandler, true)
     pinCardKeyHandler = null
@@ -540,6 +582,7 @@ function openPinCard(
   pinNumber: number,
 ): void {
   closePinCard()
+  openPinCommentId = comment.id
 
   pinCardEl = document.createElement('div')
   pinCardEl.className = 'patchly-pin-card'
@@ -1498,10 +1541,19 @@ function buildCommentFingerprint(el: Element): import('../shared/comments').Revi
   if ((el as HTMLElement).id) attrs['id'] = (el as HTMLElement).id
   const testid = el.getAttribute('data-testid')
   if (testid) attrs['data-testid'] = testid
+  const src = (el as HTMLElement).dataset.patchlySrc
+  let domIndex: number | undefined
+  if (src) {
+    const siblings = document.querySelectorAll(`[data-patchly-src="${CSS.escape(src)}"]`)
+    const idx = Array.prototype.indexOf.call(siblings, el)
+    if (idx >= 0) domIndex = idx
+  }
   return {
     tagName: el.tagName.toLowerCase(),
     identifyingAttrs: Object.keys(attrs).length ? attrs : undefined,
-    textSnippet: el.textContent?.trim().slice(0, 40) || undefined,
+    // Normalized to match findAnchorEl's comparison (disambiguates component instances).
+    textSnippet: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || undefined,
+    domIndex,
   }
 }
 

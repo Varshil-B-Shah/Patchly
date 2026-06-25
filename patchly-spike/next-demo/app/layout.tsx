@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { PatchlyReview } from 'patchly/next/review'
+import { PatchlyReview } from './PatchlyReview'
 import './globals.css'
 
 export const metadata = {
