@@ -3,9 +3,10 @@
 // messages to the overlay UI (via window.__patchly* globals).
 
 // Stamp the DOM so page scripts (like patchly-overlay.js) can detect the extension.
-// Skip on the Patchly dashboard itself to avoid Next.js SSR hydration mismatches.
-const _isDashboard = window.location.hostname === 'patchly.app' ||
-  (window.location.hostname === 'localhost' && window.location.port === '3000')
+// Skip on the Patchly dashboard itself (it self-identifies via a meta tag) to avoid
+// SSR hydration mismatches. A meta check — not host/port — so a user's Next app on
+// :3000 is NOT mistaken for the dashboard.
+const _isDashboard = !!document.querySelector('meta[name="patchly-dashboard"]')
 if (!_isDashboard) {
   document.documentElement.setAttribute('data-patchly-ext', '1')
 }

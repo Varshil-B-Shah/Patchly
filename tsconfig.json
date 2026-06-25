@@ -8,6 +8,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["agent/**/*", "shared/**/*", "vite-plugin/**/*", "bin/**/*"],
+  "include": ["agent/**/*", "shared/**/*", "vite-plugin/**/*", "instrument/**/*", "next-plugin/**/*", "bin/**/*"],
   "exclude": ["node_modules", "dist", "patchly-spike", "extension", "**/__fixtures__/**"]
 }

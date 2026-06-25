@@ -35,6 +35,16 @@ function hasPatchlyPlugin(projectRoot: string): boolean {
   return false
 }
 
+function hasWithPatchly(projectRoot: string): boolean {
+  for (const fileName of ['next.config.js', 'next.config.ts', 'next.config.mjs']) {
+    const configPath = path.resolve(projectRoot, fileName)
+    if (!fs.existsSync(configPath)) continue
+    const content = fs.readFileSync(configPath, 'utf8')
+    if (content.includes('withPatchly')) return true
+  }
+  return false
+}
+
 function updateGitignore(projectRoot: string): void {
   const gitignorePath = path.resolve(projectRoot, '.gitignore')
   if (!fs.existsSync(gitignorePath)) return
@@ -81,7 +91,22 @@ async function init(): Promise<void> {
   console.log(`Detected dev port: ${devPort}`)
   console.log('\n------------------------------------')
 
-  if (hasPatchlyPlugin(projectRoot)) {
+  if (framework === 'nextjs') {
+    if (hasWithPatchly(projectRoot)) {
+      console.log('withPatchly() is already configured in your next.config.')
+    } else {
+      console.log('Next step: wire Patchly into your Next.js project\n')
+      console.log('  // next.config.js (or .ts / .mjs)')
+      console.log(`  import { withPatchly } from 'patchly/next'`)
+      console.log('  export default withPatchly({ /* your existing config */ })')
+      console.log('\n  // app/layout.tsx — inside <body>')
+      console.log(`  import { PatchlyReview } from 'patchly/next/review'`)
+      console.log('  ... <body>{children}<PatchlyReview /></body>')
+      console.log('\n  // .env.local (only needed for client/tunnel review)')
+      console.log('  NEXT_PUBLIC_PATCHLY_REVIEW_TOKEN=<token from dashboard>')
+      console.log('  NEXT_PUBLIC_PATCHLY_CLOUD_HOST=http://localhost:3000')
+    }
+  } else if (hasPatchlyPlugin(projectRoot)) {
     console.log('patchlyPlugin() is already configured in vite.config.js')
   } else {
     console.log('Next step: add Patchly to your vite.config.js\n')
