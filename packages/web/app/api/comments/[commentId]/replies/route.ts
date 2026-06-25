@@ -48,11 +48,11 @@ export async function POST(
   } else if (a.kind === 'linkToken') {
     authorType = 'link-reviewer'
     authorId = a.linkId
-    authorDisplayName = parsed.data.authorDisplayName ?? 'Reviewer'
+    authorDisplayName = parsed.data.authorDisplayName || 'Reviewer'
   } else {
     authorType = 'member'
     authorId = a.projectId
-    authorDisplayName = parsed.data.authorDisplayName ?? 'Dev'
+    authorDisplayName = parsed.data.authorDisplayName || 'Dev'
   }
 
   comment.replies.push({

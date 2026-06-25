@@ -44,26 +44,19 @@
       reviewerId = crypto.randomUUID();
       localStorage.setItem('patchly_reviewer_id', reviewerId);
     }
+    // If the Patchly extension is installed, it handles ALL comment/pin UI.
+    // The overlay would create a duplicate pin layer — skip everything here.
+    var extPresent = false;
+    try { extPresent = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
+    if (extPresent) return;
+
     reviewerName = localStorage.getItem('patchly_reviewer_name') || '';
-    if (!reviewerName) {
-      // content.ts stamps data-patchly-ext on <html> immediately on load (DOM is
-      // shared across worlds; window.* vars are not). Check it after a brief tick
-      // so the content script has had time to run.
-      // sessionStorage is shared between isolated-world content scripts and the page —
-      // no DOM mutation, no hydration mismatch. No delay needed (storage is sync).
-      var extPresent = false;
-      try { extPresent = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
-      if (!extPresent) reviewerName = await promptNameOnce();
-    }
+    if (!reviewerName) reviewerName = await promptNameOnce();
 
     buildPinsLayer();
     buildHighlight();
     buildComposer();
-    // Only show the + button for reviewers without the extension.
-    // sessionStorage is shared cross-world, no DOM mutation, no hydration impact.
-    var _hasExt = false;
-    try { _hasExt = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
-    if (!_hasExt) buildAddButton();
+    buildAddButton();
     await loadComments();
 
     window.addEventListener('popstate', loadComments);
@@ -451,7 +444,13 @@
     document.body.appendChild(composerEl);
 
     composerEl.addEventListener('mousedown', function (e) { e.stopPropagation(); });
-    cancelBtn.onclick = hideComposer;
+    cancelBtn.onclick = function() {
+      hideComposer();
+      if (inMode) toggleMode();  // exit comment mode so clicks don't reopen the composer
+    };
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && inMode) { e.preventDefault(); hideComposer(); toggleMode(); }
+    }, { capture: true });
     submitBtn.onclick = async function () {
       var note   = document.getElementById('ptly-note').value.trim();
       var author = document.getElementById('ptly-author').value.trim();

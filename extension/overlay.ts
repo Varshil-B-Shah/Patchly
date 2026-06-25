@@ -20,6 +20,7 @@ interface SelectionRect { x: number; y: number; width: number; height: number }
 // ─── State ──────────────────────────────────────────────────────────────────────
 let isActive = false            // editing mode on/off
 let activeMode: 'ai' | 'tailwind' | 'comment' = 'ai'
+let pinsVisible = true          // user toggle — persists across mode switches
 
 // Comment mode state
 let commentComposerEl: HTMLDivElement | null = null
@@ -153,6 +154,7 @@ function buildToolbar(): void {
     <button class="patchly-tb-redo" title="Redo">↷</button>
     <span class="patchly-tb-identity" style="display:none"></span>
     <span class="patchly-tb-sep"></span>
+    <button class="patchly-tb-pins active" title="Show/hide comment pins">📌</button>
     <button class="patchly-tb-settings" title="Settings">⚙</button>
     <span class="patchly-tb-dot" title="Agent status"></span>
     <button class="patchly-tb-close" title="Exit editing (Esc)">×</button>
@@ -181,6 +183,12 @@ function buildToolbar(): void {
   ;(toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement).addEventListener('click', onRedo)
   ;(toolbar.querySelector('.patchly-tb-close') as HTMLButtonElement).addEventListener('click', exitEditing)
   ;(toolbar.querySelector('.patchly-tb-settings') as HTMLButtonElement).addEventListener('click', toggleSettings)
+  ;(toolbar.querySelector('.patchly-tb-pins') as HTMLButtonElement).addEventListener('click', () => {
+    pinsVisible = !pinsVisible
+    const btn = toolbar?.querySelector('.patchly-tb-pins') as HTMLElement | null
+    if (btn) btn.classList.toggle('active', pinsVisible)
+    buildPins()
+  })
 
   // Settings popover wiring (same chrome.storage.local keys the preview reads).
   const autoEl = toolbar.querySelector('#patchly-set-autoapply') as HTMLInputElement
@@ -325,7 +333,7 @@ function exitEditing(): void {
   stopPoll()
   clearSelectionState()
 
-  root?.classList.remove('active')
+  root?.classList.remove('active', 'mode-ai', 'mode-tailwind', 'mode-comment')
   if (toolbar) toolbar.style.display = 'none'
   if (selectionRect) selectionRect.style.display = 'none'
   if (elementHighlight) elementHighlight.style.display = 'none'
@@ -335,6 +343,9 @@ function exitEditing(): void {
   hidePicker()
   hideClassPanel()
   clearSelHighlights()
+  hideCommentComposer()
+  // Pins remain visible after closing the toolbar so devs can see reviewer comments
+  // without staying in editing mode. buildPins() respects pinsVisible flag.
   window.removeEventListener('scroll', onViewportChange, true)
   window.removeEventListener('resize', onViewportChange)
 }
@@ -488,8 +499,10 @@ function findAnchorEl(comment: import('../shared/comments').ReviewComment): Elem
 }
 
 function buildPins(): void {
-  if (!pinsContainerEl || !isActive) return
+  if (!pinsContainerEl) return
+  closePinCard()
   pinsContainerEl.innerHTML = ''
+  if (!pinsVisible) { updateCommentBadge(); return }
   const openComments = openCommentsSorted()
   openComments.forEach((comment, i) => {
     const pin = document.createElement('div')
@@ -503,7 +516,7 @@ function buildPins(): void {
       font-size:11px;font-weight:700;font-family:sans-serif;
       pointer-events:auto;cursor:pointer;
       box-shadow:0 2px 8px rgba(0,0,0,.4);border:2px solid #fff;
-      z-index:2147483621;user-select:none;
+      z-index:2147483647;user-select:none;
     `
     pin.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -522,7 +535,7 @@ function buildPins(): void {
 }
 
 function updatePinPositions(): void {
-  if (!pinsContainerEl || !isActive) return
+  if (!pinsContainerEl || !pinsVisible) return
   const openComments = openCommentsSorted()
   const pins = pinsContainerEl.querySelectorAll<HTMLElement>('.patchly-pin')
   const placed: Record<string, number> = {}  // "x,y" → count, to spread overlaps
@@ -658,10 +671,9 @@ function openPinCard(
     }
   }
 
-  // Fingerprint drift check
-  const targetEl = comment.kind === 'element' && comment.patchlySrc
-    ? document.querySelector(`[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`)
-    : null
+  // Fingerprint drift check — use findAnchorEl so we check the RIGHT element,
+  // not just the first one (map-rendered components share the same data-patchly-src).
+  const targetEl = comment.kind === 'element' ? findAnchorEl(comment) : null
   const drifted = targetEl && comment.fingerprint
     ? !checkFingerprint(targetEl, comment.fingerprint)
     : false
@@ -670,7 +682,8 @@ function openPinCard(
   const actions = document.createElement('div')
   actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
 
-  if (comment.status === 'open') {
+  if (comment.status === 'open' && activeMode === 'comment') {
+    // Full actions — only available when in Comment mode.
     const fixAIBtn = document.createElement('button')
     fixAIBtn.textContent = 'Fix with AI'
     fixAIBtn.style.cssText =
@@ -690,6 +703,12 @@ function openPinCard(
     resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
 
     actions.append(fixAIBtn, editClassBtn, resolveBtn)
+  } else if (comment.status === 'open') {
+    // Read-only when not in comment mode — hint to switch modes.
+    const hint = document.createElement('span')
+    hint.style.cssText = 'font-size:11px;color:#555577;'
+    hint.textContent = 'Switch to Comment mode to fix or resolve.'
+    actions.appendChild(hint)
   } else {
     const resolvedLabel = document.createElement('span')
     resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;'
@@ -764,7 +783,7 @@ function openPinCard(
 
   pinCardEl.appendChild(actions)
 
-  if (comment.status === 'open') {
+  if (comment.status === 'open' && activeMode === 'comment') {
     const hints = document.createElement('div')
     hints.style.cssText = 'color:#555577;font-size:10px;margin-top:2px;'
     hints.textContent = 'A · Fix with AI  T · Tailwind  R · Resolve  Esc · Close'
@@ -774,24 +793,23 @@ function openPinCard(
   pinCardEl.addEventListener('mousedown', (e) => e.stopPropagation())
   document.body.appendChild(pinCardEl)
 
-  if (comment.status === 'open') {
-    pinCardKeyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
-      else if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
+  pinCardKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
+    // Action shortcuts only in comment mode
+    if (comment.status === 'open' && activeMode === 'comment') {
+      if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
       else if (e.key === 't' || e.key === 'T') { e.preventDefault(); editClasses(comment) }
       else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resolveComment(comment.id, 'dev') }
     }
-    document.addEventListener('keydown', pinCardKeyHandler, true)
   }
+  document.addEventListener('keydown', pinCardKeyHandler, true)
 }
 
 function fixWithAI(comment: import('../shared/comments').ReviewComment): void {
   closePinCard()
   setMode('ai')
   if (comment.patchlySrc) {
-    const el = document.querySelector(
-      `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
-    ) as HTMLElement | null
+    const el = findAnchorEl(comment) as HTMLElement | null
     if (el) selectElement(el, el.getBoundingClientRect())
   }
   // Pre-fill prompt with note as plain text — dev reads and confirms before sending
@@ -806,9 +824,7 @@ function editClasses(comment: import('../shared/comments').ReviewComment): void 
   closePinCard()
   setMode('tailwind')
   if (comment.patchlySrc) {
-    const el = document.querySelector(
-      `[data-patchly-src="${CSS.escape(comment.patchlySrc)}"]`,
-    ) as HTMLElement | null
+    const el = findAnchorEl(comment) as HTMLElement | null
     if (el) {
       selectedSet = [el]
       inspectCurrentSelection()
