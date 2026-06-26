@@ -1,3 +1,27 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Patchly Extension Overlay — Dark Wood + Tape Theme
+   Matches the web app's earthy aesthetic: deep wood, cream paper, gold tape.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Design tokens ─────────────────────────────────────────────────────── */
+/*
+  --wood-deep:   #18110a   (page bg)
+  --wood-nav:    rgba(20,12,5,0.94)  (frosted glass panels)
+  --wood-mid:    #4a3020
+  --paper:       #fdf5e8   (card bg)
+  --paper-mid:   rgba(253,245,232,0.06)
+  --gold:        #c8a864
+  --gold-dim:    rgba(200,168,100,0.22)
+  --gold-border: rgba(200,168,100,0.40)
+  --brown-border:rgba(150,110,70,0.20)
+  --text-cream:  #f0e0c0
+  --text-pale:   #c8a880
+  --text-muted:  rgba(200,168,100,0.55)
+  --text-dark:   #2a1c0e   (on paper)
+*/
+
+/* ─── Root overlay ──────────────────────────────────────────────────────── */
+
 #patchly-root {
   position: fixed;
   top: 0;
@@ -6,6 +30,7 @@
   height: 100%;
   z-index: 2147483647;
   pointer-events: none;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 #patchly-root.active {
@@ -17,10 +42,12 @@
   cursor: crosshair;
 }
 
+/* ─── Selection / element highlight ────────────────────────────────────── */
+
 #patchly-selection-rect {
   position: fixed;
-  border: 2px dashed #6366f1;
-  background: rgba(99, 102, 241, 0.08);
+  border: 2px dashed rgba(200, 168, 100, 0.75);
+  background: rgba(200, 168, 100, 0.08);
   pointer-events: none;
   display: none;
   box-sizing: border-box;
@@ -28,16 +55,17 @@
 
 #patchly-element-highlight {
   position: fixed;
-  border: 2px solid #6366f1;
-  background: rgba(99, 102, 241, 0.12);
+  border: 2px solid rgba(200, 168, 100, 0.80);
+  background: rgba(200, 168, 100, 0.10);
   pointer-events: none;
   display: none;
   box-sizing: border-box;
-  border-radius: 3px;
+  border-radius: 4px;
   transition: all 0.1s ease;
+  box-shadow: 0 0 0 1px rgba(200, 168, 100, 0.20), inset 0 0 12px rgba(200, 168, 100, 0.05);
 }
 
-/* ─── Floating toolbar (color-picker–style island) ───────────────────────── */
+/* ─── Floating toolbar ──────────────────────────────────────────────────── */
 
 #patchly-toolbar {
   position: fixed;
@@ -46,37 +74,60 @@
   transform: translateX(-50%);
   display: none;
   align-items: center;
-  gap: 6px;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
-  border-radius: 12px;
-  padding: 6px 8px;
-  box-shadow: 0 6px 28px rgba(0,0,0,0.16), 0 1px 4px rgba(0,0,0,0.08);
+  gap: 5px;
+  background: rgba(20, 12, 5, 0.94);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 14px;
+  padding: 5px 8px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.60),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px rgba(200, 168, 100, 0.06) inset;
   z-index: 2147483647;
   pointer-events: all;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
+/* Mode tabs */
 .patchly-tb-tabs { display: flex; gap: 2px; }
 
 .patchly-tb-tab {
   background: none;
-  border: none;
-  border-radius: 7px;
-  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 11px;
   font-size: 12px;
   font-weight: 500;
-  color: #666;
+  color: rgba(200, 168, 100, 0.55);
   cursor: pointer;
   font-family: inherit;
+  transition: all 0.15s ease;
+  letter-spacing: 0.01em;
 }
 
-.patchly-tb-tab.active { background: #eef2ff; color: #4338ca; font-weight: 600; }
-.patchly-tb-tab:hover:not(.active) { background: #f5f5f5; }
+.patchly-tb-tab.active {
+  background: rgba(200, 168, 100, 0.18);
+  border-color: rgba(200, 168, 100, 0.38);
+  color: #f0e0c0;
+  font-weight: 600;
+}
 
-.patchly-tb-sep { width: 1px; height: 20px; background: #eee; }
+.patchly-tb-tab:hover:not(.active) {
+  background: rgba(200, 168, 100, 0.08);
+  color: rgba(200, 168, 100, 0.80);
+  border-color: rgba(200, 168, 100, 0.15);
+}
 
-/* ── Comments show/hide toggle switch ─────────────────────────────────────── */
+/* Separator */
+.patchly-tb-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(150, 110, 70, 0.25);
+}
+
+/* ── Comments show/hide toggle ─────────────────────────────────────────── */
 .patchly-tb-pins-toggle {
   display: flex;
   align-items: center;
@@ -91,73 +142,93 @@
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background: #d1d5db;
-  transition: background 0.2s;
+  background: rgba(150, 110, 70, 0.25);
+  border: 1px solid rgba(150, 110, 70, 0.30);
+  transition: background 0.2s, border-color 0.2s;
   flex-shrink: 0;
 }
 .patchly-tb-pins-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  background: rgba(200, 168, 100, 0.60);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.40);
   transition: left 0.2s, background 0.2s;
 }
 .patchly-tb-pins-check:checked + .patchly-tb-pins-track {
-  background: linear-gradient(135deg, #67e8f9 0%, #4ade80 100%);
+  background: rgba(200, 168, 100, 0.30);
+  border-color: rgba(200, 168, 100, 0.55);
 }
 .patchly-tb-pins-check:checked + .patchly-tb-pins-track .patchly-tb-pins-thumb {
   left: 18px;
+  background: #c8a864;
 }
 
+/* Icon buttons */
 .patchly-tb-undo,
 .patchly-tb-redo,
 .patchly-tb-settings,
 .patchly-tb-close {
   background: none;
-  border: none;
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   width: 30px;
   height: 30px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
-  color: #555;
+  color: rgba(200, 168, 100, 0.55);
   cursor: pointer;
   font-family: inherit;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .patchly-tb-undo:hover:not(:disabled),
 .patchly-tb-redo:hover:not(:disabled),
 .patchly-tb-settings:hover,
-.patchly-tb-close:hover { background: #f0f0f0; }
+.patchly-tb-close:hover {
+  background: rgba(200, 168, 100, 0.10);
+  border-color: rgba(200, 168, 100, 0.20);
+  color: #f0e0c0;
+}
 
 .patchly-tb-undo:disabled,
-.patchly-tb-redo:disabled { opacity: 0.3; cursor: default; }
+.patchly-tb-redo:disabled { opacity: 0.25; cursor: default; }
 
-.patchly-tb-close { font-size: 18px; color: #999; }
+.patchly-tb-close { font-size: 16px; color: rgba(200, 168, 100, 0.40); }
 
+/* Connection dot */
 .patchly-tb-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #ef4444;
+  background: rgba(239, 68, 68, 0.70);
   margin: 0 2px;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.40);
 }
-.patchly-tb-dot.connected { background: #22c55e; }
+.patchly-tb-dot.connected {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.40);
+}
 
+/* Settings popup */
 .patchly-tb-settings-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 8px;
-  background: #fff;
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+  background: rgba(20, 12, 5, 0.97);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   padding: 10px 12px;
-  width: 240px;
+  width: 248px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .patchly-tb-set-row {
@@ -166,34 +237,43 @@
   justify-content: space-between;
   gap: 10px;
   font-size: 12px;
-  color: #444;
+  color: rgba(200, 168, 100, 0.80);
   padding: 5px 0;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.12);
 }
+.patchly-tb-set-row:last-child { border-bottom: none; }
 
 .patchly-tb-set-row select {
   font-size: 12px;
-  padding: 2px 6px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 3px 7px;
+  border: 1px solid rgba(150, 110, 70, 0.30);
+  border-radius: 7px;
   font-family: inherit;
+  background: rgba(200, 168, 100, 0.10);
+  color: #f0e0c0;
+  outline: none;
 }
 
-/* ─── AI prompt bar (textarea) ────────────────────────────────────────────── */
+/* ─── AI prompt bar ─────────────────────────────────────────────────────── */
 
 #patchly-prompt-bar {
   position: fixed;
   display: none;
   align-items: flex-end;
   gap: 8px;
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  padding: 8px 10px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
+  background: rgba(20, 12, 5, 0.96);
+  border: 1px solid rgba(150, 110, 70, 0.28);
+  border-radius: 12px;
+  padding: 9px 10px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
   z-index: 2147483647;
-  width: 340px;
+  width: 350px;
   max-width: 90vw;
   pointer-events: all;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 #patchly-prompt-input {
@@ -205,53 +285,66 @@
   max-height: 160px;
   min-height: 20px;
   font-size: 13px;
-  line-height: 1.4;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #1a1a1a;
+  line-height: 1.5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #f0e0c0;
   background: transparent;
-  caret-color: #6366f1;
+  caret-color: #c8a864;
 }
 
-#patchly-prompt-input::placeholder { color: #aaa; }
+#patchly-prompt-input::placeholder { color: rgba(200, 168, 100, 0.35); }
 
 #patchly-prompt-submit {
-  background: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 12px;
+  background: rgba(200, 168, 100, 0.22);
+  color: #f0e0c0;
+  border: 1px solid rgba(200, 168, 100, 0.45);
+  border-radius: 7px;
+  padding: 6px 13px;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
   flex-shrink: 0;
+  transition: all 0.15s ease;
+  letter-spacing: 0.01em;
 }
 
-#patchly-prompt-submit:hover { background: #4f46e5; }
+#patchly-prompt-submit:hover {
+  background: rgba(200, 168, 100, 0.34);
+  border-color: rgba(200, 168, 100, 0.65);
+}
 
 #patchly-prompt-cancel {
   background: none;
   border: none;
-  color: #999;
+  color: rgba(200, 168, 100, 0.40);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
   font-family: inherit;
   flex-shrink: 0;
+  transition: color 0.15s;
 }
+#patchly-prompt-cancel:hover { color: rgba(200, 168, 100, 0.75); }
+
+/* ─── Component label tooltip ───────────────────────────────────────────── */
 
 #patchly-component-label {
   position: fixed;
   display: none;
-  background: #6366f1;
-  color: white;
+  background: rgba(20, 12, 5, 0.92);
+  color: #c8a864;
   font-size: 11px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  padding: 2px 7px;
-  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(200, 168, 100, 0.28);
   pointer-events: none;
   white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  letter-spacing: 0.02em;
 }
 
 /* ─── Diff preview panel ─────────────────────────────────────────────────── */
@@ -260,23 +353,28 @@
   position: fixed;
   bottom: 24px;
   right: 24px;
-  width: 420px;
+  width: 430px;
   max-width: calc(100vw - 48px);
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+  background: rgba(20, 12, 5, 0.96);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 14px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
   z-index: 2147483647;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #f0e0c0;
   pointer-events: all;
   overflow: hidden;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .patchly-pp-head {
   padding: 12px 14px 10px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.18);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .patchly-pp-title-row {
@@ -290,48 +388,51 @@
   flex: 1;
   font-weight: 600;
   line-height: 1.35;
-  color: #1a1a1a;
+  color: #f0e0c0;
 }
 
 .patchly-pp-meta {
   font-size: 11px;
-  color: #888;
+  color: rgba(200, 168, 100, 0.50);
 }
 
 .patchly-pp-conf {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 10px;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.patchly-pp-conf.high   { background: #dcfce7; color: #16a34a; }
-.patchly-pp-conf.medium { background: #fef3c7; color: #b45309; }
-.patchly-pp-conf.low    { background: #fee2e2; color: #dc2626; }
+.patchly-pp-conf.high   { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+.patchly-pp-conf.medium { background: rgba(251, 191, 36, 0.13); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+.patchly-pp-conf.low    { background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.22); }
 
+/* Diff viewer — dark code block feel */
 .patchly-pp-diff {
   max-height: 240px;
   overflow: auto;
-  background: #fbfbfd;
-  border-bottom: 1px solid #f0f0f0;
+  background: rgba(10, 6, 3, 0.70);
+  border-bottom: 1px solid rgba(150, 110, 70, 0.15);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre;
 }
 
 .patchly-diff-line {
   display: block;
-  padding: 0 12px;
+  padding: 0 14px;
 }
 
-.patchly-diff-add  { background: #e6ffed; color: #176f2c; }
-.patchly-diff-del  { background: #ffeef0; color: #b31d28; }
-.patchly-diff-ctx  { color: #6e7781; }
-.patchly-diff-hunk { background: #f1f0ff; color: #6f42c1; }
+.patchly-diff-add  { background: rgba(34, 197, 94, 0.12);  color: #86efac; }
+.patchly-diff-del  { background: rgba(239, 68, 68, 0.12);  color: #fca5a5; }
+.patchly-diff-ctx  { color: rgba(200, 168, 100, 0.40); }
+.patchly-diff-hunk { background: rgba(200, 168, 100, 0.08); color: #c8a864; }
 
+/* Action buttons */
 .patchly-pp-actions {
   display: flex;
   gap: 8px;
@@ -340,54 +441,74 @@
 
 .patchly-pp-btn {
   flex: 1;
-  border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 8px;
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
 }
 
-.patchly-pp-apply  { background: #6366f1; color: #fff; }
-.patchly-pp-apply:hover { background: #4f46e5; }
-.patchly-pp-reject { background: #f5f5f5; color: #444; }
-.patchly-pp-reject:hover { background: #ebebeb; }
+.patchly-pp-apply {
+  background: rgba(200, 168, 100, 0.22);
+  color: #f0e0c0;
+  border-color: rgba(200, 168, 100, 0.45);
+}
+.patchly-pp-apply:hover {
+  background: rgba(200, 168, 100, 0.34);
+  border-color: rgba(200, 168, 100, 0.65);
+}
+.patchly-pp-reject {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(200, 168, 100, 0.60);
+  border-color: rgba(150, 110, 70, 0.20);
+}
+.patchly-pp-reject:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(200, 168, 100, 0.85);
+}
 
 .patchly-pp-kbd {
-  opacity: 0.7;
+  opacity: 0.5;
   font-size: 11px;
   margin-left: 4px;
 }
 
-/* ─── Component picker (ambiguous multi-component selection) ──────────────── */
+/* ─── Component picker ───────────────────────────────────────────────────── */
 
 #patchly-picker {
   position: fixed;
   display: none;
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+  background: rgba(20, 12, 5, 0.97);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
   z-index: 2147483647;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #f0e0c0;
   min-width: 260px;
   max-width: 360px;
   max-height: 320px;
   overflow-y: auto;
   pointer-events: all;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .patchly-picker-head {
   padding: 9px 12px;
   font-weight: 600;
   font-size: 12px;
-  color: #555;
-  border-bottom: 1px solid #f0f0f0;
+  color: rgba(200, 168, 100, 0.60);
+  border-bottom: 1px solid rgba(150, 110, 70, 0.18);
   position: sticky;
   top: 0;
-  background: #fff;
+  background: rgba(20, 12, 5, 0.99);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .patchly-picker-row {
@@ -396,43 +517,48 @@
   gap: 8px;
   padding: 9px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #f7f7f7;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.08);
+  transition: background 0.1s;
 }
+.patchly-picker-row:hover { background: rgba(200, 168, 100, 0.07); }
 
-.patchly-picker-row:hover { background: #f4f4ff; }
+.patchly-picker-check { margin: 0; flex-shrink: 0; cursor: pointer; accent-color: #c8a864; }
 
-.patchly-picker-check { margin: 0; flex-shrink: 0; cursor: pointer; }
-
-.patchly-picker-hint { font-weight: 400; color: #aaa; font-size: 11px; }
+.patchly-picker-hint { font-weight: 400; color: rgba(200, 168, 100, 0.35); font-size: 11px; }
 
 .patchly-picker-foot {
   position: sticky;
   bottom: 0;
-  background: #fff;
-  border-top: 1px solid #f0f0f0;
+  background: rgba(20, 12, 5, 0.99);
+  border-top: 1px solid rgba(150, 110, 70, 0.18);
   padding: 8px 12px;
   display: flex;
 }
 
 .patchly-picker-apply {
   flex: 1;
-  background: #6366f1;
-  color: #fff;
-  border: none;
-  border-radius: 7px;
+  background: rgba(200, 168, 100, 0.22);
+  color: #f0e0c0;
+  border: 1px solid rgba(200, 168, 100, 0.42);
+  border-radius: 8px;
   padding: 7px;
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s ease;
 }
-
-.patchly-picker-apply:hover { background: #4f46e5; }
+.patchly-picker-apply:hover {
+  background: rgba(200, 168, 100, 0.34);
+  border-color: rgba(200, 168, 100, 0.60);
+}
 
 .patchly-picker-tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: #6366f1;
-  background: #eef0ff;
+  color: #c8a864;
+  background: rgba(200, 168, 100, 0.10);
+  border: 1px solid rgba(200, 168, 100, 0.20);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
@@ -443,11 +569,11 @@
 .patchly-picker-file {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: #888;
+  color: rgba(200, 168, 100, 0.45);
 }
 
 .patchly-picker-text {
-  color: #333;
+  color: #f0e0c0;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -463,8 +589,6 @@
   flex-direction: column;
 }
 
-/* Head and actions stay pinned; the cards area takes the remaining height and
-   scrolls, so every file's card is reachable no matter how many there are. */
 #patchly-preview-panel.patchly-batch .patchly-pp-head,
 #patchly-preview-panel.patchly-batch .patchly-pp-actions { flex-shrink: 0; }
 
@@ -472,12 +596,12 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.15);
 }
 
-.patchly-bp-card { border-bottom: 1px solid #f0f0f0; }
+.patchly-bp-card { border-bottom: 1px solid rgba(150, 110, 70, 0.10); }
 .patchly-bp-card:last-child { border-bottom: none; }
-.patchly-bp-card.patchly-bp-fail { background: #fffafa; }
+.patchly-bp-card.patchly-bp-fail { background: rgba(239, 68, 68, 0.04); }
 
 .patchly-bp-cardhead {
   display: flex;
@@ -490,34 +614,42 @@
 .patchly-bp-file {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: #6366f1;
+  color: #c8a864;
 }
 
 .patchly-bp-expl {
   padding: 0 14px 8px;
-  color: #444;
+  color: rgba(200, 168, 100, 0.65);
   font-size: 12px;
   line-height: 1.35;
 }
 
 .patchly-bp-card .patchly-pp-diff { max-height: 160px; border-bottom: none; }
 
-/* ─── Cross-file redirect toast ──────────────────────────────────────────── */
+/* ─── Cross-file redirect toast button ──────────────────────────────────── */
 
 .patchly-rd-btn {
-  background: #6366f1;
-  color: #fff;
-  border: none;
-  border-radius: 7px;
+  background: rgba(200, 168, 100, 0.20);
+  color: #f0e0c0;
+  border: 1px solid rgba(200, 168, 100, 0.40);
+  border-radius: 8px;
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+  transition: all 0.15s ease;
 }
-
-.patchly-rd-btn:hover:not(:disabled) { background: #4f46e5; }
-.patchly-rd-btn:disabled { background: #e5e7eb; color: #999; cursor: default; }
+.patchly-rd-btn:hover:not(:disabled) {
+  background: rgba(200, 168, 100, 0.32);
+  border-color: rgba(200, 168, 100, 0.60);
+}
+.patchly-rd-btn:disabled {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(200, 168, 100, 0.30);
+  border-color: rgba(150, 110, 70, 0.15);
+  cursor: default;
+}
 
 /* ─── Loading / progress panel ───────────────────────────────────────────── */
 
@@ -527,16 +659,18 @@
   right: 24px;
   width: 360px;
   max-width: calc(100vw - 48px);
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+  background: rgba(20, 12, 5, 0.96);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.60);
   z-index: 2147483647;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #f0e0c0;
   padding: 14px 16px;
   pointer-events: all;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .patchly-ld-row {
@@ -549,39 +683,40 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  border: 2px solid #e0e0ff;
-  border-top-color: #6366f1;
+  border: 2px solid rgba(200, 168, 100, 0.18);
+  border-top-color: #c8a864;
   border-radius: 50%;
-  animation: patchly-spin 0.7s linear infinite;
+  animation: patchly-spin 0.75s linear infinite;
 }
 
 @keyframes patchly-spin { to { transform: rotate(360deg); } }
 
-.patchly-ld-stage { flex: 1; font-weight: 600; color: #1a1a1a; }
-.patchly-ld-time { font-size: 11px; color: #999; font-variant-numeric: tabular-nums; }
+.patchly-ld-stage { flex: 1; font-weight: 600; color: #f0e0c0; }
+.patchly-ld-time { font-size: 11px; color: rgba(200, 168, 100, 0.45); font-variant-numeric: tabular-nums; }
 
 .patchly-ld-text {
   margin-top: 8px;
-  color: #555;
+  color: rgba(200, 168, 100, 0.60);
   line-height: 1.4;
   max-height: 80px;
   overflow: hidden;
+  font-size: 12px;
 }
 
-/* ─── Tailwind-mode multi-select outlines ────────────────────────────────── */
+/* ─── Tailwind-mode multi-select outlines ─────────────────────────────── */
 
 .patchly-sel-highlight {
   position: fixed;
-  border: 2px solid #6366f1;
-  background: rgba(99, 102, 241, 0.10);
-  border-radius: 3px;
+  border: 2px solid rgba(200, 168, 100, 0.75);
+  background: rgba(200, 168, 100, 0.09);
+  border-radius: 4px;
   pointer-events: none;
   z-index: 2147483646;
   box-sizing: border-box;
   display: none;
 }
 
-/* ─── Direct class panel — docked Figma-style inspector ───────────────────── */
+/* ─── Class panel — docked Figma-style inspector ──────────────────────── */
 
 #patchly-class-panel {
   position: fixed;
@@ -591,20 +726,22 @@
   width: 300px;
   display: none;
   flex-direction: column;
-  background: #ffffff;
-  border-left: 1px solid #e6e6e6;
-  box-shadow: -4px 0 24px rgba(0,0,0,0.10);
+  background: rgba(18, 10, 4, 0.97);
+  border-left: 1px solid rgba(150, 110, 70, 0.22);
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.55);
   z-index: 2147483647;
   pointer-events: all;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #f0e0c0;
   overflow: hidden;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .patchly-cp-empty-panel {
   padding: 24px 16px;
-  color: #aaa;
+  color: rgba(200, 168, 100, 0.35);
   font-size: 12px;
   text-align: center;
 }
@@ -615,15 +752,18 @@
   align-items: center;
   gap: 4px;
   padding: 8px 10px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.18);
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .patchly-cp-title {
   font-weight: 600;
   font-size: 12px;
-  color: #555;
+  color: rgba(200, 168, 100, 0.65);
   flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .patchly-cp-undo,
@@ -637,27 +777,26 @@
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
-  color: #555;
+  color: rgba(200, 168, 100, 0.50);
   font-family: inherit;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .patchly-cp-undo:hover:not(:disabled),
 .patchly-cp-redo:hover:not(:disabled),
 .patchly-cp-close:hover {
-  background: #f0f0f0;
-  border-color: #e0e0e0;
+  background: rgba(200, 168, 100, 0.10);
+  border-color: rgba(200, 168, 100, 0.20);
+  color: #f0e0c0;
 }
 
 .patchly-cp-undo:disabled,
-.patchly-cp-redo:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
+.patchly-cp-redo:disabled { opacity: 0.22; cursor: default; }
 
-.patchly-cp-close {
-  font-size: 18px;
-  color: #999;
-}
+.patchly-cp-close { font-size: 16px; color: rgba(200, 168, 100, 0.35); }
 
 /* Header: tag + file:line */
 .patchly-cp-header {
@@ -666,22 +805,23 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.15);
   flex-shrink: 0;
 }
 
 .patchly-cp-tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #6366f1;
+  color: #c8a864;
   font-weight: 600;
 }
 
 .patchly-cp-loc {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: #aaa;
-  background: #f7f7fb;
+  color: rgba(200, 168, 100, 0.40);
+  background: rgba(200, 168, 100, 0.07);
+  border: 1px solid rgba(200, 168, 100, 0.12);
   border-radius: 4px;
   padding: 2px 6px;
 }
@@ -689,20 +829,20 @@
 .patchly-cp-dynamic {
   margin: 10px 14px 0;
   padding: 8px 10px;
-  background: #fafafa;
-  border: 1px solid #eee;
+  background: rgba(200, 168, 100, 0.05);
+  border: 1px solid rgba(150, 110, 70, 0.18);
   border-radius: 8px;
   font-size: 11px;
-  color: #888;
+  color: rgba(200, 168, 100, 0.50);
   line-height: 1.4;
 }
 
 .patchly-cp-section-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: #999;
+  color: rgba(200, 168, 100, 0.40);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   padding: 14px 14px 6px;
 }
 
@@ -719,47 +859,53 @@
   gap: 8px;
   padding: 4px 6px;
   border-radius: 6px;
+  transition: background 0.1s;
 }
-
-.patchly-cp-row:hover { background: #f7f7fb; }
+.patchly-cp-row:hover { background: rgba(200, 168, 100, 0.07); }
 
 .patchly-cp-check {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  border: 1px solid rgba(150, 110, 70, 0.40);
+  background: rgba(255, 255, 255, 0.04);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
-  color: #fff;
+  color: transparent;
   flex-shrink: 0;
   padding: 0;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .patchly-cp-check.on {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: rgba(200, 168, 100, 0.28);
+  border-color: rgba(200, 168, 100, 0.60);
+  color: #f0e0c0;
 }
 
 .patchly-cp-check.mixed {
-  background: #c7d2fe;
-  border-color: #a5b4fc;
-  color: #4338ca;
+  background: rgba(200, 168, 100, 0.12);
+  border-color: rgba(200, 168, 100, 0.35);
+  color: #c8a864;
 }
 
 .patchly-cp-clsname {
   flex: 1;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #333;
+  color: rgba(240, 224, 192, 0.85);
   word-break: break-all;
 }
 
 .patchly-cp-mixed {
   font-size: 10px;
-  color: #9333ea;
-  background: #f3e8ff;
+  color: #c8a864;
+  background: rgba(200, 168, 100, 0.10);
+  border: 1px solid rgba(200, 168, 100, 0.20);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
@@ -768,21 +914,21 @@
 .patchly-cp-rm {
   background: none;
   border: none;
-  color: #cbd5e1;
+  color: rgba(200, 168, 100, 0.22);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   padding: 0 2px;
   flex-shrink: 0;
   font-family: inherit;
+  transition: color 0.15s;
 }
-
-.patchly-cp-rm:hover { color: #ef4444; }
+.patchly-cp-rm:hover { color: #f87171; }
 
 .patchly-cp-empty {
   padding: 4px 6px;
   font-size: 12px;
-  color: #bbb;
+  color: rgba(200, 168, 100, 0.28);
 }
 
 /* Search */
@@ -791,14 +937,19 @@
   align-items: center;
   gap: 6px;
   margin: 0 14px;
-  border: 1px solid #e0e0e0;
-  border-radius: 7px;
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 8px;
   padding: 6px 10px;
-  background: #fafafa;
+  background: rgba(200, 168, 100, 0.05);
   flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+.patchly-cp-search:focus-within {
+  border-color: rgba(200, 168, 100, 0.45);
+  background: rgba(200, 168, 100, 0.08);
 }
 
-.patchly-cp-search-icon { font-size: 12px; color: #bbb; }
+.patchly-cp-search-icon { font-size: 12px; color: rgba(200, 168, 100, 0.35); }
 
 .patchly-cp-search-input {
   flex: 1;
@@ -807,11 +958,10 @@
   background: transparent;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: #333;
-  caret-color: #6366f1;
+  color: #f0e0c0;
+  caret-color: #c8a864;
 }
-
-.patchly-cp-search-input::placeholder { color: #ccc; }
+.patchly-cp-search-input::placeholder { color: rgba(200, 168, 100, 0.28); }
 
 /* Search / suggestion results */
 .patchly-cp-results {
@@ -828,28 +978,36 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
+  background: rgba(200, 168, 100, 0.07);
+  border: 1px solid rgba(150, 110, 70, 0.22);
   border-radius: 6px;
   padding: 3px 8px;
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: #555;
+  color: rgba(200, 168, 100, 0.70);
   cursor: pointer;
+  transition: all 0.12s;
+}
+.patchly-cp-result:hover {
+  background: rgba(200, 168, 100, 0.16);
+  border-color: rgba(200, 168, 100, 0.40);
+  color: #f0e0c0;
+}
+.patchly-cp-result.on {
+  background: rgba(200, 168, 100, 0.20);
+  border-color: rgba(200, 168, 100, 0.50);
+  color: #f0e0c0;
 }
 
-.patchly-cp-result:hover { background: #e0e7ff; border-color: #a5b4fc; color: #4338ca; }
-.patchly-cp-result.on { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
-
-.patchly-cp-result-act { font-size: 11px; opacity: 0.6; }
+.patchly-cp-result-act { font-size: 11px; opacity: 0.5; }
 
 .patchly-cp-noresult {
   font-size: 12px;
-  color: #bbb;
+  color: rgba(200, 168, 100, 0.28);
   padding: 6px 2px;
 }
 
-/* ─── Class panel: body + per-element sections (multi-select) ─────────────── */
+/* ─── Class panel: body + per-element sections (multi-select) ─────────── */
 
 .patchly-cp-body {
   flex: 1;
@@ -857,12 +1015,12 @@
 }
 
 .patchly-cp-section {
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid rgba(150, 110, 70, 0.10);
   padding-bottom: 8px;
 }
 
 .patchly-cp-section.patchly-cp-all {
-  background: #fafaff;
+  background: rgba(200, 168, 100, 0.03);
 }
 
 .patchly-cp-sec-head {
@@ -873,7 +1031,137 @@
   padding: 9px 14px 4px;
 }
 
-/* In multi-element view the per-section class list shouldn't each grab 34vh. */
 .patchly-cp-section .patchly-cp-classlist {
   max-height: none;
+}
+
+/* ─── Scrollbars (Webkit) ─────────────────────────────────────────────── */
+
+#patchly-class-panel ::-webkit-scrollbar,
+#patchly-preview-panel ::-webkit-scrollbar,
+#patchly-picker ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+#patchly-class-panel ::-webkit-scrollbar-track,
+#patchly-preview-panel ::-webkit-scrollbar-track,
+#patchly-picker ::-webkit-scrollbar-track {
+  background: transparent;
+}
+#patchly-class-panel ::-webkit-scrollbar-thumb,
+#patchly-preview-panel ::-webkit-scrollbar-thumb,
+#patchly-picker ::-webkit-scrollbar-thumb {
+  background: rgba(150, 110, 70, 0.30);
+  border-radius: 4px;
+}
+#patchly-class-panel ::-webkit-scrollbar-thumb:hover,
+#patchly-preview-panel ::-webkit-scrollbar-thumb:hover,
+#patchly-picker ::-webkit-scrollbar-thumb:hover {
+  background: rgba(200, 168, 100, 0.50);
+}
+
+/* ─── Comment pins on page ────────────────────────────────────────────── */
+
+.patchly-comment-pin {
+  position: fixed;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: rgba(200, 168, 100, 0.90);
+  border: 2px solid rgba(200, 168, 100, 1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.50);
+  cursor: pointer;
+  pointer-events: all;
+  z-index: 2147483640;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #2a1c0e;
+  font-family: 'Inter', -apple-system, sans-serif;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.patchly-comment-pin:hover {
+  transform: rotate(-45deg) scale(1.12);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.60);
+}
+.patchly-comment-pin-num {
+  transform: rotate(45deg);
+}
+
+/* ─── Comment form bubble ─────────────────────────────────────────────── */
+
+.patchly-comment-form {
+  position: fixed;
+  z-index: 2147483645;
+  background: rgba(20, 12, 5, 0.97);
+  border: 1px solid rgba(150, 110, 70, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+  padding: 12px;
+  width: 280px;
+  pointer-events: all;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.patchly-comment-form textarea {
+  width: 100%;
+  background: rgba(200, 168, 100, 0.06);
+  border: 1px solid rgba(150, 110, 70, 0.25);
+  border-radius: 8px;
+  color: #f0e0c0;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 8px 10px;
+  resize: none;
+  outline: none;
+  min-height: 72px;
+  caret-color: #c8a864;
+  transition: border-color 0.15s;
+}
+.patchly-comment-form textarea::placeholder { color: rgba(200, 168, 100, 0.30); }
+.patchly-comment-form textarea:focus { border-color: rgba(200, 168, 100, 0.45); }
+
+.patchly-comment-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.patchly-comment-submit {
+  flex: 1;
+  background: rgba(200, 168, 100, 0.22);
+  color: #f0e0c0;
+  border: 1px solid rgba(200, 168, 100, 0.42);
+  border-radius: 7px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.patchly-comment-submit:hover {
+  background: rgba(200, 168, 100, 0.34);
+  border-color: rgba(200, 168, 100, 0.62);
+}
+
+.patchly-comment-cancel {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(200, 168, 100, 0.55);
+  border: 1px solid rgba(150, 110, 70, 0.20);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.patchly-comment-cancel:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(200, 168, 100, 0.80);
 }

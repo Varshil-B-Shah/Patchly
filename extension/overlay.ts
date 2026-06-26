@@ -274,13 +274,13 @@ function updateIdentityChip(): void {
     name.style.cssText = 'font-size:12px;'
     const out = document.createElement('button')
     out.textContent = 'Sign out'
-    out.style.cssText = 'background:none;border:none;color:#a0a0c0;font-size:11px;cursor:pointer;'
+    out.style.cssText = 'background:none;border:none;color:rgba(200,168,100,0.55);font-size:11px;cursor:pointer;font-family:inherit;transition:color 0.15s;'
     out.addEventListener('click', () => window.__patchlySignOut?.())
     chip.append(name, out)
   } else {
     const btn = document.createElement('button')
     btn.textContent = 'Sign in with GitHub'
-    btn.style.cssText = 'background:#24292e;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;'
+    btn.style.cssText = 'background:rgba(200,168,100,0.18);color:#f0e0c0;border:1px solid rgba(200,168,100,0.38);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;transition:all 0.15s;'
     btn.addEventListener('click', () => {
       const url = window.__patchlyGetCloudApiUrl?.()
       const pid = window.__patchlyGetCloudProjectId?.()
@@ -541,12 +541,12 @@ function buildPins(): void {
     pin.textContent = String(i + 1)
     pin.style.cssText = `
       position:fixed;left:0;top:0;
-      width:24px;height:24px;background:#7c3aed;color:#fff;
+      width:24px;height:24px;background:rgba(200,168,100,0.90);color:#2a1c0e;
       border-radius:50%;display:flex;align-items:center;justify-content:center;
-      font-size:11px;font-weight:700;font-family:sans-serif;
+      font-size:11px;font-weight:700;font-family:'Inter',sans-serif;
       pointer-events:auto;cursor:pointer;
-      box-shadow:0 2px 8px rgba(0,0,0,.4);border:2px solid #fff;
-      z-index:2147483647;user-select:none;
+      box-shadow:0 3px 12px rgba(0,0,0,0.55);border:2px solid rgba(240,224,192,0.80);
+      z-index:2147483647;user-select:none;transition:transform 0.15s,box-shadow 0.15s;
     `
     pin.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -632,11 +632,12 @@ function openPinCard(
   pinCardEl.className = 'patchly-pin-card'
   pinCardEl.style.cssText = `
     position:fixed;z-index:2147483647;
-    background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;
-    padding:12px;width:280px;
-    box-shadow:0 4px 24px rgba(0,0,0,.5);
-    font-family:sans-serif;font-size:13px;color:#e0e0f0;
+    background:rgba(20,12,5,0.97);border:1px solid rgba(150,110,70,0.28);border-radius:12px;
+    padding:14px;width:288px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.04) inset;
+    font-family:'Inter',sans-serif;font-size:13px;color:#f0e0c0;
     display:flex;flex-direction:column;gap:8px;
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   `
   // Position near the pin
   const pinEl = pinsContainerEl?.querySelector(`[data-comment-id="${comment.id}"]`)
@@ -652,7 +653,7 @@ function openPinCard(
   const closeBtn = document.createElement('button')
   closeBtn.textContent = '×'
   closeBtn.style.cssText =
-    'position:absolute;top:6px;right:8px;background:none;border:none;color:#a0a0c0;font-size:16px;cursor:pointer;line-height:1;'
+    'position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(200,168,100,0.40);font-size:16px;cursor:pointer;line-height:1;font-family:inherit;transition:color 0.15s;'
   closeBtn.addEventListener('click', closePinCard)
 
   // Pin number + meta header
@@ -660,7 +661,7 @@ function openPinCard(
   header.style.cssText = 'display:flex;align-items:center;gap:6px;padding-right:20px;'
   const badge = document.createElement('span')
   badge.style.cssText =
-    'background:#7c3aed;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;'
+    'background:rgba(200,168,100,0.90);color:#2a1c0e;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;'
   badge.textContent = String(pinNumber)
   header.append(badge)
   if (comment.authorAvatar) {
@@ -671,7 +672,7 @@ function openPinCard(
     header.append(av)
   }
   const metaText = document.createElement('span')
-  metaText.style.cssText = 'color:#a0a0c0;font-size:11px;'
+  metaText.style.cssText = 'color:rgba(200,168,100,0.50);font-size:11px;'
   metaText.textContent = [
     comment.author,
     comment.tag ? `<${comment.tag}>` : null,
@@ -693,7 +694,7 @@ function openPinCard(
     imgEl = document.createElement('img')
     imgEl.alt = ''
     imgEl.style.cssText =
-      'width:100%;border-radius:4px;border:1px solid #3b3b5c;max-height:140px;object-fit:cover;'
+      'width:100%;border-radius:6px;border:1px solid rgba(150,110,70,0.25);max-height:140px;object-fit:cover;'
     // Phase A: base64 string. Phase B: { url, key } from UploadThing CDN.
     if (typeof comment.screenshot === 'string') {
       imgEl.src = `data:image/png;base64,${comment.screenshot}`
@@ -718,19 +719,19 @@ function openPinCard(
     const fixAIBtn = document.createElement('button')
     fixAIBtn.textContent = 'Fix with AI'
     fixAIBtn.style.cssText =
-      'padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600;'
+      'padding:5px 12px;border-radius:6px;border:1px solid rgba(200,168,100,0.45);background:rgba(200,168,100,0.22);color:#f0e0c0;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all 0.15s;'
     fixAIBtn.addEventListener('click', () => fixWithAI(comment))
 
     const editClassBtn = document.createElement('button')
     editClassBtn.textContent = 'Edit classes'
     editClassBtn.style.cssText =
-      'padding:4px 10px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#e0e0f0;cursor:pointer;font-size:12px;'
+      'padding:5px 12px;border-radius:6px;border:1px solid rgba(150,110,70,0.28);background:rgba(255,255,255,0.04);color:rgba(240,224,192,0.85);cursor:pointer;font-size:12px;font-family:inherit;transition:all 0.15s;'
     editClassBtn.addEventListener('click', () => editClasses(comment))
 
     const resolveBtn = document.createElement('button')
     resolveBtn.textContent = 'Resolve'
     resolveBtn.style.cssText =
-      'padding:4px 10px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:12px;'
+      'padding:5px 12px;border-radius:6px;border:1px solid rgba(150,110,70,0.22);background:rgba(255,255,255,0.03);color:rgba(200,168,100,0.55);cursor:pointer;font-size:12px;font-family:inherit;transition:all 0.15s;'
     resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
 
     actions.append(fixAIBtn, editClassBtn, resolveBtn)
@@ -738,12 +739,12 @@ function openPinCard(
     // Toolbar closed — read-only view. Reply thread still works (shown separately).
     // Clicking the pin re-opens the toolbar automatically if the user wants to act.
     const hint = document.createElement('span')
-    hint.style.cssText = 'font-size:11px;color:#555577;'
+    hint.style.cssText = 'font-size:11px;color:rgba(200,168,100,0.40);'
     hint.textContent = 'Open Patchly to fix or resolve.'
     actions.appendChild(hint)
   } else {
     const resolvedLabel = document.createElement('span')
-    resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;'
+    resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;font-weight:600;'
     resolvedLabel.textContent = '✓ Resolved'
     actions.appendChild(resolvedLabel)
   }
@@ -754,7 +755,7 @@ function openPinCard(
   // Reply thread (existing replies)
   if (comment.replies && comment.replies.length > 0) {
     const thread = document.createElement('div')
-    thread.style.cssText = 'border-top:1px solid #3b3b5c;padding-top:8px;display:flex;flex-direction:column;gap:6px;'
+    thread.style.cssText = 'border-top:1px solid rgba(150,110,70,0.20);padding-top:8px;display:flex;flex-direction:column;gap:6px;'
     comment.replies.forEach((r) => {
       const row = document.createElement('div')
       row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;'
@@ -767,10 +768,10 @@ function openPinCard(
       const body = document.createElement('div')
       body.style.cssText = 'flex:1;min-width:0;'
       const who = document.createElement('span')
-      who.style.cssText = 'font-size:11px;font-weight:600;color:#c0c0e0;'
+      who.style.cssText = 'font-size:11px;font-weight:600;color:rgba(240,224,192,0.90);'
       who.textContent = r.authorDisplayName  // textContent — never innerHTML
       const txt = document.createElement('span')
-      txt.style.cssText = 'font-size:12px;color:#e0e0f0;margin-left:6px;word-break:break-word;'
+      txt.style.cssText = 'font-size:12px;color:rgba(240,224,192,0.80);margin-left:6px;word-break:break-word;'
       txt.textContent = r.note              // textContent — never innerHTML
       body.append(who, txt)
       row.appendChild(body)
@@ -782,14 +783,14 @@ function openPinCard(
   // Reply input (open comments only — requires sign-in in cloud mode)
   if (comment.status === 'open') {
     const replyRow = document.createElement('div')
-    replyRow.style.cssText = 'display:flex;gap:6px;border-top:1px solid #3b3b5c;padding-top:8px;'
+    replyRow.style.cssText = 'display:flex;gap:6px;border-top:1px solid rgba(150,110,70,0.20);padding-top:8px;'
     const replyInput = document.createElement('input')
     replyInput.type = 'text'
     replyInput.placeholder = 'Reply…'
-    replyInput.style.cssText = 'flex:1;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;'
+    replyInput.style.cssText = 'flex:1;background:rgba(200,168,100,0.06);color:#f0e0c0;border:1px solid rgba(150,110,70,0.28);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit;outline:none;'
     const replyBtn = document.createElement('button')
     replyBtn.textContent = 'Reply'
-    replyBtn.style.cssText = 'padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600;'
+    replyBtn.style.cssText = 'padding:5px 12px;border-radius:6px;border:1px solid rgba(200,168,100,0.42);background:rgba(200,168,100,0.22);color:#f0e0c0;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all 0.15s;'
     const sendReply = (): void => {
       const note = replyInput.value.trim()
       if (!note) return
@@ -808,7 +809,7 @@ function openPinCard(
   if (drifted) {
     const driftWarning = document.createElement('div')
     driftWarning.style.cssText =
-      'color:#f59e0b;font-size:11px;padding:4px 6px;background:#2a2010;border-radius:4px;'
+      'color:#fbbf24;font-size:11px;padding:4px 8px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.25);border-radius:6px;'
     driftWarning.textContent = '⚠ Element may have changed since this comment was left'
     pinCardEl.appendChild(driftWarning)
   }
@@ -817,7 +818,7 @@ function openPinCard(
 
   if (comment.status === 'open' && isActive) {
     const hints = document.createElement('div')
-    hints.style.cssText = 'color:#555577;font-size:10px;margin-top:2px;'
+    hints.style.cssText = 'color:rgba(200,168,100,0.35);font-size:10px;margin-top:2px;letter-spacing:0.02em;'
     hints.textContent = 'A · Fix with AI  T · Tailwind  R · Resolve  Esc · Close'
     pinCardEl.appendChild(hints)
   }
@@ -1537,13 +1538,13 @@ function initCommentComposer(): void {
   // Max z-index + appended after #patchly-root so it stacks ABOVE the full-screen
   // capture layer (which has pointer-events:all + cursor:crosshair). cursor:default
   // overrides the page-level crosshair while the pointer is over the composer.
-  commentComposerEl.style.cssText = 'display:none;position:fixed;z-index:2147483647;cursor:default;flex-direction:column;gap:6px;background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:300px;box-shadow:0 4px 24px rgba(0,0,0,.4);'
+  commentComposerEl.style.cssText = 'display:none;position:fixed;z-index:2147483647;cursor:default;flex-direction:column;gap:8px;background:rgba(20,12,5,0.97);border:1px solid rgba(150,110,70,0.28);border-radius:12px;padding:14px;width:300px;box-shadow:0 12px 40px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.04) inset;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font-family:Inter,sans-serif;'
   commentComposerEl.innerHTML = `
-    <textarea id="patchly-cc-note" rows="3" placeholder="Describe the change needed…" style="resize:vertical;width:100%;box-sizing:border-box;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;"></textarea>
-    <input id="patchly-cc-author" type="text" placeholder="Your name (optional)" style="background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;" />
+    <textarea id="patchly-cc-note" rows="3" placeholder="Describe the change needed…" style="resize:vertical;width:100%;box-sizing:border-box;background:rgba(200,168,100,0.06);color:#f0e0c0;border:1px solid rgba(150,110,70,0.28);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none;caret-color:#c8a864;"></textarea>
+    <input id="patchly-cc-author" type="text" placeholder="Your name (optional)" style="background:rgba(200,168,100,0.06);color:#f0e0c0;border:1px solid rgba(150,110,70,0.25);border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit;outline:none;caret-color:#c8a864;width:100%;box-sizing:border-box;" />
     <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button id="patchly-cc-cancel" style="padding:4px 12px;border-radius:4px;border:1px solid #3b3b5c;background:transparent;color:#a0a0c0;cursor:pointer;font-size:13px;">Cancel</button>
-      <button id="patchly-cc-submit" style="padding:4px 12px;border-radius:4px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Add Comment</button>
+      <button id="patchly-cc-cancel" style="padding:6px 14px;border-radius:7px;border:1px solid rgba(150,110,70,0.25);background:rgba(255,255,255,0.04);color:rgba(200,168,100,0.60);cursor:pointer;font-size:13px;font-family:inherit;transition:all 0.15s;">Cancel</button>
+      <button id="patchly-cc-submit" style="padding:6px 14px;border-radius:7px;border:1px solid rgba(200,168,100,0.45);background:rgba(200,168,100,0.22);color:#f0e0c0;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;transition:all 0.15s;">Add Comment</button>
     </div>
   `
   document.body.appendChild(commentComposerEl)
@@ -1948,22 +1949,23 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePa
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed; bottom: 24px; right: 24px; background: #fff;
-    border: 1px solid #d1fae5; border-left: 4px solid #22c55e; border-radius: 10px;
-    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
-    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    position: fixed; bottom: 24px; right: 24px; background: rgba(20,12,5,0.97);
+    border: 1px solid rgba(150,110,70,0.25); border-left: 4px solid #4ade80; border-radius: 12px;
+    padding: 12px 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.60); z-index: 2147483647;
+    max-width: 360px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px; display: flex; align-items: center; gap: 12px;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   `
 
   toast.innerHTML = `
     <div style="flex:1">
-      <span style="color:#16a34a;font-weight:600">Applied</span>
-      <span style="color:#666"> — ${filePath}</span>
+      <span style="color:#4ade80;font-weight:600">Applied</span>
+      <span style="color:rgba(200,168,100,0.55);"> — ${filePath}</span>
     </div>
     ${showUndo ? `<button id="patchly-undo-btn" style="
-      background:none;border:1px solid #d1d5db;border-radius:6px;
-      padding:3px 10px;font-size:12px;cursor:pointer;color:#555;
-      font-family:inherit;white-space:nowrap;
+      background:rgba(255,255,255,0.05);border:1px solid rgba(150,110,70,0.25);border-radius:7px;
+      padding:4px 12px;font-size:12px;cursor:pointer;color:rgba(200,168,100,0.75);
+      font-family:inherit;white-space:nowrap;transition:all 0.15s;
     ">Undo</button>` : ''}
   `
 
@@ -1987,7 +1989,7 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePa
     const resolveOfferBtn = document.createElement('button')
     resolveOfferBtn.textContent = 'Resolve comment?'
     resolveOfferBtn.style.cssText =
-      'margin-left:6px;padding:2px 8px;border-radius:4px;border:1px solid #7c3aed;background:transparent;color:#a78bfa;cursor:pointer;font-size:12px;'
+      'margin-left:6px;padding:3px 10px;border-radius:6px;border:1px solid rgba(200,168,100,0.38);background:rgba(200,168,100,0.12);color:rgba(200,168,100,0.85);cursor:pointer;font-size:12px;font-family:inherit;transition:all 0.15s;'
     resolveOfferBtn.addEventListener('click', () => {
       resolveComment(matchingComment.id, 'dev')
       resolveOfferBtn.remove()
@@ -2007,16 +2009,16 @@ function showErrorToast(message: string): void {
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed; bottom: 24px; right: 24px; background: #fff;
-    border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 10px;
-    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
-    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 13px;
+    position: fixed; bottom: 24px; right: 24px; background: rgba(20,12,5,0.97);
+    border: 1px solid rgba(150,110,70,0.25); border-left: 4px solid #f87171; border-radius: 12px;
+    padding: 12px 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.60); z-index: 2147483647;
+    max-width: 360px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   `
 
   toast.innerHTML = `
-    <div style="color:#dc2626;font-weight:600;margin-bottom:4px">Patchly error</div>
-    <div style="color:#666;line-height:1.4">${message}</div>
+    <div style="color:#f87171;font-weight:600;margin-bottom:4px">Patchly error</div>
+    <div style="color:rgba(200,168,100,0.65);line-height:1.4">${message}</div>
   `
 
   document.body.appendChild(toast)
@@ -2032,16 +2034,16 @@ function showInfoToast(message: string): void {
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed; bottom: 24px; right: 24px; background: #fff;
-    border: 1px solid #e0e7ff; border-left: 4px solid #6366f1; border-radius: 10px;
-    padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.10); z-index: 2147483647;
-    max-width: 360px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 13px;
+    position: fixed; bottom: 24px; right: 24px; background: rgba(20,12,5,0.97);
+    border: 1px solid rgba(150,110,70,0.25); border-left: 4px solid #c8a864; border-radius: 12px;
+    padding: 12px 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.60); z-index: 2147483647;
+    max-width: 360px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   `
 
   toast.innerHTML = `
-    <div style="color:#4f46e5;font-weight:600;margin-bottom:4px">Patchly</div>
-    <div style="color:#666;line-height:1.4">${message}</div>
+    <div style="color:#c8a864;font-weight:600;margin-bottom:4px">Patchly</div>
+    <div style="color:rgba(200,168,100,0.65);line-height:1.4">${message}</div>
   `
 
   document.body.appendChild(toast)
@@ -2125,24 +2127,25 @@ function showRedirectToast(msg: Record<string, unknown>): void {
     .join('')
 
   const reasons = suggestions[0]?.reason
-    ? `<div style="color:#666;margin-bottom:10px;line-height:1.4">${suggestions[0].reason}</div>`
+    ? `<div style="color:rgba(200,168,100,0.55);margin-bottom:10px;line-height:1.4">${suggestions[0].reason}</div>`
     : ''
 
   const toast = document.createElement('div')
   toast.id = 'patchly-toast'
   toast.style.cssText = `
-    position: fixed; bottom: 24px; right: 24px; background: #fff;
-    border: 1px solid #e0e7ff; border-left: 4px solid #6366f1; border-radius: 10px;
-    padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 2147483647;
-    max-width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    position: fixed; bottom: 24px; right: 24px; background: rgba(20,12,5,0.97);
+    border: 1px solid rgba(150,110,70,0.25); border-left: 4px solid #c8a864; border-radius: 12px;
+    padding: 14px 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.65); z-index: 2147483647;
+    max-width: 380px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px; pointer-events: all;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   `
   toast.innerHTML = `
-    <div style="font-weight:600;margin-bottom:6px;color:#1a1a1a">This change lives in another component</div>
+    <div style="font-weight:600;margin-bottom:6px;color:#f0e0c0">This change lives in another component</div>
     ${reasons}
     <div style="display:flex;flex-direction:column;gap:6px">
       ${buttons}
-      <button class="patchly-rd-cancel" style="background:none;border:none;color:#999;font-size:12px;cursor:pointer;padding:4px 0">Cancel</button>
+      <button class="patchly-rd-cancel" style="background:none;border:none;color:rgba(200,168,100,0.40);font-size:12px;cursor:pointer;padding:4px 0;font-family:inherit;">Cancel</button>
     </div>
   `
 
