@@ -111,7 +111,7 @@ export const ERROR_CODES = Object.freeze({
 /** Union of all error-code string literals, e.g. "TARGET_DRIFTED". */
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
 
-// ─── Message payload shapes ───────────────────────────────────────────────────
+
 // Previously documented only as comments; now real types consumed by the agent
 // (and, after bundling, by the extension).
 

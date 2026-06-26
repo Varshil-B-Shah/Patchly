@@ -17,7 +17,7 @@ interface SrcCandidate {
 }
 interface SelectionRect { x: number; y: number; width: number; height: number }
 
-// ─── State ──────────────────────────────────────────────────────────────────────
+
 let isActive = false            // editing mode on/off
 let activeMode: 'ai' | 'tailwind' | 'comment' = 'ai'
 let pinsVisible = true          // user toggle — persists across mode switches
@@ -87,7 +87,7 @@ function checkFingerprint(
   return true
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+
 
 function init(): void {
   if (document.getElementById('patchly-root')) return
@@ -139,7 +139,7 @@ function init(): void {
   initPinsLayer()
 }
 
-// ─── Floating toolbar ────────────────────────────────────────────────────────
+
 
 function buildToolbar(): void {
   toolbar = document.createElement('div')
@@ -248,7 +248,7 @@ function setConnectedDot(connected: boolean): void {
   if (dot) dot.classList.toggle('connected', connected)
 }
 
-// ─── Cloud identity (Phase D2) ───────────────────────────────────────────────
+
 let currentIdentity: { userId: string; name: string; image?: string } | null = null
 
 // Toolbar identity chip — only in comment mode + cloud mode. Signed-in member
@@ -270,7 +270,7 @@ function updateIdentityChip(): void {
       chip.appendChild(av)
     }
     const name = document.createElement('span')
-    name.textContent = currentIdentity.name  // textContent — never innerHTML
+    name.textContent = currentIdentity.name
     name.style.cssText = 'font-size:12px;'
     const out = document.createElement('button')
     out.textContent = 'Sign out'
@@ -309,7 +309,7 @@ function onRedo(): void {
   if (activeMode === 'tailwind') classRedo()
 }
 
-// ─── Editing-mode lifecycle ──────────────────────────────────────────────────
+
 
 function toggle(): void {
   if (isActive) exitEditing()
@@ -398,7 +398,7 @@ function onViewportChange(): void {
   if (isActive && activeMode === 'tailwind') renderSelHighlights()
 }
 
-// ─── Modes ───────────────────────────────────────────────────────────────────
+
 
 function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   if (activeMode === 'comment') hideCommentComposer()
@@ -686,7 +686,7 @@ function openPinCard(
   // Note text — UNTRUSTED: textContent only, never innerHTML
   const noteEl = document.createElement('p')
   noteEl.style.cssText = 'margin:0;line-height:1.5;word-break:break-word;'
-  noteEl.textContent = comment.note  // SECURITY: textContent, never innerHTML
+  noteEl.textContent = comment.note
 
   // Screenshot thumbnail
   let imgEl: HTMLImageElement | null = null
@@ -769,10 +769,10 @@ function openPinCard(
       body.style.cssText = 'flex:1;min-width:0;'
       const who = document.createElement('span')
       who.style.cssText = 'font-size:11px;font-weight:600;color:rgba(240,224,192,0.90);'
-      who.textContent = r.authorDisplayName  // textContent — never innerHTML
+      who.textContent = r.authorDisplayName
       const txt = document.createElement('span')
       txt.style.cssText = 'font-size:12px;color:rgba(240,224,192,0.80);margin-left:6px;word-break:break-word;'
-      txt.textContent = r.note              // textContent — never innerHTML
+      txt.textContent = r.note
       body.append(who, txt)
       row.appendChild(body)
       thread.appendChild(row)
@@ -892,7 +892,7 @@ function inspectCurrentSelection(): void {
   window.__patchlyInspect?.(srcs, pendingInspectSessionId)
 }
 
-// ─── Mouse handling ──────────────────────────────────────────────────────────
+
 
 function onMouseDown(e: MouseEvent): void {
   if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
@@ -978,9 +978,7 @@ function onMouseUp(e: MouseEvent): void {
 
   if (activeMode === 'comment' && isDragging) {
     if (commentComposerEl && commentComposerEl.contains(e.target as Node)) return
-    // Same cloud-mode sign-in gate as the click path.
-    const _cloudUrl = window.__patchlyGetCloudApiUrl?.() ?? null
-    if (_cloudUrl && !currentIdentity) {
+    if (window.__patchlyGetCloudApiUrl?.() && !currentIdentity) {
       if (selectionRect) selectionRect.style.display = 'none'
       isDragging = false
       showInfoToast('Sign in with GitHub to comment — click the chip in the toolbar.')
@@ -1072,7 +1070,7 @@ function getSelectionRect(): SelectionRect {
   }
 }
 
-// ─── AI area selection (drag box → candidates / picker) ──────────────────────
+
 
 function findTargetElement(rect: SelectionRect): void {
   const srcCandidates = gatherSrcCandidates(rect)
@@ -1119,7 +1117,7 @@ function pickByCenter(rect: SelectionRect): Element | null {
   return elementAtPoint(centerX, centerY)
 }
 
-// ─── AI single/batch selection ───────────────────────────────────────────────
+
 
 function selectElement(el: Element, rect: SelectionRect): void {
   selectedElement = el
@@ -1160,7 +1158,7 @@ function autoGrowPrompt(): void {
   promptInput.style.height = Math.min(promptInput.scrollHeight, 160) + 'px'
 }
 
-// ─── Tailwind multi-select ───────────────────────────────────────────────────
+
 
 function tailwindSelect(el: Element, additive: boolean): void {
   if (!additive) {
@@ -1208,7 +1206,7 @@ function clearSelHighlights(): void {
   selHighlights.forEach((d) => (d.style.display = 'none'))
 }
 
-// ─── AI component picker (from area drag) ────────────────────────────────────
+
 
 function showComponentPicker(rect: SelectionRect, candidates: SrcCandidate[]): void {
   let picker = document.getElementById('patchly-picker') as HTMLDivElement | null
@@ -1312,7 +1310,7 @@ function hidePicker(): void {
   if (picker) picker.style.display = 'none'
 }
 
-// ─── Screenshot + AI edit dispatch ───────────────────────────────────────────
+
 
 // Walk the React fiber tree to extract the nearest component name + curated props.
 // React 16+ stores a fiber on DOM nodes as __reactFiber$<hash>. We walk up to the
@@ -1530,7 +1528,7 @@ function resetPromptBar(): void {
   if (componentLabel) componentLabel.style.display = 'none'
 }
 
-// ─── Comment composer ────────────────────────────────────────────────────────
+
 
 function initCommentComposer(): void {
   commentComposerEl = document.createElement('div')
@@ -1624,7 +1622,7 @@ function submitComment(): void {
         componentName: commentPendingReactInfo?.componentName ?? null,
         fingerprint: commentPendingEl ? buildCommentFingerprint(commentPendingEl) : undefined,
         pageUrl: window.location.href,
-        note,   // plain text — rendered via textContent elsewhere, never innerHTML
+        note,
         author,
         screenshot: commentPendingScreenshot ?? undefined,
       }
@@ -1641,10 +1639,10 @@ function submitComment(): void {
   hideCommentComposer()
 }
 
-// ─── Comments sidebar ────────────────────────────────────────────────────────
+
 // Sidebar removed — pins layer is sufficient for discovery.
 
-// ─── Globals (content → overlay) ─────────────────────────────────────────────
+
 window.__patchlyResetPromptBar = resetPromptBar
 window.__patchlyActivate = activate
 window.__patchlyToggle = toggle
@@ -1710,7 +1708,7 @@ window.__patchlyOnCommentsCleared = () => {
   buildPins()
 }
 
-// ─── Diff / preview rendering ────────────────────────────────────────────────
+
 
 function renderDiff(diff: string): string {
   return (diff || '')
@@ -1766,7 +1764,7 @@ async function showPreview(msg: Record<string, unknown>): Promise<void> {
   showPreviewPanel(msg)
 }
 
-// ─── Loading / progress panel ─────────────────────────────────────────────────
+
 const STAGE_LABELS: Record<string, string> = {
   analyzing: 'Analyzing component…',
   generating: 'Asking the model…',
@@ -1940,7 +1938,7 @@ function showPreviewBatch(msg: Record<string, unknown>): void {
 
 window.__patchlyShowPreviewBatch = showPreviewBatch
 
-// ─── Toasts ──────────────────────────────────────────────────────────────────
+
 
 function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePath: string; showUndo?: boolean; editId?: string | null }): void {
   const existing = document.getElementById('patchly-toast')
@@ -2069,7 +2067,7 @@ window.__patchlyShowSuccess = (opts) => {
 window.__patchlyShowError = showErrorToast
 window.__patchlyShowInfo = showInfoToast
 
-// ─── Cross-file redirect ──────────────────────────────────────────────────────
+
 
 function srcFileStem(src: string): string {
   const file = (src || '').split(':')[0]
@@ -2165,7 +2163,7 @@ function showRedirectToast(msg: Record<string, unknown>): void {
 
 window.__patchlyShowRedirect = showRedirectToast
 
-// ─── Direct class panel (Tailwind mode) ──────────────────────────────────────
+
 
 window.__patchlyShowElementInfo = function (msg: Record<string, unknown>): void {
   const sessionId = msg.sessionId as string | undefined

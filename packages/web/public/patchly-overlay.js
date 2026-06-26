@@ -84,7 +84,7 @@
     return new Promise(function (resolve) {
       var box   = el('div', 'position:fixed;bottom:80px;right:16px;z-index:2147483647;background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:220px;box-shadow:0 4px 24px rgba(0,0,0,.5);font-family:sans-serif;');
       var label = el('div', 'color:#e0e0f0;font-size:13px;margin-bottom:6px;');
-      label.textContent = 'Your name (for comments)';  // textContent — never innerHTML
+      label.textContent = 'Your name (for comments)';
       var input = el('input', 'width:100%;box-sizing:border-box;background:#2a2a3e;color:#e0e0f0;border:1px solid #3b3b5c;border-radius:4px;padding:6px 8px;font-size:13px;font-family:inherit;');
       input.type = 'text'; input.placeholder = 'Sarah…';
       var row   = el('div', 'display:flex;gap:6px;margin-top:8px;');
@@ -198,7 +198,7 @@
         'box-shadow:0 2px 8px rgba(0,0,0,.4);border:2px solid #fff;' +
         'z-index:2147483621;user-select:none;'
       );
-      pin.textContent = String(i + 1);  // textContent — never innerHTML
+      pin.textContent = String(i + 1);
       pin.addEventListener('click', (function (comment, num) {
         return function (e) { e.stopPropagation(); openPinCard(comment, num, e.currentTarget); };
       })(c, i + 1));
@@ -244,7 +244,7 @@
     hdr.append(badge, meta);
 
     var noteEl = el('p', 'margin:0;line-height:1.5;word-break:break-word;');
-    noteEl.textContent = c.note;  // SECURITY: textContent only, never innerHTML
+    noteEl.textContent = c.note;
 
     pinCardEl.append(closeBtn, hdr, noteEl);
 
@@ -267,9 +267,9 @@
         }
         var body = el('div', 'flex:1;min-width:0;');
         var who = el('span', 'font-size:11px;font-weight:600;color:#c0c0e0;');
-        who.textContent = r.authorDisplayName;  // textContent — never innerHTML
+        who.textContent = r.authorDisplayName;
         var txt = el('span', 'font-size:12px;color:#e0e0f0;margin-left:6px;word-break:break-word;');
-        txt.textContent = r.note;               // textContent — never innerHTML
+        txt.textContent = r.note;
         body.append(who, txt);
         row.appendChild(body);
         thread.appendChild(row);
@@ -544,7 +544,7 @@
         domIndex: domIndex >= 0 ? domIndex : undefined,
       },
       pageUrl: window.location.href,
-      note: note,  // stored verbatim — never eval'd
+      note: note,
       authorDisplayName: authorName || reviewerName,
       reviewerId: reviewerId,
     };
