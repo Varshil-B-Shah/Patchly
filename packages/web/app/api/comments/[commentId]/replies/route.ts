@@ -4,9 +4,11 @@
 
 import { connectDb } from '@/lib/db'
 import { resolveAuth } from '@/lib/apiAuth'
+import { Project } from '@/lib/models/Project'
 import { Comment } from '@/lib/models/Comment'
 import { toComment } from '@/lib/serialize'
 import { ok, err } from '@/lib/http'
+import { isMember } from '@/lib/projectAccess'
 import { z } from 'zod'
 
 const replySchema = z.object({
@@ -32,7 +34,14 @@ export async function POST(
   await connectDb()
   const comment = await Comment.findById(commentId)
   if (!comment) return err('Comment not found', 404)
-  if (String(comment.projectId) !== a.projectId) return err('Forbidden', 403)
+
+  if (a.kind === 'member') {
+    const project = await Project.findById(comment.projectId).lean()
+    if (!project || !isMember(project, a.userId)) return err('Forbidden', 403)
+  } else if (a.kind !== 'linkToken') {
+    // devToken
+    if (String(comment.projectId) !== a.projectId) return err('Forbidden', 403)
+  }
 
   // Build reply with server-trusted identity.
   let authorType: 'member' | 'link-reviewer'
@@ -48,11 +57,11 @@ export async function POST(
   } else if (a.kind === 'linkToken') {
     authorType = 'link-reviewer'
     authorId = a.linkId
-    authorDisplayName = parsed.data.authorDisplayName ?? 'Reviewer'
+    authorDisplayName = parsed.data.authorDisplayName || 'Reviewer'
   } else {
     authorType = 'member'
     authorId = a.projectId
-    authorDisplayName = parsed.data.authorDisplayName ?? 'Dev'
+    authorDisplayName = parsed.data.authorDisplayName || 'Dev'
   }
 
   comment.replies.push({

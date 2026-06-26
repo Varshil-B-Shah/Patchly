@@ -10,13 +10,15 @@ const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? '')
 
 export interface MemberTokenClaims {
   userId: string
-  projectId: string
   name: string
   image?: string
 }
 
+// Token encodes WHO you are; project access is verified dynamically at each API route.
+// This means one token works across all projects you're a member of, and changing
+// PATCHLY_PROJECT_ID in .env never invalidates an existing token.
 export async function mintMemberToken(c: MemberTokenClaims): Promise<string> {
-  return new SignJWT({ projectId: c.projectId, name: c.name, image: c.image })
+  return new SignJWT({ name: c.name, image: c.image })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(c.userId)
     .setIssuedAt()
@@ -27,10 +29,9 @@ export async function mintMemberToken(c: MemberTokenClaims): Promise<string> {
 export async function verifyMemberToken(token: string): Promise<MemberTokenClaims | null> {
   try {
     const { payload } = await jwtVerify(token, secret())
-    if (!payload.sub || typeof payload.projectId !== 'string') return null
+    if (!payload.sub) return null
     return {
       userId: payload.sub,
-      projectId: payload.projectId,
       name: typeof payload.name === 'string' ? payload.name : '',
       image: typeof payload.image === 'string' ? payload.image : undefined,
     }

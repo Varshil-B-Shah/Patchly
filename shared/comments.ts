@@ -21,6 +21,9 @@ export interface ReviewComment {
     tagName: string
     identifyingAttrs?: Record<string, string>
     textSnippet?: string
+    /** Index among all elements sharing this data-patchly-src — disambiguates
+     *  reused components even when text is empty or identical. */
+    domIndex?: number
   }
   // kind === 'area'
   rect?: { x: number; y: number; w: number; h: number }

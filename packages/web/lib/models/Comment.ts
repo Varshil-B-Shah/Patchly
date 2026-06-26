@@ -6,6 +6,7 @@ const FingerprintSchema = new Schema(
     tagName: { type: String, required: true },
     identifyingAttrs: { type: Map, of: String },
     textSnippet: { type: String },
+    domIndex: { type: Number },  // Nth instance of this data-patchly-src in DOM order
   },
   { _id: false },
 )

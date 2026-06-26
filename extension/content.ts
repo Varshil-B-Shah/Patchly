@@ -3,11 +3,15 @@
 // messages to the overlay UI (via window.__patchly* globals).
 
 // Stamp the DOM so page scripts (like patchly-overlay.js) can detect the extension.
-// Skip on the Patchly dashboard itself to avoid Next.js SSR hydration mismatches.
-const _isDashboard = window.location.hostname === 'patchly.app' ||
-  (window.location.hostname === 'localhost' && window.location.port === '3000')
+// Skip on the Patchly dashboard itself (it self-identifies via a meta tag) to avoid
+// SSR hydration mismatches. A meta check — not host/port — so a user's Next app on
+// :3000 is NOT mistaken for the dashboard.
+// Signal the overlay (patchly-overlay.js, which runs in the page world) that the
+// extension is present. sessionStorage is shared between the isolated world and the
+// page world, touches no DOM, and clears when the tab closes — zero hydration impact.
+const _isDashboard = !!document.querySelector('meta[name="patchly-dashboard"]')
 if (!_isDashboard) {
-  document.documentElement.setAttribute('data-patchly-ext', '1')
+  try { sessionStorage.setItem('__patchly_ext', '1') } catch { /* storage blocked */ }
 }
 
 import { DEFAULT_PORT, PORT_SCAN_RANGE } from '../shared/agentInfo.js'
@@ -47,6 +51,10 @@ function pushIdentity(): void {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.patchlyMemberToken) pushIdentity()
 })
+
+// Push identity immediately on page load so the toolbar chip reflects sign-in
+// state as soon as the extension is opened — no need to wait for a WS STATUS.
+pushIdentity()
 
 function setConnected(connected: boolean): void {
   isConnected = connected

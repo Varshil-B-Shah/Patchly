@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./dist/agent/index.js",
-    "./vite": "./dist/vite-plugin/index.js"
+    "./vite": "./dist/vite-plugin/index.js",
+    "./next": "./dist/next-plugin/index.js",
+    "./next/loader": "./dist/next-plugin/loader.js",
+    "./next/review": "./dist/next-plugin/review.js"
   },
   "bin": {
     "patchly": "./dist/agent/index.js"
@@ -41,6 +44,12 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
     "@types/babel__generator": "^7.27.0",
@@ -48,6 +57,7 @@
     "@types/chrome": "^0.1.43",
     "@types/diff": "^7.0.2",
     "@types/node": "^25.9.3",
+    "@types/react": "^18.3.17",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.28.1",
     "tsx": "^4.22.4",

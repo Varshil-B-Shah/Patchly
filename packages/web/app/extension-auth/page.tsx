@@ -42,7 +42,8 @@ export default async function ExtensionAuthPage({
 
   const name = session.user.name || session.user.username || 'Member'
   const image = session.user.image ?? undefined
-  const token = await mintMemberToken({ userId, projectId, name, image })
+  // Token encodes identity only — project access is verified dynamically per request.
+  const token = await mintMemberToken({ userId, name, image })
 
   return (
     <Shell>

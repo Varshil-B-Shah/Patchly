@@ -36,6 +36,10 @@ export interface LLMSuccess {
   operations: EditOperation[]
   explanation: string
   confidence: number
+  /** Files the LLM was explicitly given context for — used by the server to
+   *  allow cross-file edits (e.g. editing a caller file). Any op targeting a
+   *  file NOT in this list is pinned back to the originally-selected source. */
+  allowedFiles: string[]
 }
 export interface LLMRedirect {
   ok: false
@@ -61,6 +65,7 @@ type UserContent =
 
 interface PromptContext {
   imports?: ImportContext[]
+  callers?: ImportContext[]
   globalCss?: string | null
 }
 
@@ -82,8 +87,8 @@ export async function getEditInstruction({
   screenshot_base64?: string | null
   onProgress?: ProgressFn
 }): Promise<LLMResult> {
-  // Context (imports, global CSS, tailwind tokens). Best-effort — never blocks.
-  let context = { imports: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
+  // Context (imports, callers, global CSS, tailwind tokens). Best-effort — never blocks.
+  let context = { imports: [] as ImportContext[], callers: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
   try {
     context = loadProjectContext(sourceResult, config.projectRoot)
   } catch {}
@@ -100,7 +105,19 @@ export async function getEditInstruction({
 
   const res = await callLLM({ config, systemPrompt, userContent, onProgress })
   if (!res.ok) return res
-  return parseEditRequest(res.rawContent)
+
+  const parsed = parseEditRequest(res.rawContent)
+  if (!parsed.ok || !parsed.success) return parsed
+
+  // Collect every file we explicitly sent to the LLM. The server uses this list
+  // to allow cross-file edits (e.g. editing a caller file) while still blocking
+  // any file the LLM invented on its own.
+  const allowedFiles = [
+    sourceResult.relativePath,
+    ...context.imports.map((i) => i.path),
+    ...context.callers.map((c) => c.path),
+  ]
+  return { ...parsed, allowedFiles }
 }
 
 // Multi-element edit within ONE file (the batch / fan-out path): all targets are
@@ -121,7 +138,7 @@ export async function getBatchEditInstruction({
   config: ResolvedConfig
   onProgress?: ProgressFn
 }): Promise<LLMResult> {
-  let context = { imports: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
+  let context = { imports: [] as ImportContext[], callers: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
   try {
     context = loadProjectContext(sourceResult, config.projectRoot)
   } catch {}
@@ -131,7 +148,10 @@ export async function getBatchEditInstruction({
 
   const res = await callLLM({ config, systemPrompt, userContent: userPrompt, onProgress })
   if (!res.ok) return res
-  return parseEditRequest(res.rawContent)
+  const parsed = parseEditRequest(res.rawContent)
+  // Batch path always stays in the selected file — no callers needed.
+  if (parsed.ok && parsed.success) return { ...parsed, allowedFiles: [sourceResult.relativePath] }
+  return parsed
 }
 
 // Shared LLM transport: credentials, streaming fetch, idle timeout, finish_reason
@@ -342,8 +362,9 @@ The response must match this schema exactly:
         "file": "<relative file path, e.g. src/components/Hero.jsx>",
         "line": <1-based line number from data-patchly-src>,
         "column": <0-based column from data-patchly-src>,
-        "tagName": "<HTML/component tag, e.g. h1>",
-        "textSnippet": "<first ~40 chars of visible text content, if any>"
+        "tagName": "<HTML/component tag, e.g. h1 or StatCard>",
+        "textSnippet": "<first ~40 chars of visible text content, if any>",
+        "identifyingAttrs": { "<attr>": "<value>" }   // optional — include when multiple elements share the same tagName (e.g. four <StatCard> calls). Pick string-valued props that uniquely identify this instance.
       },
       ... operation-specific fields ...
     }
@@ -395,14 +416,23 @@ Decision rules:
 - Multiple operations are allowed for compound edits (e.g. setClassName + setText together).
 - If you cannot make the edit, return "operations": [] and explain in "explanation".
 
-CRITICAL — operations may only target elements that LITERALLY appear in the file source below:
-- Every operation's target must be a lowercase HTML element you can actually see in the source (e.g. <th>, <button>, <li>, <p>).
-- NEVER emit an operation for content rendered by a child component. Child components are CAPITALIZED JSX tags (e.g. <UserRow/>, <StatsCard/>, <Badge/>) — their internal elements live in OTHER files, so you do not have their line numbers. Do not guess line numbers for them.
+Prop-driven content in reusable components:
+- If the selected element's children are a prop expression like {value} or {label}, do NOT hardcode a literal there — that would change ALL instances of the component.
+- Instead, look in "### Caller files" for where <ComponentName prop="current-value"> is written.
+- Use setAttribute targeting the <ComponentName> call in the CALLER file to change that specific instance's prop.
+  Example: change <StatCard value="0.4%"> to <StatCard value="0.5%"> using setAttribute on the StatCard line in the caller file.
+- setAttribute and other ops MAY target capitalized component tags (e.g. <StatCard>, <Button>) when the target is in a "### Caller files" section.
+- CRITICAL for caller-file targets: multiple instances of the same component share the same tagName, so include "identifyingAttrs" with string-valued props that uniquely identify THIS instance.
+  Example: if there are four <StatCard> calls and you want the "Error rate" one, add "identifyingAttrs": { "label": "Error rate" } to the target so the engine finds exactly one match.
+
+CRITICAL — in the PRIMARY source file, operations may only target elements that LITERALLY appear in that file's source:
+- Every operation targeting the primary file must be a lowercase HTML element you can see in the source (e.g. <th>, <button>, <li>, <p>).
+- NEVER emit an operation for content rendered by a child component in the primary file. Child components are CAPITALIZED JSX tags — their internal elements live in OTHER files.
 
 Cross-file redirect:
-- If the element the instruction refers to is rendered by an imported child component (a capitalized tag like <UserRow/> or <StatsCard/>) and is therefore NOT in this file, do NOT force an edit, do NOT guess a line, and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s) from the imports:
+- If the element the instruction refers to is rendered by an imported child component (a capitalized tag like <UserRow/> or <StatsCard/>) and is therefore NOT in the primary file, do NOT force an edit, do NOT guess a line, and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s) from the imports:
   "redirect": [ { "file": "src/features/users/components/UserRow.jsx", "reason": "the status badge is rendered inside UserRow, not the table header" } ]
-- If the instruction would touch BOTH an element in this file AND something inside a child component, prefer the redirect to the child component (where the visible thing the user described actually lives) rather than editing only the in-file part.
+- If the instruction would touch BOTH an element in this file AND something inside a child component, prefer the redirect to the child component.
 - Use the import paths you were given to pick the file. List multiple only if genuinely unsure.
 
 Examples:
@@ -495,6 +525,14 @@ function buildUserPrompt({
     lines.push('', '### Direct imports')
     for (const imp of context.imports) {
       lines.push(`/* ${imp.path} */`, '```jsx', imp.content, '```')
+    }
+  }
+
+  if (context.callers && context.callers.length > 0) {
+    lines.push('', '### Caller files (files that USE this component)')
+    lines.push('If the instruction targets a value driven by a prop (e.g. {value}, {children}), edit the prop at the call site here instead of hardcoding inside the component.')
+    for (const c of context.callers) {
+      lines.push(`/* ${c.path} */`, '```jsx', c.content, '```')
     }
   }
 
@@ -616,5 +654,6 @@ function parseEditRequest(rawContent: string): LLMResult {
     operations: parsed.operations as EditOperation[],
     explanation: parsed.explanation,
     confidence: parsed.confidence,
+    allowedFiles: [],  // populated by the callers (getEditInstruction / getBatchEditInstruction)
   }
 }

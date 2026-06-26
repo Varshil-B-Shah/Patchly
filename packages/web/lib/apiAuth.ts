@@ -11,12 +11,11 @@ import { connectDb } from '@/lib/db'
 import { Project } from '@/lib/models/Project'
 import { ReviewLink } from '@/lib/models/ReviewLink'
 import { verifyMemberToken } from '@/lib/memberToken'
-import { isMember } from '@/lib/projectAccess'
 
 export type AuthContext =
   | { kind: 'session'; userId: string }
   | { kind: 'devToken'; projectId: string }
-  | { kind: 'member'; projectId: string; userId: string; name: string; image?: string }
+  | { kind: 'member'; userId: string; name: string; image?: string }
   | { kind: 'linkToken'; projectId: string; linkId: string }
   | { kind: 'none' }
 
@@ -36,15 +35,14 @@ export async function resolveAuth(req: Request): Promise<AuthContext> {
     const project = await Project.findOne({ devToken: token }).lean()
     if (project) return { kind: 'devToken', projectId: String(project._id) }
 
-    // Member token (signed JWT). Re-check live membership so removal = instant revoke.
+    // Member token (signed JWT). Token = identity only; project access is checked
+    // at each route against the specific project being requested. This means one
+    // token works for all projects the user is a member of, and changing
+    // PATCHLY_PROJECT_ID in .env never invalidates a stored token.
     if (token.includes('.')) {
       const claims = await verifyMemberToken(token)
       if (claims) {
-        const proj = await Project.findById(claims.projectId).lean()
-        if (proj && isMember(proj, claims.userId)) {
-          return { kind: 'member', projectId: claims.projectId, userId: claims.userId, name: claims.name, image: claims.image }
-        }
-        return { kind: 'none' } // valid signature but no longer a member → revoked
+        return { kind: 'member', userId: claims.userId, name: claims.name, image: claims.image }
       }
     }
 

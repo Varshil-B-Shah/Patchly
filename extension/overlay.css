@@ -76,6 +76,43 @@
 
 .patchly-tb-sep { width: 1px; height: 20px; background: #eee; }
 
+/* ── Comments show/hide toggle switch ─────────────────────────────────────── */
+.patchly-tb-pins-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  gap: 5px;
+}
+.patchly-tb-pins-check { display: none; }
+.patchly-tb-pins-track {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #d1d5db;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.patchly-tb-pins-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: left 0.2s, background 0.2s;
+}
+.patchly-tb-pins-check:checked + .patchly-tb-pins-track {
+  background: linear-gradient(135deg, #67e8f9 0%, #4ade80 100%);
+}
+.patchly-tb-pins-check:checked + .patchly-tb-pins-track .patchly-tb-pins-thumb {
+  left: 18px;
+}
+
 .patchly-tb-undo,
 .patchly-tb-redo,
 .patchly-tb-settings,

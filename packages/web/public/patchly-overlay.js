@@ -24,6 +24,7 @@
   var composerEl   = null;
   var highlightEl  = null;
   var pinCardEl    = null;
+  var openCardPinEl = null;  // the pin DOM element that opened the current card
   var inMode       = false;   // comment-capture mode
   var selectedEl   = null;
   var h2cLoaded    = false;
@@ -44,22 +45,19 @@
       reviewerId = crypto.randomUUID();
       localStorage.setItem('patchly_reviewer_id', reviewerId);
     }
+    // If the Patchly extension is installed, it handles ALL comment/pin UI.
+    // The overlay would create a duplicate pin layer — skip everything here.
+    var extPresent = false;
+    try { extPresent = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
+    if (extPresent) return;
+
     reviewerName = localStorage.getItem('patchly_reviewer_name') || '';
-    if (!reviewerName) {
-      // content.ts stamps data-patchly-ext on <html> immediately on load (DOM is
-      // shared across worlds; window.* vars are not). Check it after a brief tick
-      // so the content script has had time to run.
-      await new Promise(function (r) { setTimeout(r, 200); });
-      var extPresent = document.documentElement.getAttribute('data-patchly-ext') === '1';
-      if (!extPresent) reviewerName = await promptNameOnce();
-    }
+    if (!reviewerName) reviewerName = await promptNameOnce();
 
     buildPinsLayer();
     buildHighlight();
     buildComposer();
-    // Only show the + button for reviewers without the extension (tunnel/beta).
-    // data-patchly-ext is stamped by content.ts on load — visible cross-world.
-    if (document.documentElement.getAttribute('data-patchly-ext') !== '1') buildAddButton();
+    buildAddButton();
     await loadComments();
 
     window.addEventListener('popstate', loadComments);
@@ -68,7 +66,7 @@
     // Near-live polling — new comments/replies appear within ~5s.
     setInterval(function() {
       if (document.visibilityState === 'visible') loadComments();
-    }, 5000);
+    }, 3000);
   }
 
   // ── Name prompt ───────────────────────────────────────────────────────────────
@@ -119,14 +117,52 @@
     renderPins();
   }
 
+  var openCommentId = null;
+
+  // Resolve the exact element a comment points at. Multiple instances of one
+  // component share the same data-patchly-src, so disambiguate by the text snippet
+  // captured at comment time.
+  function findAnchorEl(c) {
+    if (!c.patchlySrc) return null;
+    var matches = document.querySelectorAll('[data-patchly-src="' + CSS.escape(c.patchlySrc) + '"]');
+    if (matches.length <= 1) return matches[0] || null;
+    var fp = c.fingerprint || {};
+    var snip = fp.textSnippet;
+    // 1. Unique text match (handles reordered lists with stable text).
+    if (snip) {
+      var textHits = [];
+      for (var i = 0; i < matches.length; i++) {
+        var t = (matches[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (t.slice(0, snip.length) === snip) textHits.push(matches[i]);
+      }
+      if (textHits.length === 1) return textHits[0];
+    }
+    // 2. DOM index (handles empty / identical-text elements).
+    if (typeof fp.domIndex === 'number' && fp.domIndex >= 0 && fp.domIndex < matches.length) {
+      return matches[fp.domIndex];
+    }
+    // 3. First text hit, else first element.
+    if (snip) {
+      for (var j = 0; j < matches.length; j++) {
+        var t2 = (matches[j].textContent || '').replace(/\s+/g, ' ').trim();
+        if (t2.slice(0, snip.length) === snip) return matches[j];
+      }
+    }
+    return matches[0];
+  }
+
   function renderPins() {
     if (!pinsEl) return;
-    closePinCard();
     pinsEl.innerHTML = '';
-    comments.forEach(function (c, i) {
+    // Oldest first → pin #1 is the earliest comment.
+    var ordered = comments.slice().sort(function (a, b) {
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    var placed = {}; // "x,y" → count, to spread overlapping pins
+    ordered.forEach(function (c, i) {
       var x = null, y = null;
       if (c.kind === 'element' && c.patchlySrc) {
-        var found = document.querySelector('[data-patchly-src="' + CSS.escape(c.patchlySrc) + '"]');
+        var found = findAnchorEl(c);
         if (found) {
           var r = found.getBoundingClientRect();
           x = r.left + r.width / 2;
@@ -137,6 +173,12 @@
         y = c.rect.y - window.scrollY;
       }
       if (x === null) return;
+
+      // Spread pins that land on the same spot so none get hidden behind another.
+      var key = Math.round(x) + ',' + Math.round(y);
+      var n = placed[key] || 0;
+      placed[key] = n + 1;
+      x += n * 26;
 
       var pin = el('div',
         'position:fixed;left:' + (x - 12) + 'px;top:' + (y - 12) + 'px;' +
@@ -153,6 +195,12 @@
       })(c, i + 1));
       pinsEl.appendChild(pin);
     });
+
+    // Don't close an open card on re-render (polling/scroll) — only if its comment
+    // was deleted. This lets the user read/reply without the card vanishing.
+    if (openCommentId && !comments.some(function (c) { return c.id === openCommentId; })) {
+      closePinCard();
+    }
   }
 
   window.addEventListener('scroll', renderPins, { passive: true });
@@ -161,6 +209,8 @@
   // ── Pin card (read-only) ──────────────────────────────────────────────────────
   function openPinCard(c, num, pinEl) {
     closePinCard();
+    openCommentId = c.id;
+    openCardPinEl = pinEl || openCardPinEl;  // keep last known pin if not provided
     pinCardEl = el('div',
       'position:fixed;z-index:2147483647;' +
       'background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:280px;' +
@@ -238,11 +288,15 @@
           return r2.json();
         }).then(function(updated) {
           if (!updated) return;
-          // Update cached comment and re-render the card
+          // Update cached comment so polling sees the new reply too.
           for (var i = 0; i < comments.length; i++) {
             if (comments[i].id === c.id) { comments[i] = updated; break; }
           }
+          // Save pin reference before closePinCard clears it, then reopen
+          // so the card stays positioned near the pin (not bottom-right corner).
+          var savedPin = openCardPinEl;
           closePinCard();
+          openCardPinEl = savedPin;  // restore so openPinCard can use it
           openPinCard(updated, num, null);
         }).catch(function() { replyBtn.disabled = false; });
       };
@@ -274,15 +328,16 @@
       pinCardEl.appendChild(deleteBtn);
     }
 
-    // Position near the pin that was clicked, same logic as the extension.
-    if (pinEl) {
-      var r = pinEl.getBoundingClientRect();
+    // Position near the pin. openCardPinEl retains the last known pin so that
+    // reopening after reply submission doesn't fall back to the bottom-right corner.
+    var anchorPin = openCardPinEl;
+    if (anchorPin) {
+      var r = anchorPin.getBoundingClientRect();
       var top  = Math.min(r.bottom + 6, window.innerHeight - 220);
       var left = Math.max(8, Math.min(r.left - 8, window.innerWidth - 296));
       pinCardEl.style.top  = top  + 'px';
       pinCardEl.style.left = left + 'px';
     } else {
-      // Fallback if no pin element
       pinCardEl.style.bottom = '80px';
       pinCardEl.style.right  = '16px';
     }
@@ -293,6 +348,8 @@
 
   function closePinCard() {
     if (pinCardEl) { pinCardEl.remove(); pinCardEl = null; }
+    openCommentId = null;
+    openCardPinEl = null;
   }
 
   // ── Add button ────────────────────────────────────────────────────────────────
@@ -314,7 +371,10 @@
     inMode = !inMode;
     addBtn.style.background = inMode ? '#16a34a' : '#7c3aed';
     addBtn.textContent = inMode ? '×' : '+';
-    document.body.style.cursor = inMode ? 'crosshair' : '';
+    // Do NOT touch document.body.style — it causes a React hydration mismatch because
+    // React diffs the server-rendered <body> against the client one and sees the
+    // style attribute appearing unexpectedly. The hover highlight already shows which
+    // element is targeted, so no cursor change is needed.
     if (!inMode) { hideHighlight(); hideComposer(); }
   }
 
@@ -334,6 +394,7 @@
 
   document.addEventListener('mouseover', function (e) {
     if (!inMode || composerVisible()) return;
+    if (isOverlayUi(e.target)) { hideHighlight(); return; }
     var target = e.target.closest('[data-patchly-src]');
     if (!target) { hideHighlight(); return; }
     var r = target.getBoundingClientRect();
@@ -346,10 +407,25 @@
     });
   });
 
+  // True when the event originated on Patchly's own overlay UI (the +/× button,
+  // composer, pins, or a pin card). The root layout's <body> carries a
+  // data-patchly-src attribute, so without this guard a click on our own controls
+  // would resolve `closest('[data-patchly-src]')` up to <body> and (a) open a stray
+  // composer and (b) stopPropagation past the button's own handler — which is why
+  // the × never closed comment mode.
+  function isOverlayUi(node) {
+    return !!(
+      (addBtn && addBtn.contains(node)) ||
+      (composerEl && composerEl.contains(node)) ||
+      (pinsEl && pinsEl.contains(node)) ||
+      (pinCardEl && pinCardEl.contains(node))
+    );
+  }
+
   // ── Comment mode click ────────────────────────────────────────────────────────
   document.addEventListener('click', function (e) {
     if (!inMode) return;
-    if (composerEl && composerEl.contains(e.target)) return;
+    if (isOverlayUi(e.target)) return;
     closePinCard();
     var target = e.target.closest('[data-patchly-src]');
     if (!target) return;
@@ -395,7 +471,13 @@
     document.body.appendChild(composerEl);
 
     composerEl.addEventListener('mousedown', function (e) { e.stopPropagation(); });
-    cancelBtn.onclick = hideComposer;
+    cancelBtn.onclick = function() {
+      hideComposer();
+      if (inMode) toggleMode();  // exit comment mode so clicks don't reopen the composer
+    };
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && inMode) { e.preventDefault(); hideComposer(); toggleMode(); }
+    }, { capture: true });
     submitBtn.onclick = async function () {
       var note   = document.getElementById('ptly-note').value.trim();
       var author = document.getElementById('ptly-author').value.trim();
@@ -436,11 +518,22 @@
     var screenshotUploadKey;
     try { screenshotUploadKey = await captureAndUpload(selectedEl); } catch (e) { /* skip */ }
 
+    // Disambiguate THIS instance from other copies of the same component:
+    // a normalized text snippet + the element's index among same-src siblings.
+    var snippet = (selectedEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    var siblings = document.querySelectorAll('[data-patchly-src="' + CSS.escape(patchlySrc) + '"]');
+    var domIndex = Array.prototype.indexOf.call(siblings, selectedEl);
+
     var body = {
       projectId: projectId,
       kind: 'element',
       patchlySrc: patchlySrc,
       tag: selectedEl.tagName.toLowerCase(),
+      fingerprint: {
+        tagName: selectedEl.tagName.toLowerCase(),
+        textSnippet: snippet,
+        domIndex: domIndex >= 0 ? domIndex : undefined,
+      },
       pageUrl: window.location.href,
       note: note,  // stored verbatim — never eval'd
       authorDisplayName: authorName || reviewerName,
