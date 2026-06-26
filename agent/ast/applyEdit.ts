@@ -70,12 +70,21 @@ export async function applyEditOperations({
 
   const snapshot = diskText
 
-  // ── Apply each operation (re-resolve per op so prior drift is handled) ──
+  // ── Two-phase batch: resolve ALL targets BEFORE any mutations ──
+  // If we called resolveTarget inside the apply loop, the first op's AST
+  // mutation (e.g. inserting a `style` attr) can invalidate the line/column
+  // positions recorded in subsequent ops, causing a false TARGET_DRIFTED.
+  // Resolving everything upfront against the clean AST avoids this.
+  const resolvedOps: { node: import('./types.js').JsxNode; op: EditOperation }[] = []
   for (const op of operations) {
     const resolved = resolveTarget(sourceFile, op.target)
     if (!resolved.ok) return resolved
+    resolvedOps.push({ node: resolved.node, op })
+  }
 
-    const result = applyOperation(resolved.node, op, project)
+  // ── Apply each resolved operation ──
+  for (const { node, op } of resolvedOps) {
+    const result = applyOperation(node, op, project)
     if (!result.ok) return result
   }
 
