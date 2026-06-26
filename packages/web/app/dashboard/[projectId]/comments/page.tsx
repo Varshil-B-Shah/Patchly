@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { resolveComment, deleteComment, clearResolved } from '@/app/actions'
 import { isMember } from '@/lib/projectAccess'
+import { DashboardShell } from '../../../_dashboard/DashboardShell'
 
 function relTime(d: Date | string) {
   const diff = Date.now() - new Date(d).getTime()
@@ -37,7 +38,6 @@ export default async function CommentsPage({
   const filter: Record<string, unknown> = { projectId: project._id }
   if (status !== 'all') filter.status = status
   const rawDocs = await Comment.find(filter).sort({ createdAt: -1 }).lean()
-  // Serialize inline — avoids the lean() FlattenMaps vs CommentDoc type mismatch
   const docs = rawDocs.map((d) => ({
     id: String(d._id),
     note: d.note,
@@ -54,7 +54,6 @@ export default async function CommentsPage({
       const rv = r as unknown as Record<string, unknown>
       return {
         id: String(rv._id ?? ''),
-        authorType: String(rv.authorType ?? 'member'),
         authorDisplayName: String(rv.authorDisplayName ?? ''),
         authorAvatar: (rv.authorAvatar as string | undefined) ?? undefined,
         note: String(rv.note ?? ''),
@@ -65,120 +64,140 @@ export default async function CommentsPage({
 
   const resolvedCount = await Comment.countDocuments({ projectId: project._id, status: 'resolved' })
 
+  const tabStyle = (active: boolean) => active
+    ? { background: 'rgba(200,168,100,0.22)', border: '1px solid rgba(200,168,100,0.4)', color: '#2a1c0e', fontWeight: 600 }
+    : { border: '1px solid transparent', color: '#6b4e30' }
+
   return (
-    <div className="max-w-3xl mx-auto py-10 px-4 space-y-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/dashboard" className="hover:text-gray-700">Projects</Link>
-        <span>›</span>
-        <Link href={`/dashboard/${projectId}`} className="hover:text-gray-700">{project.name}</Link>
-        <span>›</span>
-        <span className="text-gray-900 font-medium">Comments</span>
-      </div>
-
-      {/* Header + filter tabs + clear button */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg text-sm">
-          {(['open', 'resolved', 'all'] as const).map((s) => (
+    <DashboardShell
+      breadcrumb={[{ label: 'Projects', href: '/dashboard' }, { label: project.name, href: `/dashboard/${projectId}` }, { label: 'Comments' }]}
+      userName={session?.user?.name ?? undefined}
+    >
+      <div className="space-y-5">
+        {/* Header + filter tabs */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-4">
             <Link
-              key={s}
-              href={`/dashboard/${projectId}/comments?status=${s}`}
-              className={`px-3 py-1 rounded-md transition font-medium capitalize ${
-                status === s ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              href={`/dashboard/${projectId}`}
+              className="flex items-center justify-center w-8 h-8 rounded-full transition-opacity hover:opacity-80"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--w-pale)' }}
+              title="Back to Project"
             >
-              {s}
+              ←
             </Link>
-          ))}
+            <h1
+              className="text-[1.7rem]"
+              style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)', textShadow: '0 2px 12px rgba(0,0,0,.4)' }}
+            >
+              Comments
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 p-1 rounded-sm" style={{ background: 'rgba(0,0,0,0.2)' }}>
+              {(['open', 'resolved', 'all'] as const).map((s) => (
+                <Link
+                  key={s}
+                  href={`/dashboard/${projectId}/comments?status=${s}`}
+                  className="px-3 py-1 rounded-sm text-sm capitalize transition-opacity hover:opacity-90"
+                  style={tabStyle(status === s)}
+                >
+                  {s}
+                </Link>
+              ))}
+            </div>
+            {resolvedCount > 0 && (
+              <form action={clearResolved.bind(null, projectId)}>
+                <button
+                  className="text-xs px-3 py-1.5 rounded-sm border transition-opacity hover:opacity-80"
+                  style={{ borderColor: 'rgba(150,110,70,0.3)', color: 'var(--text-muted)' }}
+                >
+                  Clear {resolvedCount} resolved
+                </button>
+              </form>
+            )}
+          </div>
         </div>
-        {resolvedCount > 0 && (
-          <form action={clearResolved.bind(null, projectId)}>
-            <button className="text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
-              Clear {resolvedCount} resolved
-            </button>
-          </form>
-        )}
-      </div>
 
-      {/* Comment list */}
-      {docs.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-12">No {status === 'all' ? '' : status} comments.</p>
-      ) : (
-        <div className="space-y-3">
-          {docs.map((c) => {
-            const path = (() => { try { return new URL(c.pageUrl).pathname } catch { return c.pageUrl } })()
-            return (
-              <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1 flex-1 min-w-0">
-                    {/* Note */}
-                    <p className="text-gray-900 text-sm leading-relaxed">{c.note}</p>
-                    {/* Meta */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400">
-                      {c.authorAvatar && (
+        {/* Comment list */}
+        {docs.length === 0 ? (
+          <div
+            className="py-14 text-center text-sm rounded-sm border"
+            style={{ color: 'var(--text-muted)', borderColor: 'rgba(100,75,45,0.2)', background: 'rgba(255,255,255,0.02)' }}
+          >
+            No {status === 'all' ? '' : status} comments.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {docs.map((c) => {
+              const path = (() => { try { return new URL(c.pageUrl).pathname } catch { return c.pageUrl } })()
+              return (
+                <div key={c.id} className="paper rounded-sm shadow-sm relative">
+                  <div className="tape absolute -top-1.5 left-5 w-10 h-2.5 -rotate-3" />
+                  <div className="px-6 py-5 space-y-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <p className="text-sm leading-relaxed" style={{ color: '#2a1c0e' }}>{c.note}</p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs" style={{ color: '#6b4e30' }}>
+                          {c.authorAvatar && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={c.authorAvatar} alt="" className="w-4 h-4 rounded-full" />
+                          )}
+                          <span className="font-medium">{c.authorDisplayName}</span>
+                          {c.tag && <span className="font-mono px-1 rounded" style={{ background: 'rgba(160,120,70,0.12)' }}>&lt;{c.tag}&gt;</span>}
+                          {c.componentName && <span>{c.componentName}</span>}
+                          <a href={c.pageUrl} target="_blank" rel="noreferrer" className="hover:underline truncate max-w-xs opacity-70">{path}</a>
+                          <span>·</span>
+                          <span>{relTime(c.createdAt)}</span>
+                          {c.status === 'resolved' && (
+                            <span className="px-1.5 py-0.5 rounded-full font-semibold text-[0.68rem]" style={{ background: 'rgba(34,197,94,0.12)', color: '#15803d' }}>Resolved</span>
+                          )}
+                        </div>
+                      </div>
+                      {c.screenshot?.url && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={c.authorAvatar} alt="" className="w-4 h-4 rounded-full" />
-                      )}
-                      <span className="font-medium text-gray-600">{c.authorDisplayName}</span>
-                      {c.tag && <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">&lt;{c.tag}&gt;</span>}
-                      {c.componentName && <span className="text-gray-500">{c.componentName}</span>}
-                      <a href={c.pageUrl} target="_blank" rel="noreferrer" className="hover:text-indigo-500 truncate max-w-xs">
-                        {path}
-                      </a>
-                      <span>·</span>
-                      <span>{relTime(c.createdAt)}</span>
-                      {c.status === 'resolved' && (
-                        <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Resolved</span>
+                        <img src={c.screenshot.url} alt="" className="w-20 h-14 object-cover rounded shrink-0 border" style={{ borderColor: 'rgba(160,120,70,0.2)' }} />
                       )}
                     </div>
-                  </div>
-                  {/* Screenshot thumbnail */}
-                  {c.screenshot?.url && (
-                    <img
-                      src={c.screenshot.url}
-                      alt=""
-                      className="w-20 h-14 object-cover rounded-lg border border-gray-100 shrink-0"
-                    />
-                  )}
-                </div>
 
-                {/* Reply thread */}
-                {c.replies && c.replies.length > 0 && (
-                  <div className="ml-4 pl-4 border-l border-gray-100 space-y-2">
-                    {c.replies.map((r) => (
-                      <div key={r.id} className="flex items-start gap-2 text-xs text-gray-500">
-                        {r.authorAvatar && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={r.authorAvatar} alt="" className="w-4 h-4 rounded-full mt-0.5 shrink-0" />
-                        )}
-                        <span className="font-medium text-gray-700">{r.authorDisplayName}</span>
-                        <span className="flex-1">{r.note}</span>
-                        <span className="text-gray-300 shrink-0">{relTime(r.createdAt)}</span>
+                    {/* Replies */}
+                    {c.replies.length > 0 && (
+                      <div className="ml-4 pl-4 space-y-2" style={{ borderLeft: '2px solid rgba(160,120,70,0.2)' }}>
+                        {c.replies.map((r) => (
+                          <div key={r.id} className="flex items-start gap-2 text-xs" style={{ color: '#5a3c1a' }}>
+                            {r.authorAvatar && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={r.authorAvatar} alt="" className="w-4 h-4 rounded-full mt-0.5 shrink-0" />
+                            )}
+                            <span className="font-medium">{r.authorDisplayName}</span>
+                            <span className="flex-1">{r.note}</span>
+                            <span className="shrink-0 opacity-50">{relTime(r.createdAt)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {/* Actions */}
-                {c.status === 'open' && (
-                  <div className="flex gap-2 pt-1">
-                    <form action={resolveComment.bind(null, projectId, c.id)}>
-                      <button className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">
-                        Resolve
-                      </button>
-                    </form>
-                    <form action={deleteComment.bind(null, projectId, c.id)}>
-                      <button className="text-xs px-3 py-1.5 border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition">
-                        Delete
-                      </button>
-                    </form>
+                    {/* Actions */}
+                    {c.status === 'open' && (
+                      <div className="flex gap-2 pt-1">
+                        <form action={resolveComment.bind(null, projectId, c.id)}>
+                          <button className="text-xs px-3 py-1.5 rounded-sm font-medium transition-opacity hover:opacity-80" style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#4f46e5' }}>
+                            Resolve
+                          </button>
+                        </form>
+                        <form action={deleteComment.bind(null, projectId, c.id)}>
+                          <button className="text-xs px-3 py-1.5 rounded-sm border transition-opacity hover:opacity-80" style={{ borderColor: 'rgba(160,120,70,0.25)', color: '#6b4e30' }}>
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </DashboardShell>
   )
 }

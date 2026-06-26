@@ -1,1 +1,195 @@
 @import "tailwindcss";
+
+/* ─── Custom properties ────────────────────────────────────────────────────── */
+:root {
+  --w0: #1a1209;
+  --w1: #241808;
+  --w2: #2e1e0c;
+  --w3: #3a2610;
+  --w4: #4d3318;
+  --w5: #624020;
+  --w6: #7a5230;
+  --w7: #9b6d44;
+  --w8: #b98855;
+  --w9: #d4a97a;
+  --w-pale: #e8c99a;
+  --w-cream: #f2e0c4;
+
+  --text-muted: #9a7d62;
+  --text-on-dark: #e2cdb0;
+
+  --f-display: 'Special Elite', serif;
+  --f-hand: 'Caveat', cursive;
+  --f-body: 'DM Sans', sans-serif;
+}
+
+/* ─── Wood surfaces (SVG feTurbulence — can't be expressed in Tailwind) ─────── */
+.wood-floor {
+  background:
+    radial-gradient(ellipse 120% 60% at 30% 0%,  #4a2e14 0%, transparent 55%),
+    radial-gradient(ellipse 80%  80% at 80% 100%, #2e1a08 0%, transparent 50%),
+    radial-gradient(ellipse 60%  40% at 60% 50%,  #3d2410 0%, transparent 60%),
+    linear-gradient(175deg, #2a1b0c 0%, #1e1208 40%, #261608 70%, #1a1009 100%);
+  position: relative;
+}
+.wood-floor::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.wood-warm {
+  background:
+    radial-gradient(ellipse 100% 50% at 20% 20%, #7a4e28 0%, transparent 50%),
+    radial-gradient(ellipse 80%  60% at 75% 80%, #4d3018 0%, transparent 55%),
+    linear-gradient(165deg, #5e3c1e 0%, #4a2e14 50%, #5a3a1c 100%);
+  position: relative;
+}
+.wood-warm::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.wood-board {
+  background:
+    radial-gradient(ellipse 110% 40% at 25% 30%, #6a4222 0%, transparent 55%),
+    radial-gradient(ellipse 70%  50% at 70% 70%, #3e2410 0%, transparent 50%),
+    linear-gradient(180deg, #4e3018 0%, #3a2010 50%, #4a2e18 100%);
+  position: relative;
+  box-shadow: 0 5px 0 #1e1008, 0 8px 0 #140c04, 0 16px 48px rgba(0,0,0,0.55),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.wood-board::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* ─── Tape strips ──────────────────────────────────────────────────────────── */
+.tape {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px,
+      transparent 1px, transparent 4px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(230,205,155,0.14) 0%,
+      rgba(210,182,128,0.44) 20%,
+      rgba(215,188,135,0.46) 50%,
+      rgba(210,182,128,0.44) 80%,
+      rgba(225,200,148,0.14) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    inset 0 -1px 0 rgba(0,0,0,0.08),
+    0 1px 3px rgba(0,0,0,0.12);
+}
+
+.tape-warm {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px,
+      transparent 1px, transparent 4px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(235,195,130,0.12) 0%,
+      rgba(215,170,100,0.42) 25%,
+      rgba(220,178,108,0.44) 50%,
+      rgba(215,170,100,0.42) 75%,
+      rgba(230,190,125,0.12) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,240,200,0.2),
+    inset 0 -1px 0 rgba(0,0,0,0.07),
+    0 1px 3px rgba(0,0,0,0.1);
+}
+
+.tape-cool {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px,
+      transparent 1px, transparent 4px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(210,205,190,0.12) 0%,
+      rgba(195,188,168,0.38) 25%,
+      rgba(200,193,175,0.40) 50%,
+      rgba(195,188,168,0.38) 75%,
+      rgba(208,202,188,0.12) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -1px 0 rgba(0,0,0,0.06),
+    0 1px 2px rgba(0,0,0,0.08);
+}
+
+/* ─── Paper card texture ───────────────────────────────────────────────────── */
+.paper {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E"),
+    linear-gradient(175deg, #f4e8d4 0%, #ecdcc4 100%);
+}
+
+/* ─── Tape underline for headlines ────────────────────────────────────────── */
+.tape-underline {
+  position: relative;
+  display: inline-block;
+}
+.tape-underline::after {
+  content: '';
+  position: absolute;
+  left: -4px; right: -4px;
+  bottom: 2px;
+  height: 12px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 5px),
+    linear-gradient(180deg, rgba(215,188,128,0.10) 0%, rgba(200,170,105,0.40) 30%, rgba(204,174,110,0.42) 70%, rgba(212,185,125,0.10) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.16);
+  transform: rotate(-0.4deg);
+  z-index: -1;
+}
+
+/* ─── Wood feature card ────────────────────────────────────────────────────── */
+.wood-card {
+  background:
+    radial-gradient(ellipse 90% 50% at 20% 15%, rgba(255,255,255,0.025) 0%, transparent 60%),
+    linear-gradient(160deg, #3a2410 0%, #2c1a0c 100%);
+  border: 1px solid rgba(100,70,40,0.25);
+  position: relative;
+}
+.wood-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* ─── Cursor blink ─────────────────────────────────────────────────────────── */
+@keyframes cursor-blink { 50% { opacity: 0; } }
+.cursor-blink { animation: cursor-blink 1s step-end infinite; }
+
+/* ─── Highlight glow pulse ─────────────────────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.2); }
+  50% { box-shadow: 0 0 0 4px rgba(99,102,241,0.08); }
+}
+.glow-pulse { animation: glow-pulse 2.5s ease-in-out infinite; }

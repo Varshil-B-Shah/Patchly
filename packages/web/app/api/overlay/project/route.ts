@@ -31,7 +31,9 @@ export async function GET(req: Request) {
     if (link.expiresAt && link.expiresAt < new Date()) return err('Link expired', 404)
     const project = await Project.findById(link.projectId).lean()
     if (!project) return err('Project not found', 404)
-    return ok({ projectId: String(project._id), name: project.name })
+    // Include the link's label so the reviewer overlay can use it as the
+    // display name and skip the "your name?" prompt entirely.
+    return ok({ projectId: String(project._id), name: project.name, linkLabel: link.label ?? '' })
   }
 
   // Fallback: domain match (manual script-tag path without a token).
