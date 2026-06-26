@@ -17,7 +17,7 @@ export default async function LandingPage() {
 
   return (
     <div className="wood-floor overflow-x-hidden">
-      <Navbar isLoggedIn={isLoggedIn} />
+      <Navbar isLoggedIn={isLoggedIn} userName={session?.user?.name} />
 
       <main>
         <HeroSection isLoggedIn={isLoggedIn} />

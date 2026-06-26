@@ -1,8 +1,8 @@
-'use client'
 import Link from 'next/link'
 import { Logo } from './Logo'
+import { signOut } from '@/lib/auth'
 
-export function Navbar({ isLoggedIn }: { isLoggedIn: boolean }) {
+export function Navbar({ isLoggedIn, userName }: { isLoggedIn: boolean; userName?: string | null }) {
   return (
     <nav
       className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-10 py-3 border-b border-[rgba(150,110,70,0.12)]"
@@ -35,18 +35,34 @@ export function Navbar({ isLoggedIn }: { isLoggedIn: boolean }) {
       </ul>
 
       {isLoggedIn ? (
-        <Link
-          href="/dashboard"
-          className="text-[0.82rem] font-semibold px-4 py-2 rounded-sm transition-all duration-200 border"
-          style={{
-            background: 'rgba(210,178,118,0.18)',
-            borderColor: 'rgba(210,178,118,0.4)',
-            color: 'var(--w-cream)',
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          Open Dashboard →
-        </Link>
+        <div className="flex items-center gap-4">
+          {userName && (
+            <span className="hidden sm:block text-[0.82rem] opacity-80" style={{ color: 'var(--w-pale)' }}>
+              {userName}
+            </span>
+          )}
+          <Link
+            href="/dashboard"
+            className="text-[0.82rem] font-semibold px-4 py-2 rounded-sm transition-all duration-200 border"
+            style={{
+              background: 'rgba(210,178,118,0.18)',
+              borderColor: 'rgba(210,178,118,0.4)',
+              color: 'var(--w-cream)',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            Dashboard →
+          </Link>
+          <form action={async () => { 'use server'; await signOut({ redirectTo: '/login' }) }}>
+            <button
+              type="submit"
+              className="text-[0.82rem] px-3 py-2 rounded-sm border transition-opacity hover:opacity-80"
+              style={{ borderColor: 'rgba(150,110,70,0.25)', color: 'var(--text-muted)' }}
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       ) : (
         <Link
           href="/login"

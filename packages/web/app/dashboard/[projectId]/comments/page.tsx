@@ -76,12 +76,22 @@ export default async function CommentsPage({
       <div className="space-y-5">
         {/* Header + filter tabs */}
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <h1
-            className="text-[1.7rem]"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)', textShadow: '0 2px 12px rgba(0,0,0,.4)' }}
-          >
-            Comments
-          </h1>
+          <div className="flex items-center gap-4">
+            <Link
+              href={`/dashboard/${projectId}`}
+              className="flex items-center justify-center w-8 h-8 rounded-full transition-opacity hover:opacity-80"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--w-pale)' }}
+              title="Back to Project"
+            >
+              ←
+            </Link>
+            <h1
+              className="text-[1.7rem]"
+              style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)', textShadow: '0 2px 12px rgba(0,0,0,.4)' }}
+            >
+              Comments
+            </h1>
+          </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1 p-1 rounded-sm" style={{ background: 'rgba(0,0,0,0.2)' }}>
               {(['open', 'resolved', 'all'] as const).map((s) => (

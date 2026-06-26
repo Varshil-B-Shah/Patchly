@@ -18,7 +18,7 @@ export function DashboardShell({ children, breadcrumb, userName }: Props) {
         style={{ background: 'rgba(20,12,5,0.9)', borderColor: 'rgba(150,110,70,0.12)', backdropFilter: 'blur(12px)' }}
       >
         <div className="flex items-center gap-6">
-          <Link href="/dashboard">
+          <Link href="/">
             <Logo size="sm" />
           </Link>
           {breadcrumb && breadcrumb.length > 0 && (
@@ -45,6 +45,9 @@ export function DashboardShell({ children, breadcrumb, userName }: Props) {
               {userName}
             </span>
           )}
+          <Link href="/" className="text-[0.78rem] opacity-60 hover:opacity-90 transition-opacity" style={{ color: 'var(--w-pale)' }}>
+            Home
+          </Link>
           <Link href="/docs" className="text-[0.78rem] opacity-60 hover:opacity-90 transition-opacity" style={{ color: 'var(--w-pale)' }}>
             Docs
           </Link>

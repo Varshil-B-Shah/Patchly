@@ -51,10 +51,6 @@ export default async function LoginPage({
               Sign in with GitHub
             </button>
           </form>
-
-          <p className="text-[0.73rem]" style={{ color: '#8a6a44', opacity: 0.55 }}>
-            Free during beta. No credit card required.
-          </p>
         </div>
       </div>
     </div>

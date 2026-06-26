@@ -61,10 +61,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
           <Link
             href={`/dashboard/${projectId}/comments`}
             className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-sm transition-opacity hover:opacity-80"
-            style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}
+            style={{ background: 'rgba(200,168,100,0.22)', border: '1px solid rgba(200,168,100,0.45)', color: '#2a1c0e' }}
           >
             {openCount > 0 && (
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(99,102,241,0.5)', color: '#fff' }}>{openCount}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(200,168,100,0.5)', color: '#2a1c0e' }}>{openCount}</span>
             )}
             View comments →
           </Link>
