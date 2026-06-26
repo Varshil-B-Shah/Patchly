@@ -191,10 +191,7 @@ function buildToolbar(): void {
     pinsVisible = (e.target as HTMLInputElement).checked
     try { chrome.storage.local.set({ patchlyPinsVisible: pinsVisible }) } catch { /* unavailable */ }
     buildPins()
-  })
-
-  // Settings popover wiring (same chrome.storage.local keys the preview reads).
-  const autoEl = toolbar.querySelector('#patchly-set-autoapply') as HTMLInputElement
+  })  const autoEl = toolbar.querySelector('#patchly-set-autoapply') as HTMLInputElement
   const thrEl = toolbar.querySelector('#patchly-set-threshold') as HTMLSelectElement
   try {
     chrome.storage.local.get({ autoApply: false, confidenceThreshold: 0.9 }, (s) => {
@@ -226,14 +223,10 @@ function updateToolbar(): void {
   })
   const undoBtn = toolbar.querySelector('.patchly-tb-undo') as HTMLButtonElement
   const redoBtn = toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement
-  if (activeMode === 'ai') {
-    // AI is undo-only; redo is hidden. Button disabled until an edit is confirmed.
-    undoBtn.style.display = ''
+  if (activeMode === 'ai') {    undoBtn.style.display = ''
     undoBtn.disabled = !hasAiEdits
     redoBtn.style.display = 'none'
-  } else if (activeMode === 'comment') {
-    // Comment mode has no undo/redo.
-    undoBtn.style.display = 'none'
+  } else if (activeMode === 'comment') {    undoBtn.style.display = 'none'
     redoBtn.style.display = 'none'
   } else {
     undoBtn.style.display = ''
@@ -327,11 +320,7 @@ function activate(): void {
   window.addEventListener('scroll', onViewportChange, true)
   window.addEventListener('resize', onViewportChange)
   requestCommentList()
-  startPoll()
-
-  // Restore persisted settings: last mode + pin visibility.
-  // Runs after the toolbar is shown so any mode switch is instant and visible.
-  try {
+  startPoll()  try {
     chrome.storage.local.get(['patchlyLastMode', 'patchlyPinsVisible'], (s) => {
       const savedMode = s.patchlyLastMode as string | undefined
       if (savedMode && ['ai', 'tailwind', 'comment'].includes(savedMode) && savedMode !== activeMode) {
@@ -408,10 +397,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
   root?.classList.remove('mode-ai', 'mode-tailwind', 'mode-comment')
   root?.classList.add(`mode-${mode}`)
   updateToolbar()
-  updateIdentityChip()
-
-  // Clear any in-flight selection visuals when switching models.
-  if (promptBar) promptBar.style.display = 'none'
+  updateIdentityChip()  if (promptBar) promptBar.style.display = 'none'
   if (selectionRect) selectionRect.style.display = 'none'
   hidePicker()
 
@@ -419,9 +405,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     hideClassPanel()
     clearSelHighlights()
     selectedSet = []
-  } else if (mode === 'comment') {
-    // Mirror AI-mode teardown: hide class panel, clear selection state
-    hideClassPanel()
+  } else if (mode === 'comment') {    hideClassPanel()
     clearSelHighlights()
     selectedElement = null
     selectedPatchlySrc = null
@@ -430,13 +414,9 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     if (promptBar) promptBar.style.display = 'none'
     if (promptInput) promptInput.value = ''
     if (elementHighlight) elementHighlight.style.display = 'none'
-    if (componentLabel) componentLabel.style.display = 'none'
-    // Refresh immediately on entering comment mode (polling already runs from activate).
-    requestCommentList()
+    if (componentLabel) componentLabel.style.display = 'none'    requestCommentList()
   } else {
-    // Tailwind gate is shown inside the class panel (renderPanel checks tailwindConfigured).
-    // If something is already selected from AI, inspect it in the sidebar.
-    if (selectedElement) {
+    // Tailwind gate is shown inside the class panel (renderPanel checks tailwindConfigured).    if (selectedElement) {
       selectedSet = [selectedElement]
       selectedTargets = selectedSet
       renderSelHighlights()
@@ -444,9 +424,7 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     }
   }
 
-  // Pin visibility depends on the mode (they always show in Comment mode), so
-  // rebuild whenever the mode changes.
-  buildPins()
+  // Pin visibility depends on the mode (they always show in Comment mode), so  buildPins()
 }
 
 function requestCommentList(): void {
@@ -589,9 +567,7 @@ function updatePinPositions(): void {
       anchorY = comment.rect.y - window.scrollY
     }
 
-    if (anchorX !== null && anchorY !== null) {
-      // Spread pins landing on the same spot so none get hidden behind another.
-      const key = `${Math.round(anchorX)},${Math.round(anchorY)}`
+    if (anchorX !== null && anchorY !== null) {      const key = `${Math.round(anchorX)},${Math.round(anchorY)}`
       const n = placed[key] ?? 0
       placed[key] = n + 1
       anchorX += n * 26
@@ -638,26 +614,18 @@ function openPinCard(
     font-family:'Inter',sans-serif;font-size:13px;color:#f0e0c0;
     display:flex;flex-direction:column;gap:8px;
     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  `
-  // Position near the pin
-  const pinEl = pinsContainerEl?.querySelector(`[data-comment-id="${comment.id}"]`)
+  `  const pinEl = pinsContainerEl?.querySelector(`[data-comment-id="${comment.id}"]`)
   if (pinEl) {
     const r = (pinEl as HTMLElement).getBoundingClientRect()
     const top = Math.min(r.bottom + 6, window.innerHeight - 200)
     const left = Math.max(8, Math.min(r.left - 8, window.innerWidth - 296))
     pinCardEl.style.top = `${top}px`
     pinCardEl.style.left = `${left}px`
-  }
-
-  // Close button
-  const closeBtn = document.createElement('button')
+  }  const closeBtn = document.createElement('button')
   closeBtn.textContent = '×'
   closeBtn.style.cssText =
     'position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(200,168,100,0.40);font-size:16px;cursor:pointer;line-height:1;font-family:inherit;transition:color 0.15s;'
-  closeBtn.addEventListener('click', closePinCard)
-
-  // Pin number + meta header
-  const header = document.createElement('div')
+  closeBtn.addEventListener('click', closePinCard)  const header = document.createElement('div')
   header.style.cssText = 'display:flex;align-items:center;gap:6px;padding-right:20px;'
   const badge = document.createElement('span')
   badge.style.cssText =
@@ -681,15 +649,9 @@ function openPinCard(
   ]
     .filter(Boolean)
     .join(' · ')
-  header.append(metaText)
-
-  // Note text — UNTRUSTED: textContent only, never innerHTML
-  const noteEl = document.createElement('p')
+  header.append(metaText)  const noteEl = document.createElement('p')
   noteEl.style.cssText = 'margin:0;line-height:1.5;word-break:break-word;'
-  noteEl.textContent = comment.note
-
-  // Screenshot thumbnail
-  let imgEl: HTMLImageElement | null = null
+  noteEl.textContent = comment.note  let imgEl: HTMLImageElement | null = null
   if (comment.screenshot) {
     imgEl = document.createElement('img')
     imgEl.alt = ''
@@ -708,15 +670,10 @@ function openPinCard(
   const targetEl = comment.kind === 'element' ? findAnchorEl(comment) : null
   const drifted = targetEl && comment.fingerprint
     ? !checkFingerprint(targetEl, comment.fingerprint)
-    : false
-
-  // Action buttons
-  const actions = document.createElement('div')
+    : false  const actions = document.createElement('div')
   actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
 
-  if (comment.status === 'open' && isActive) {
-    // Toolbar is open — full dev actions available.
-    const fixAIBtn = document.createElement('button')
+  if (comment.status === 'open' && isActive) {    const fixAIBtn = document.createElement('button')
     fixAIBtn.textContent = 'Fix with AI'
     fixAIBtn.style.cssText =
       'padding:5px 12px;border-radius:6px;border:1px solid rgba(200,168,100,0.45);background:rgba(200,168,100,0.22);color:#f0e0c0;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all 0.15s;'
@@ -750,10 +707,7 @@ function openPinCard(
   }
 
   pinCardEl.append(closeBtn, header, noteEl)
-  if (imgEl) pinCardEl.appendChild(imgEl)
-
-  // Reply thread (existing replies)
-  if (comment.replies && comment.replies.length > 0) {
+  if (imgEl) pinCardEl.appendChild(imgEl)  if (comment.replies && comment.replies.length > 0) {
     const thread = document.createElement('div')
     thread.style.cssText = 'border-top:1px solid rgba(150,110,70,0.20);padding-top:8px;display:flex;flex-direction:column;gap:6px;'
     comment.replies.forEach((r) => {
@@ -778,10 +732,7 @@ function openPinCard(
       thread.appendChild(row)
     })
     pinCardEl.appendChild(thread)
-  }
-
-  // Reply input (open comments only — requires sign-in in cloud mode)
-  if (comment.status === 'open') {
+  }  if (comment.status === 'open') {
     const replyRow = document.createElement('div')
     replyRow.style.cssText = 'display:flex;gap:6px;border-top:1px solid rgba(150,110,70,0.20);padding-top:8px;'
     const replyInput = document.createElement('input')
@@ -827,9 +778,7 @@ function openPinCard(
   document.body.appendChild(pinCardEl)
 
   pinCardKeyHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
-    // Action shortcuts only when toolbar is open.
-    if (comment.status === 'open' && isActive) {
+    if (e.key === 'Escape') { e.preventDefault(); closePinCard() }    if (comment.status === 'open' && isActive) {
       if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
       else if (e.key === 't' || e.key === 'T') { e.preventDefault(); editClasses(comment) }
       else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resolveComment(comment.id, 'dev') }
@@ -901,9 +850,7 @@ function onMouseDown(e: MouseEvent): void {
   mouseDown = true
   isDragging = false
   startX = currentX = e.clientX
-  startY = currentY = e.clientY
-  // Dismiss transient UI; keep the toolbar.
-  if (promptBar) promptBar.style.display = 'none'
+  startY = currentY = e.clientY  if (promptBar) promptBar.style.display = 'none'
   hidePicker()
 }
 
@@ -940,9 +887,7 @@ function onMouseUp(e: MouseEvent): void {
       if (selectionRect) selectionRect.style.display = 'none'
       if (rect.width < DRAG_THRESHOLD && rect.height < DRAG_THRESHOLD) return
       findTargetElement(rect)
-    } else {
-      // Plain click → single element under cursor.
-      const el = elementAtPoint(e.clientX, e.clientY)
+    } else {      const el = elementAtPoint(e.clientX, e.clientY)
       if (el) selectElement(el, pointRect(e.clientX, e.clientY))
     }
     return
@@ -1002,10 +947,7 @@ function onMouseUp(e: MouseEvent): void {
     })
     showCommentComposer({ x: selRect.x, y: selRect.y, width: selRect.width, height: selRect.height }, 'area')
     return
-  }
-
-  // Tailwind mode: click = single, Ctrl/Cmd+Click = toggle into multi-select.
-  isDragging = false
+  }  isDragging = false
   const el = elementAtPoint(e.clientX, e.clientY)
   if (el) tailwindSelect(el, e.ctrlKey || e.metaKey)
 }
@@ -1027,9 +969,7 @@ function pointRect(x: number, y: number): SelectionRect {
 }
 
 // Live hover outline (both modes, before/over selection).
-function hoverHighlight(x: number, y: number): void {
-  // In AI mode, stop hovering once the prompt bar is showing for a selection.
-  if (activeMode === 'ai' && promptBar && promptBar.style.display !== 'none') return
+function hoverHighlight(x: number, y: number): void {  if (activeMode === 'ai' && promptBar && promptBar.style.display !== 'none') return
   const el = elementAtPoint(x, y)
   if (!el || !elementHighlight) {
     if (elementHighlight) elementHighlight.style.display = 'none'
@@ -1547,9 +1487,7 @@ function initCommentComposer(): void {
   `
   document.body.appendChild(commentComposerEl)
   document.getElementById('patchly-cc-submit')!.addEventListener('click', submitComment)
-  document.getElementById('patchly-cc-cancel')!.addEventListener('click', hideCommentComposer)
-  // Stop clicks inside composer from triggering overlay selection
-  commentComposerEl.addEventListener('mousedown', (e) => e.stopPropagation())
+  document.getElementById('patchly-cc-cancel')!.addEventListener('click', hideCommentComposer)  commentComposerEl.addEventListener('mousedown', (e) => e.stopPropagation())
 }
 
 function showCommentComposer(
@@ -1977,10 +1915,7 @@ function showSuccessToast({ filePath, showUndo = true, editId = null }: { filePa
         window.__patchlySendToAgent?.({ type: 'PATCHLY_UNDO', editId })
       }
     }
-  }
-
-  // Offer to resolve a matching open comment for the edited element
-  const matchingComment = cachedComments.find(
+  }  const matchingComment = cachedComments.find(
     (c) => c.status === 'open' && c.kind === 'element' && c.patchlySrc === selectedPatchlySrc,
   )
   if (matchingComment) {
