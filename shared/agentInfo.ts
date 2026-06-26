@@ -1,9 +1,3 @@
-// shared/agentInfo.ts
-// Single source of truth for how the agent is discovered. Imported by the agent,
-// the MCP server, AND the extension bundle — so it MUST stay browser-safe
-// (no `fs`/`path`/node imports). The agent and MCP resolve the absolute lockfile
-// path themselves from LOCKFILE_REL.
-
 /** Preferred WebSocket port. The agent tries this first, then scans upward. */
 export const DEFAULT_PORT = 7842
 

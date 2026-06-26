@@ -1,15 +1,4 @@
-// shared/tailwindCatalog.ts
-// A bundled, static catalog of standard Tailwind utility classes plus a search
-// function for the direct class panel. Generated from compact family×scale
-// definitions (NOT thousands of literals) so the file stays small and readable.
-//
-// Imported by the extension (esbuild inlines it) and exercised by unit tests.
-// Custom-named utilities from a project's own plugins are a known v1 limitation;
-// the project's theme COLORS are merged in at search time via searchClasses(theme).
-
 import type { ThemeTokens } from './protocol.js'
-
-// ─── Scales ────────────────────────────────────────────────────────────────────
 
 const SPACING = [
   '0', 'px', '0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', '5', '6', '7', '8',
@@ -23,7 +12,6 @@ const FRACTIONS = [
 ]
 const SIZE = [...SPACING, ...FRACTIONS, 'auto', 'full', 'screen', 'min', 'max', 'fit']
 
-// Default Tailwind color palette names + their shade scale.
 const PALETTE = [
   'slate', 'gray', 'zinc', 'neutral', 'stone', 'red', 'orange', 'amber', 'yellow',
   'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet',
@@ -32,7 +20,6 @@ const PALETTE = [
 const SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950']
 const SPECIAL_COLORS = ['white', 'black', 'transparent', 'current', 'inherit']
 
-// ─── Generators ──────────────────────────────────────────────────────────────
 
 function cross(prefixes: string[], values: string[]): string[] {
   const out: string[] = []
@@ -47,7 +34,6 @@ function colorUtilities(prefix: string): string[] {
   return out
 }
 
-// ─── Base catalog ────────────────────────────────────────────────────────────
 
 function buildBase(): string[] {
   const out: string[] = []
@@ -149,19 +135,16 @@ function buildBase(): string[] {
   return [...new Set(out)]
 }
 
-/** The full static base catalog (no variants applied). */
 export const BASE_CLASSES: string[] = buildBase()
 
-/** Standard variant prefixes the search can compose onto base utilities. */
 export const VARIANTS = [
   'hover', 'focus', 'focus-visible', 'focus-within', 'active', 'disabled', 'visited',
   'group-hover', 'peer-hover', 'first', 'last', 'odd', 'even',
   'sm', 'md', 'lg', 'xl', '2xl', 'dark', 'motion-safe', 'motion-reduce',
 ] as const
 
-// ─── Theme integration ─────────────────────────────────────────────────────────
+// Theme integration 
 
-/** bg-/text-/border-/ring- utilities for each project theme color. */
 function themeClasses(theme: ThemeTokens | undefined): string[] {
   if (!theme?.colors?.length) return []
   const out: string[] = []
@@ -171,14 +154,7 @@ function themeClasses(theme: ThemeTokens | undefined): string[] {
   return out
 }
 
-// ─── Search ──────────────────────────────────────────────────────────────────
 
-/**
- * Split any trailing variant chain off a query.
- *   "hover:bg-"     → { variantPrefix: "hover:",    base: "bg-" }
- *   "md:hover:px-"  → { variantPrefix: "md:hover:", base: "px-" }
- *   "items"         → { variantPrefix: "",          base: "items" }
- */
 function splitVariants(query: string): { variantPrefix: string; base: string } {
   const parts = query.split(':')
   const base = parts.pop() ?? ''
@@ -186,12 +162,6 @@ function splitVariants(query: string): { variantPrefix: string; base: string } {
   return { variantPrefix, base }
 }
 
-/**
- * Search the catalog (+ project theme colors) for classes matching `query`.
- * Supports variant composition: a trailing `hover:` / `md:` etc. is stripped,
- * the remainder matched against base utilities, and the variant re-prefixed onto
- * each result. Prefix matches rank before substring matches, then alphabetical.
- */
 export function searchClasses(query: string, theme?: ThemeTokens, limit = 50): string[] {
   const q = (query ?? '').trim().toLowerCase()
   if (!q) return defaultSuggestions(theme)
@@ -200,7 +170,6 @@ export function searchClasses(query: string, theme?: ThemeTokens, limit = 50): s
   const pool = [...themeClasses(theme), ...BASE_CLASSES]
 
   if (!base) {
-    // Trailing variant with no base yet (e.g. "hover:") — offer common starters.
     return defaultSuggestions(theme).map((c) => variantPrefix + c).slice(0, limit)
   }
 
@@ -221,7 +190,6 @@ export function searchClasses(query: string, theme?: ThemeTokens, limit = 50): s
   return [...prefixHits, ...subHits].slice(0, limit).map((c) => variantPrefix + c)
 }
 
-/** A curated starter set shown before the user types anything. */
 export function defaultSuggestions(theme?: ThemeTokens): string[] {
   const base = [
     'flex', 'items-center', 'justify-center', 'justify-between', 'gap-2', 'gap-4',

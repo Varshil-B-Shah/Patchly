@@ -1,20 +1,17 @@
-// shared/comments.ts
-// Browser-safe: no Node.js imports. Imported by extension bundle and agent both.
-
 export interface Reply {
   id: string
   authorType: 'member' | 'link-reviewer'
   authorDisplayName: string
   authorAvatar?: string
-  note: string                  // UNTRUSTED reviewer text
-  createdAt: string             // ISO 8601
+  note: string
+  createdAt: string
 }
 
 export interface ReviewComment {
   id: string
   kind: 'element' | 'area'
   // kind === 'element'
-  patchlySrc?: string           // "src/components/Hero.tsx:42:4"
+  patchlySrc?: string
   tag?: string
   componentName?: string | null
   fingerprint?: {
@@ -28,17 +25,12 @@ export interface ReviewComment {
   // kind === 'area'
   rect?: { x: number; y: number; w: number; h: number }
   pageUrl: string
-  note: string                  // UNTRUSTED reviewer text
+  note: string
   author?: string
-  authorAvatar?: string         // GitHub avatar URL for authenticated members (Phase D2)
-  /**
-   * Phase A (local store): base64 PNG string.
-   * Phase B (cloud):       { url: UploadThing CDN URL, key: UploadThing file key }.
-   * Both shapes coexist — consumers must check `typeof screenshot`.
-   */
+  authorAvatar?: string
   screenshot?: string | { url: string; key: string }
   status: 'open' | 'resolved'
-  createdAt: string             // ISO 8601
+  createdAt: string
   resolvedAt?: string
   resolvedBy?: 'dev' | 'agent'
   replies?: Reply[]

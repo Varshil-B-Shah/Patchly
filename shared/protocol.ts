@@ -1,17 +1,13 @@
-// shared/protocol.ts
-// Message types for extension ↔ agent communication
-// Both sides must use these exact strings — no magic strings elsewhere
-
 import type { EditOperation } from './operations.js'
 import type { ReviewComment } from './comments.js'
 
 export const MSG = {
-  // Extension → Agent
+  // Extension -> Agent
   PING:         'PATCHLY_PING',
   EDIT_REQUEST: 'PATCHLY_EDIT_REQUEST',
   UNDO:         'PATCHLY_UNDO',
 
-  // Agent → Extension
+  // Agent -> Extension
   PONG:         'PATCHLY_PONG',
   EDIT_DONE:    'PATCHLY_EDIT_DONE',
   EDIT_ERROR:   'PATCHLY_EDIT_ERROR',
@@ -23,24 +19,24 @@ export const MSG = {
   UNDO_DONE:    'PATCHLY_UNDO_DONE',
   INFO:         'PATCHLY_INFO',
 
-  // Extension → Agent (Phase 4+)
+  // Extension -> Agent
   CONFIRM:      'PATCHLY_CONFIRM',
   REJECT:       'PATCHLY_REJECT',
 
-  // Direct class panel (LLM-free direct manipulation)
-  INSPECT:      'PATCHLY_INSPECT',       // ext → agent: read element(s) source className
-  ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',  // agent → ext: the className breakdown(s)
-  APPLY_OPS:    'PATCHLY_APPLY_OPS',     // ext → agent: apply pre-built operations, no LLM
-  OPS_APPLIED:  'PATCHLY_OPS_APPLIED',   // agent → ext: ops applied (NOT recorded in AI history)
+  // Direct class panel
+  INSPECT:      'PATCHLY_INSPECT',
+  ELEMENT_INFO: 'PATCHLY_ELEMENT_INFO',
+  APPLY_OPS:    'PATCHLY_APPLY_OPS',
+  OPS_APPLIED:  'PATCHLY_OPS_APPLIED',
 
-  // MCP bridge (any MCP-capable coding agent → agent, via the stdio MCP server)
-  SELECTION_UPDATE:    'PATCHLY_SELECTION_UPDATE',    // ext → agent: the browser selection changed
-  GET_SELECTION:       'PATCHLY_GET_SELECTION',       // mcp → agent: what is currently selected?
-  SELECTION:           'PATCHLY_SELECTION',           // agent → mcp: the cached browser selection
-  SCREENSHOT_REQUEST:  'PATCHLY_SCREENSHOT_REQUEST',  // mcp → agent → ext: capture current element
-  SCREENSHOT_RESULT:   'PATCHLY_SCREENSHOT_RESULT',   // ext → agent → mcp: the capture result
+  // MCP bridge
+  SELECTION_UPDATE:    'PATCHLY_SELECTION_UPDATE',
+  GET_SELECTION:       'PATCHLY_GET_SELECTION',
+  SELECTION:           'PATCHLY_SELECTION',
+  SCREENSHOT_REQUEST:  'PATCHLY_SCREENSHOT_REQUEST',
+  SCREENSHOT_RESULT:   'PATCHLY_SCREENSHOT_RESULT',
 
-  // Comment system (Phase A — local single-machine)
+  // Comment system
   ADD_COMMENT:      'PATCHLY_ADD_COMMENT',
   COMMENT_ADDED:    'PATCHLY_COMMENT_ADDED',
   LIST_COMMENTS:    'PATCHLY_LIST_COMMENTS',
@@ -55,12 +51,8 @@ export const MSG = {
   REPLY_ADDED:     'PATCHLY_REPLY_ADDED',
 } as const
 
-/** Union of all message-type string literals, e.g. "PATCHLY_PREVIEW". */
 export type MsgType = (typeof MSG)[keyof typeof MSG]
 
-// Canonical registry of error codes carried on EDIT_ERROR.code. Single source of
-// truth — the AMBIGUOUS_MATCH / NOT_FOUND codes from the old string find/replace
-// path are retired as of Phase 6.9.
 export const ERROR_CODES = Object.freeze({
   // Source mapping (sourceMapper.js)
   NO_SOURCE_ATTR:           'NO_SOURCE_ATTR',
@@ -108,14 +100,8 @@ export const ERROR_CODES = Object.freeze({
   UNDO_ERROR:               'UNDO_ERROR',
 } as const)
 
-/** Union of all error-code string literals, e.g. "TARGET_DRIFTED". */
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
 
-
-// Previously documented only as comments; now real types consumed by the agent
-// (and, after bundling, by the extension).
-
-/** One target in a multi-select (fan-out) EDIT_REQUEST. */
 export interface EditRequestTarget {
   patchlySrc: string
   elementHtml: string
@@ -128,57 +114,39 @@ export interface EditRequestMessage {
   patchlySrc: string
   elementHtml: string
   elementClasses: string
-  /** Lowercase tag name of the selected element (single-edit path). */
   elementTag?: string
-  /** User's natural language instruction. */
   prompt: string
-  /** Random ID for this edit session. */
   sessionId: string
-  /** base64 PNG of the cropped element (Phase 7); null/undefined if capture failed. */
   screenshot_base64?: string | null
-  /** MULTI-SELECT (fan-out). When present (len>1), batch mode. `prompt` is shared. */
   targets?: EditRequestTarget[]
 }
 
-/** Live status while an edit is being prepared. */
 export interface ProgressMessage {
   type: typeof MSG.PROGRESS
   sessionId: string
   stage: 'analyzing' | 'generating' | 'building'
-  /** Streamed explanation (during 'generating'), if available. */
   text?: string
 }
 
-/** Preview of a single pending edit (dry run). */
 export interface PreviewMessage {
   type: typeof MSG.PREVIEW
   sessionId: string
-  /** One sentence from the LLM. */
   explanation: string
-  /** 0..1, model self-rated. */
   confidence: number
-  /** Unified diff of the pending edit. */
   diff: string
-  /** Relative path of target file. */
   filePath: string
   lineNumber: number
 }
 
-/** One file's entry in a batch preview. */
 export interface BatchEditEntry {
   ok: boolean
   filePath?: string
   lineNumber?: number
   explanation?: string
-  /** Present when ok. */
   confidence?: number
-  /** Present when ok. */
   diff?: string
-  /** Number of selected targets that resolved to this file. */
   targetCount?: number
-  /** Present when !ok. */
   code?: ErrorCode | string
-  /** Present when !ok. */
   message?: string
 }
 
@@ -188,7 +156,6 @@ export interface PreviewBatchMessage {
   edits: BatchEditEntry[]
 }
 
-/** A child component the change should be redirected to. */
 export interface RedirectSuggestion {
   file: string
   reason: string
@@ -197,7 +164,6 @@ export interface RedirectSuggestion {
 export interface RedirectMessage {
   type: typeof MSG.REDIRECT
   sessionId: string
-  /** The original instruction, to replay against the chosen child. */
   prompt: string
   suggestions: RedirectSuggestion[]
 }
@@ -205,12 +171,9 @@ export interface RedirectMessage {
 export interface EditDoneMessage {
   type: typeof MSG.EDIT_DONE
   sessionId: string
-  /** ID for this applied edit (used by per-edit undo + history). */
   editId: string
-  /** Relative path of edited file. */
   filePath: string
   lineNumber: number
-  /** One-sentence summary, shown in the history sidebar. */
   explanation: string
 }
 
@@ -227,15 +190,11 @@ export interface InfoMessage {
   message: string
 }
 
-/** One color token from the project's Tailwind theme, for panel swatches. */
 export interface ThemeColor {
-  /** Tailwind name fragment, e.g. "brand" or "brand-light". */
   name: string
-  /** CSS color value, e.g. "#6366f1". */
   value: string
 }
 
-/** Structured design tokens the class panel renders (distinct from the LLM's string summary). */
 export interface ThemeTokens {
   colors: ThemeColor[]
 }
@@ -244,37 +203,27 @@ export interface StatusMessage {
   type: typeof MSG.STATUS
   connected: boolean
   projectRoot: string
-  /** Project Tailwind theme tokens for the class panel (sent once on connect). */
   theme?: ThemeTokens
-  /** Whether a tailwind.config.* was found — gates the Tailwind editing mode. */
   tailwindConfigured?: boolean
 }
 
-/** Ask the agent to read the className of one or more elements straight from source. */
 export interface InspectMessage {
   type: typeof MSG.INSPECT
   sessionId: string
-  /** One or many data-patchly-src pointers (multi-select). */
   patchlySources: string[]
 }
 
-/** The source-accurate className breakdown for a single element. */
 export interface ClassInfo {
-  /** The data-patchly-src pointer this info was resolved from. */
   patchlySrc: string
   tagName: string
-  /** 'static' = editable string literal; 'dynamic' = clsx/ternary/etc (locked); 'none' = no className attr. */
   classNameKind: 'static' | 'dynamic' | 'none'
-  /** The class tokens (empty for 'none'; for 'dynamic' these come from the live DOM, display-only). */
   classes: string[]
-  /** Short snippet of the dynamic expression, shown on the locked chip. */
   dynamicText?: string
   filePath: string
   lineNumber: number
   column: number
 }
 
-/** The className breakdown(s) for the class panel — one entry per inspected element. */
 export interface ElementInfoMessage {
   type: typeof MSG.ELEMENT_INFO
   sessionId: string
@@ -287,79 +236,52 @@ export interface ElementInfoMessage {
 export interface ApplyOpsMessage {
   type: typeof MSG.APPLY_OPS
   sessionId: string
-  /** One or many ops, possibly across multiple files (multi-select). */
   operations: EditOperation[]
-  /** One-sentence summary (e.g. "Set classes on <button>"). Not recorded in AI history. */
   explanation: string
-  /** When true: validate + diff without writing. Reply is still OPS_APPLIED. */
   dryRun?: boolean
-  /** Required to be true for structural ops (wrapElement/insertChild/replaceElement/removeElement)
-   *  when dryRun is false. Without it the server auto-converts to dry-run and sets
-   *  requiresConfirmation on the reply so the caller can review the diff first. */
   confirmed?: boolean
 }
 
-/** Acknowledge a successful APPLY_OPS — deliberately NOT an EDIT_DONE, so class-panel
- *  edits never enter the AI editHistory / "Patchly edits" sidebar. */
 export interface OpsAppliedMessage {
   type: typeof MSG.OPS_APPLIED
   sessionId: string
   ok: true
-  /** Unified diff of what was (or would be) changed. Always present. */
   diff: string
-  /** True when a structural op was intercepted and run as a dry-run pending confirmation.
-   *  Caller must review the diff and call again with confirmed:true to execute for real. */
   requiresConfirmation?: boolean
 }
 
-/** React fiber info extracted at selection time. Gives the agent the component
- *  identity and its props — the same context Cursor gets from the fiber tree. */
 export interface ReactInfo {
-  /** Nearest React function component name, e.g. "StatsCard". Null for pure DOM. */
   componentName: string | null
-  /** Curated props snapshot (functions/children/className excluded, capped at 20 keys). */
   props: Record<string, unknown>
 }
 
-/** One selected element, as the browser sees it. The MCP bridge surfaces these
- *  to the coding agent so it knows what the user is pointing at. */
 export interface SelectionItem {
-  /** data-patchly-src pointer, "file:line:column". */
   patchlySrc: string
-  /** Lowercase tag name, e.g. "button". */
   tag: string
-  /** Live DOM className string (may differ from source for dynamic classes). */
   classes: string
-  /** Curated getComputedStyle subset, captured at selection time (single-select only). */
   computedStyles?: Record<string, string>
-  /** base64 PNG crop of the element (single-select only); null if capture failed. */
   screenshot?: string | null
-  /** React fiber: nearest component name + curated props (single-select only). */
   reactInfo?: ReactInfo | null
 }
 
-/** Extension → agent: the browser selection changed (replaces the cached set). */
+// Extension -> agent
 export interface SelectionUpdateMessage {
   type: typeof MSG.SELECTION_UPDATE
   selection: SelectionItem[]
 }
 
-/** MCP → agent: ask for the element(s) the user currently has selected. */
+// MCP -> agent
 export interface GetSelectionMessage {
   type: typeof MSG.GET_SELECTION
-  /** Echo'd back in SelectionMessage so the MCP client can correlate by sessionId. */
   sessionId: string
-  /** Pin to a specific prior selection snapshot. Omit for the latest. */
   selectionId?: string
 }
 
-/** Agent → MCP: the cached browser selection (empty array if nothing selected). */
+// Agent -> MCP
 export interface SelectionMessage {
   type: typeof MSG.SELECTION
   sessionId: string
-  /** Monotonically changes on each SELECTION_UPDATE. Agent uses this to detect stale selections. */
   selectionId?: string
-  /** True when a requested selectionId was not found (evicted/unknown) — caller should re-resolve. */
   stale?: boolean
   selection: SelectionItem[]
 }
@@ -382,7 +304,6 @@ export interface RejectMessage {
   sessionId: string
 }
 
-/** Undo a specific edit; if editId omitted, undo the most recent. */
 export interface UndoMessage {
   type: typeof MSG.UNDO
   editId?: string
@@ -390,19 +311,12 @@ export interface UndoMessage {
 
 export interface UndoDoneMessage {
   type: typeof MSG.UNDO_DONE
-  /** The edit that was reverted. */
   editId: string
 }
 
-/** Any message a client (extension or MCP bridge) sends to the agent. */
-/** MCP → agent → extension: ask the extension to capture a fresh screenshot of the
- *  currently selected element (or the viewport if nothing is selected). Lets an
- *  agent visually verify its edit after HMR reloads the page. */
 export interface ScreenshotRequestMessage {
   type: typeof MSG.SCREENSHOT_REQUEST
   sessionId: string
-  /** Capture the element with this data-patchly-src. Survives HMR reload + click-away.
-   *  Omit to capture the currently selected element. */
   patchlySrc?: string
 }
 
@@ -410,13 +324,11 @@ export interface ScreenshotRequestMessage {
 export interface ScreenshotResultMessage {
   type: typeof MSG.SCREENSHOT_RESULT
   sessionId: string
-  /** base64 PNG, or null if capture failed or the target wasn't found. */
   screenshot: string | null
-  /** Echo of the requested patchlySrc, if any. */
   patchlySrc?: string
 }
 
-// ── Comment system ────────────────────────────────────────────────────────────
+// Comment system 
 
 export interface AddCommentMessage {
   type: typeof MSG.ADD_COMMENT
@@ -464,26 +376,26 @@ export interface CommentDeletedMessage {
   id: string
 }
 
-/** MCP → Agent: delete all resolved comments. */
+// MCP -> Agent
 export interface ClearCommentsMessage {
   type: typeof MSG.CLEAR_COMMENTS
   sessionId?: string
 }
-/** Agent → Extension (broadcast) + MCP (unicast): resolved comments deleted. */
+// Agent → Extension (broadcast) + MCP (unicast)
 export interface CommentsClearedMessage {
   type: typeof MSG.COMMENTS_CLEARED
   sessionId?: string
   count: number
 }
 
-/** Extension → Agent: add a reply to an existing comment. */
+// Extension → Agent
 export interface AddReplyMessage {
   type: typeof MSG.ADD_REPLY
   commentId: string
   note: string
 }
 
-/** Agent → Extension (broadcast): a reply was added; full updated comment included. */
+// Agent → Extension (broadcast)
 export interface ReplyAddedMessage {
   type: typeof MSG.REPLY_ADDED
   comment: import('./comments.js').ReviewComment
@@ -507,7 +419,7 @@ export type ExtensionToAgentMessage =
   | ClearCommentsMessage
   | AddReplyMessage
 
-/** Any message the agent sends back to a client (extension or MCP bridge). */
+// Any message the agent sends back to a client (extension or MCP bridge)
 export type AgentToExtensionMessage =
   | PongMessage
   | StatusMessage
