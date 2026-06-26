@@ -357,11 +357,16 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         console.log('LLM response:', llmResult.explanation)
         console.log('  operations:', llmResult.operations.map((o) => o.op).join(', '))
 
-        // The edit always lives in the selected element's file — pin every op's
-        // target file to the resolved source so an LLM path slip can't misfire.
+        // Allow cross-file edits (e.g. editing a caller file) when the LLM targets
+        // a file it was explicitly given context for. Any file outside that allowlist
+        // is pinned back to the selected source to prevent LLM path slips.
+        const allowedFiles = new Set(llmResult.allowedFiles ?? [sourceResult.relativePath])
         const operations = llmResult.operations.map((op) => ({
           ...op,
-          target: { ...op.target, file: sourceResult.relativePath },
+          target: {
+            ...op.target,
+            file: allowedFiles.has(op.target.file) ? op.target.file : sourceResult.relativePath,
+          },
         }) as EditOperation)
 
         sendProgress('building')

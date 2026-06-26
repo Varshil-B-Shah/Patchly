@@ -65,7 +65,7 @@
     // Near-live polling — new comments/replies appear within ~5s.
     setInterval(function() {
       if (document.visibilityState === 'visible') loadComments();
-    }, 5000);
+    }, 3000);
   }
 
   // ── Name prompt ───────────────────────────────────────────────────────────────

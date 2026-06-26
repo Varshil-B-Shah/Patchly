@@ -458,7 +458,7 @@ function startPoll(): void {
   if (pollTimer) return
   pollTimer = setInterval(() => {
     if (document.visibilityState === 'visible') requestCommentList()
-  }, 5000)
+  }, 3000)
 }
 function stopPoll(): void {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }

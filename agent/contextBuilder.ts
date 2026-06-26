@@ -23,6 +23,7 @@ export interface ImportContext {
 
 export interface ProjectContext {
   imports: ImportContext[]
+  callers: ImportContext[]   // files that USE this component (empty for non-components)
   globalCss: string | null
   tailwindTokens: string
 }
@@ -231,6 +232,48 @@ export function loadThemeTokens(projectRoot: string): ThemeTokens {
   return extractThemeTokens(text)
 }
 
+const MAX_CALLER_CHARS = 2500
+const MAX_CALLERS = 3
+
+/**
+ * Find files in the project that import and use the given component.
+ * Only runs when the source file is a reusable component (capital-letter filename).
+ * Used to give the LLM the call site context so it can edit prop values there
+ * instead of hardcoding values inside the component template.
+ */
+export function findCallerFiles(componentRelPath: string, projectRoot: string): ImportContext[] {
+  const componentName = path.basename(componentRelPath).replace(/\.(tsx?|jsx?)$/, '')
+  if (!/^[A-Z]/.test(componentName)) return []  // not a component file
+
+  const results: ImportContext[] = []
+  const componentAbs = path.resolve(projectRoot, componentRelPath)
+
+  function walk(dir: string): void {
+    if (results.length >= MAX_CALLERS) return
+    let entries: fs.Dirent[]
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (results.length >= MAX_CALLERS) break
+      const abs = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        if (!FORBIDDEN_SEGMENTS.includes(e.name) && isSafe(abs, projectRoot)) walk(abs)
+      } else if (/\.(tsx?|jsx?)$/.test(e.name) && abs !== componentAbs) {
+        const content = tryRead(abs, MAX_CALLER_CHARS)
+        if (!content) continue
+        // File uses the component as a JSX tag — both conditions required to avoid
+        // false positives from files that just happen to mention the name in comments.
+        if (content.includes(`<${componentName}`) && content.includes(componentName)) {
+          const rel = path.relative(projectRoot, abs).replace(/\\/g, '/')
+          results.push({ path: rel, content })
+        }
+      }
+    }
+  }
+
+  walk(projectRoot)
+  return results
+}
+
 // Read import files + global CSS for the given source file.
 export function buildFileContext(sourceResult: SourceLike, projectRoot: string): { imports: ImportContext[]; globalCss: string | null } {
   const sourceAbsPath = path.resolve(projectRoot, sourceResult.relativePath)
@@ -251,13 +294,14 @@ export function buildFileContext(sourceResult: SourceLike, projectRoot: string):
   return { imports, globalCss }
 }
 
-// Full context load: imports + global CSS + tailwind tokens.
+// Full context load: imports + callers + global CSS + tailwind tokens.
 export function loadProjectContext(sourceResult: SourceLike, projectRoot: string): ProjectContext {
   const { imports, globalCss } = buildFileContext(sourceResult, projectRoot)
+  const callers = findCallerFiles(sourceResult.relativePath, projectRoot)
 
   const twPath = findTailwindConfig(projectRoot)
   const twText = twPath ? tryRead(twPath, 8000) : null
   const tailwindTokens = twText ? parseTailwindConfig(twText) : ''
 
-  return { imports, globalCss, tailwindTokens }
+  return { imports, callers, globalCss, tailwindTokens }
 }
