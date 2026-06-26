@@ -417,17 +417,19 @@ Decision rules:
 - If you cannot make the edit, return "operations": [] and explain in "explanation".
 
 Prop-driven content in reusable components:
-- If the selected element's children are a prop expression like {value} or {label}, do NOT hardcode a literal there — that would change ALL instances of the component.
-- Instead, look in "### Caller files" for where <ComponentName prop="current-value"> is written.
-- Use setAttribute targeting the <ComponentName> call in the CALLER file to change that specific instance's prop.
-  Example: change <StatCard value="0.4%"> to <StatCard value="0.5%"> using setAttribute on the StatCard line in the caller file.
-- setAttribute and other ops MAY target capitalized component tags (e.g. <StatCard>, <Button>) when the target is in a "### Caller files" section.
-- CRITICAL for caller-file targets: multiple instances of the same component share the same tagName, so include "identifyingAttrs" with string-valued props that uniquely identify THIS instance.
-  Example: if there are four <StatCard> calls and you want the "Error rate" one, add "identifyingAttrs": { "label": "Error rate" } to the target so the engine finds exactly one match.
+- If the selected element's content, classes, or styles are driven by a prop (like {label}, {value}) or if the user instruction specifies "this only", "only this", "this instance", "only this one", or simply "this" (e.g. "change this to yellow" when targeting a card), do NOT edit the reusable component file itself, as that would change ALL instances.
+- Instead, target the specific \`<ComponentName>\` call in the CALLER file.
+- Locate the correct call site in "### Caller files" by matching the selected element's text snippet or content with the props defined at the call sites (e.g. a snippet of "Avg latency" matches <StatCard label="Avg latency" ... />). Use those props in "identifyingAttrs" to uniquely target that single instance.
+- If the instruction changes the text of that prop, change the prop value in the caller file (e.g. change <StatCard value="0.4%"> to <StatCard value="0.5%">).
+- If the instruction changes the styling/color of the prop-driven element for only this instance:
+  - You can pass a JSX element wrapped in braces to that prop.
+  - CRITICAL: To pass JSX (like <span style={{ color: 'yellow' }}>Avg latency</span>), you MUST use setExpression targeting the prop attribute (e.g., attribute: "label", expression: "<span style={{ color: 'yellow' }}>Avg latency</span>"). Do NOT use setAttribute for JSX, otherwise it will render as a raw string.
+- setAttribute and setExpression targeting caller files MUST specify the capitalized component tag (e.g., tagName: "StatCard") and use "identifyingAttrs" (e.g., "identifyingAttrs": { "label": "Avg latency" }) to isolate the change to that exact instance.
 
 CRITICAL — in the PRIMARY source file, operations may only target elements that LITERALLY appear in that file's source:
 - Every operation targeting the primary file must be a lowercase HTML element you can see in the source (e.g. <th>, <button>, <li>, <p>).
 - NEVER emit an operation for content rendered by a child component in the primary file. Child components are CAPITALIZED JSX tags — their internal elements live in OTHER files.
+- DO NOT use "identifyingAttrs" when targeting elements in the primary source file. It is ONLY for disambiguating instances of capitalized components in caller files.
 
 Cross-file redirect:
 - If the element the instruction refers to is rendered by an imported child component (a capitalized tag like <UserRow/> or <StatsCard/>) and is therefore NOT in the primary file, do NOT force an edit, do NOT guess a line, and do NOT just refuse. Instead return "operations": [] AND a "redirect" array naming the most likely child component file(s) from the imports:

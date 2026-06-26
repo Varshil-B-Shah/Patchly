@@ -15,7 +15,7 @@ export default function Home() {
 
         <div style={{ display: 'flex', gap: 16 }}>
           <StatCard label="Requests / min" value="18.2k" delta="9%" up />
-          <StatCard label="Avg latency"    value="84ms"  delta="12ms" up />
+          <StatCard label={<span style={{ color: "#ffffff" }}>Avg latency</span>}    value="84ms"  delta="12ms" up />
           <StatCard label="Error rate"     value="0.5%"  delta="0.1%" up={false} />
           <StatCard label="Uptime"         value="99.98%" delta="0.0%" up />
         </div>

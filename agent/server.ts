@@ -361,13 +361,19 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         // a file it was explicitly given context for. Any file outside that allowlist
         // is pinned back to the selected source to prevent LLM path slips.
         const allowedFiles = new Set(llmResult.allowedFiles ?? [sourceResult.relativePath])
-        const operations = llmResult.operations.map((op) => ({
-          ...op,
-          target: {
-            ...op.target,
-            file: allowedFiles.has(op.target.file) ? op.target.file : sourceResult.relativePath,
-          },
-        }) as EditOperation)
+        const operations = llmResult.operations.map((op) => {
+          const file = allowedFiles.has(op.target.file) ? op.target.file : sourceResult.relativePath
+          const isCrossFile = file !== sourceResult.relativePath
+          return {
+            ...op,
+            target: {
+              ...op.target,
+              file,
+              line: isCrossFile ? -1 : op.target.line,
+              column: isCrossFile ? -1 : op.target.column,
+            },
+          } as EditOperation
+        })
 
         sendProgress('building')
 
