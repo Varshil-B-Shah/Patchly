@@ -77,6 +77,53 @@ export class CloudCommentClient implements CommentStoreInterface {
   }
 
   async add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): Promise<ReviewComment> {
+    const token = this.memberToken ?? this.devToken
+    let screenshotUploadKey: string | undefined
+
+    if (data.screenshot && typeof data.screenshot === 'string') {
+      try {
+        const buffer = Buffer.from(data.screenshot, 'base64')
+        const presignRes = await fetch(
+          `${this.apiUrl}/api/uploadthing?actionType=upload&slug=screenshotUploader`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+              'x-uploadthing-version': '7.7.4',
+              'x-uploadthing-package': 'vanilla',
+            },
+            body: JSON.stringify({
+              files: [{ name: 'screenshot.png', size: buffer.length, type: 'image/png', lastModified: Date.now() }],
+              input: {},
+            }),
+          }
+        )
+        if (presignRes.ok) {
+          const presignData = (await presignRes.json()) as any
+          const upload = presignData && presignData.data && presignData.data[0]
+          if (upload && upload.url && upload.key) {
+            const uploadRes = await fetch(upload.url, {
+              method: 'PUT',
+              body: buffer,
+            })
+            if (uploadRes.ok) {
+              screenshotUploadKey = upload.key
+            } else {
+              console.warn('[Patchly] Failed to upload screenshot payload to UploadThing')
+            }
+          } else {
+            console.warn('[Patchly] Presigned URL response invalid structure:', presignData)
+          }
+        } else {
+          const errText = await presignRes.text()
+          console.warn('[Patchly] UploadThing presign failed:', presignRes.status, errText)
+        }
+      } catch (err) {
+        console.error('[Patchly] Failed to upload screenshot to UploadThing:', err)
+      }
+    }
+
     const body = {
       projectId: this.projectId,
       kind: data.kind,
@@ -90,9 +137,8 @@ export class CloudCommentClient implements CommentStoreInterface {
       // Fallback display name for the devToken path; ignored when a member token is used
       // (the cloud derives identity from the verified token instead).
       authorDisplayName: data.author ?? 'Dev',
+      ...(screenshotUploadKey ? { screenshotUploadKey } : {}),
     }
-    // Signed-in teammate → member token (verified authorship); else devToken (generic).
-    const token = this.memberToken ?? this.devToken
     const doc = await this.apiFetch('/api/comments', { method: 'POST', body: JSON.stringify(body) }, token)
     return toReviewComment(doc as Record<string, unknown>)
   }
