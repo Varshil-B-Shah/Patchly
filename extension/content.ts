@@ -52,6 +52,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.patchlyMemberToken) pushIdentity()
 })
 
+// Push identity immediately on page load so the toolbar chip reflects sign-in
+// state as soon as the extension is opened — no need to wait for a WS STATUS.
+pushIdentity()
+
 function setConnected(connected: boolean): void {
   isConnected = connected
   window.__patchlySetConnected?.(connected)

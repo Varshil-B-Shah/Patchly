@@ -3,16 +3,18 @@
 
 import { connectDb } from '@/lib/db'
 import { resolveAuth } from '@/lib/apiAuth'
+import { Project } from '@/lib/models/Project'
 import { Comment } from '@/lib/models/Comment'
 import { resolveCommentSchema } from '@/lib/schemas'
 import { toComment } from '@/lib/serialize'
 import { deleteScreenshot } from '@/lib/uploadthing'
 import { ok, err } from '@/lib/http'
+import { isMember } from '@/lib/projectAccess'
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ commentId: string }> }) {
   const { commentId } = await params
   const a = await resolveAuth(req)
-  if (a.kind !== 'devToken') return err('Unauthorized', 401)
+  if (a.kind !== 'devToken' && a.kind !== 'member') return err('Unauthorized', 401)
 
   const body = await req.json().catch(() => null)
   const parsed = resolveCommentSchema.safeParse(body)
@@ -21,7 +23,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ commen
   await connectDb()
   const comment = await Comment.findById(commentId)
   if (!comment) return err('Comment not found', 404)
-  if (String(comment.projectId) !== a.projectId) return err('Forbidden', 403)
+
+  if (a.kind === 'member') {
+    const project = await Project.findById(comment.projectId).lean()
+    if (!project || !isMember(project, a.userId)) return err('Forbidden', 403)
+  } else {
+    if (String(comment.projectId) !== a.projectId) return err('Forbidden', 403)
+  }
 
   comment.status = 'resolved'
   comment.resolvedAt = new Date()

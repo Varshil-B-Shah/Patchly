@@ -254,7 +254,7 @@ function updateIdentityChip(): void {
   const chip = toolbar?.querySelector('.patchly-tb-identity') as HTMLElement | null
   if (!chip) return
   const cloudApiUrl = window.__patchlyGetCloudApiUrl?.() ?? null
-  if (activeMode !== 'comment' || !cloudApiUrl) { chip.style.display = 'none'; return }
+  if (!cloudApiUrl) { chip.style.display = 'none'; return }
 
   chip.style.cssText = 'display:flex;align-items:center;gap:6px;'
   chip.textContent = ''  // clear; only controlled nodes appended below
@@ -323,14 +323,19 @@ function activate(): void {
   updateToolbar()
   window.addEventListener('scroll', onViewportChange, true)
   window.addEventListener('resize', onViewportChange)
+  // Keep comments in sync in EVERY mode (not just Comment mode) so the dev sees
+  // reviewer comments arrive live while in AI/Tailwind mode too.
   requestCommentList()
+  startPoll()
 }
 
 function exitEditing(): void {
   isActive = false
   mouseDown = false
   isDragging = false
-  stopPoll()
+  // DO NOT stopPoll() here — the poll keeps running in the background so reviewer
+  // comments appear as pins even while the toolbar is hidden. The poll stops
+  // naturally when the tab is navigated away (content script unloads with the page).
   clearSelectionState()
 
   root?.classList.remove('active', 'mode-ai', 'mode-tailwind', 'mode-comment')
@@ -378,10 +383,10 @@ function onViewportChange(): void {
 // ─── Modes ───────────────────────────────────────────────────────────────────
 
 function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
-  // Cleanup when leaving comment mode.
+  // Cleanup when leaving comment mode. Polling stays on (it's lifecycle-scoped to
+  // the active session now, not to Comment mode) so pins keep syncing in all modes.
   if (activeMode === 'comment') {
     hideCommentComposer()
-    stopPoll()
   }
 
   activeMode = mode
@@ -411,9 +416,8 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
     if (promptInput) promptInput.value = ''
     if (elementHighlight) elementHighlight.style.display = 'none'
     if (componentLabel) componentLabel.style.display = 'none'
-    // Load comments so pins can render, then poll every 5s for new ones.
+    // Refresh immediately on entering comment mode (polling already runs from activate).
     requestCommentList()
-    startPoll()
   } else {
     // Tailwind gate is shown inside the class panel (renderPanel checks tailwindConfigured).
     // If something is already selected from AI, inspect it in the sidebar.
@@ -424,6 +428,10 @@ function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
       inspectCurrentSelection()
     }
   }
+
+  // Pin visibility depends on the mode (they always show in Comment mode), so
+  // rebuild whenever the mode changes.
+  buildPins()
 }
 
 function requestCommentList(): void {
@@ -461,6 +469,12 @@ function updateCommentBadge(): void {
     (c) => c.status === 'open' && urlMatches(c.pageUrl),
   ).length
   tab.textContent = openCount > 0 ? `Comment · ${openCount}` : 'Comment'
+}
+
+// Pins show in all modes when the user has them toggled ON; when toggled OFF they
+// still appear in Comment mode so the dev can always see what they're working on.
+function pinsShown(): boolean {
+  return pinsVisible || activeMode === 'comment'
 }
 
 // Open comments for the current page, oldest first → pin #1 is the earliest.
@@ -502,7 +516,7 @@ function buildPins(): void {
   if (!pinsContainerEl) return
   closePinCard()
   pinsContainerEl.innerHTML = ''
-  if (!pinsVisible) { updateCommentBadge(); return }
+  if (!pinsShown()) { updateCommentBadge(); return }
   const openComments = openCommentsSorted()
   openComments.forEach((comment, i) => {
     const pin = document.createElement('div')
@@ -535,7 +549,7 @@ function buildPins(): void {
 }
 
 function updatePinPositions(): void {
-  if (!pinsContainerEl || !pinsVisible) return
+  if (!pinsContainerEl || !pinsShown()) return
   const openComments = openCommentsSorted()
   const pins = pinsContainerEl.querySelectorAll<HTMLElement>('.patchly-pin')
   const placed: Record<string, number> = {}  // "x,y" → count, to spread overlaps
@@ -682,8 +696,8 @@ function openPinCard(
   const actions = document.createElement('div')
   actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
 
-  if (comment.status === 'open' && activeMode === 'comment') {
-    // Full actions — only available when in Comment mode.
+  if (comment.status === 'open') {
+    // The dev (extension) always has full power on any comment, in any mode.
     const fixAIBtn = document.createElement('button')
     fixAIBtn.textContent = 'Fix with AI'
     fixAIBtn.style.cssText =
@@ -703,12 +717,6 @@ function openPinCard(
     resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
 
     actions.append(fixAIBtn, editClassBtn, resolveBtn)
-  } else if (comment.status === 'open') {
-    // Read-only when not in comment mode — hint to switch modes.
-    const hint = document.createElement('span')
-    hint.style.cssText = 'font-size:11px;color:#555577;'
-    hint.textContent = 'Switch to Comment mode to fix or resolve.'
-    actions.appendChild(hint)
   } else {
     const resolvedLabel = document.createElement('span')
     resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;'
@@ -783,7 +791,7 @@ function openPinCard(
 
   pinCardEl.appendChild(actions)
 
-  if (comment.status === 'open' && activeMode === 'comment') {
+  if (comment.status === 'open') {
     const hints = document.createElement('div')
     hints.style.cssText = 'color:#555577;font-size:10px;margin-top:2px;'
     hints.textContent = 'A · Fix with AI  T · Tailwind  R · Resolve  Esc · Close'
@@ -795,8 +803,8 @@ function openPinCard(
 
   pinCardKeyHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
-    // Action shortcuts only in comment mode
-    if (comment.status === 'open' && activeMode === 'comment') {
+    // Action shortcuts available whenever the card is open (dev has full power).
+    if (comment.status === 'open') {
       if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
       else if (e.key === 't' || e.key === 'T') { e.preventDefault(); editClasses(comment) }
       else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resolveComment(comment.id, 'dev') }
@@ -807,6 +815,7 @@ function openPinCard(
 
 function fixWithAI(comment: import('../shared/comments').ReviewComment): void {
   closePinCard()
+  if (!isActive) activate()  // re-open toolbar if it was closed with Esc
   setMode('ai')
   if (comment.patchlySrc) {
     const el = findAnchorEl(comment) as HTMLElement | null
@@ -822,6 +831,7 @@ function fixWithAI(comment: import('../shared/comments').ReviewComment): void {
 
 function editClasses(comment: import('../shared/comments').ReviewComment): void {
   closePinCard()
+  if (!isActive) activate()  // re-open toolbar if it was closed with Esc
   setMode('tailwind')
   if (comment.patchlySrc) {
     const el = findAnchorEl(comment) as HTMLElement | null

@@ -15,8 +15,12 @@ window.addEventListener('message', (event: MessageEvent) => {
   const data = event.data as AuthMessage | undefined
   if (!data || data.source !== 'patchly-auth' || typeof data.token !== 'string') return
 
-  chrome.storage.local.set({
-    patchlyMemberToken: data.token,
-    patchlyIdentity: data.identity,
-  })
+  chrome.storage.local.set(
+    { patchlyMemberToken: data.token, patchlyIdentity: data.identity },
+    () => {
+      // Signal back to the page that storage is committed — page uses this to
+      // auto-close the tab so the user doesn't have to close it manually.
+      window.postMessage({ source: 'patchly-auth-stored' }, window.location.origin)
+    },
+  )
 })

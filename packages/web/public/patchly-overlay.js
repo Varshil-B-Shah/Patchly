@@ -383,6 +383,7 @@
 
   document.addEventListener('mouseover', function (e) {
     if (!inMode || composerVisible()) return;
+    if (isOverlayUi(e.target)) { hideHighlight(); return; }
     var target = e.target.closest('[data-patchly-src]');
     if (!target) { hideHighlight(); return; }
     var r = target.getBoundingClientRect();
@@ -395,10 +396,25 @@
     });
   });
 
+  // True when the event originated on Patchly's own overlay UI (the +/× button,
+  // composer, pins, or a pin card). The root layout's <body> carries a
+  // data-patchly-src attribute, so without this guard a click on our own controls
+  // would resolve `closest('[data-patchly-src]')` up to <body> and (a) open a stray
+  // composer and (b) stopPropagation past the button's own handler — which is why
+  // the × never closed comment mode.
+  function isOverlayUi(node) {
+    return !!(
+      (addBtn && addBtn.contains(node)) ||
+      (composerEl && composerEl.contains(node)) ||
+      (pinsEl && pinsEl.contains(node)) ||
+      (pinCardEl && pinCardEl.contains(node))
+    );
+  }
+
   // ── Comment mode click ────────────────────────────────────────────────────────
   document.addEventListener('click', function (e) {
     if (!inMode) return;
-    if (composerEl && composerEl.contains(e.target)) return;
+    if (isOverlayUi(e.target)) return;
     closePinCard();
     var target = e.target.closest('[data-patchly-src]');
     if (!target) return;
