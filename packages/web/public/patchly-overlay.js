@@ -24,6 +24,7 @@
   var composerEl   = null;
   var highlightEl  = null;
   var pinCardEl    = null;
+  var openCardPinEl = null;  // the pin DOM element that opened the current card
   var inMode       = false;   // comment-capture mode
   var selectedEl   = null;
   var h2cLoaded    = false;
@@ -209,6 +210,7 @@
   function openPinCard(c, num, pinEl) {
     closePinCard();
     openCommentId = c.id;
+    openCardPinEl = pinEl || openCardPinEl;  // keep last known pin if not provided
     pinCardEl = el('div',
       'position:fixed;z-index:2147483647;' +
       'background:#1e1e2e;border:1px solid #3b3b5c;border-radius:8px;padding:12px;width:280px;' +
@@ -286,11 +288,15 @@
           return r2.json();
         }).then(function(updated) {
           if (!updated) return;
-          // Update cached comment and re-render the card
+          // Update cached comment so polling sees the new reply too.
           for (var i = 0; i < comments.length; i++) {
             if (comments[i].id === c.id) { comments[i] = updated; break; }
           }
+          // Save pin reference before closePinCard clears it, then reopen
+          // so the card stays positioned near the pin (not bottom-right corner).
+          var savedPin = openCardPinEl;
           closePinCard();
+          openCardPinEl = savedPin;  // restore so openPinCard can use it
           openPinCard(updated, num, null);
         }).catch(function() { replyBtn.disabled = false; });
       };
@@ -322,15 +328,16 @@
       pinCardEl.appendChild(deleteBtn);
     }
 
-    // Position near the pin that was clicked, same logic as the extension.
-    if (pinEl) {
-      var r = pinEl.getBoundingClientRect();
+    // Position near the pin. openCardPinEl retains the last known pin so that
+    // reopening after reply submission doesn't fall back to the bottom-right corner.
+    var anchorPin = openCardPinEl;
+    if (anchorPin) {
+      var r = anchorPin.getBoundingClientRect();
       var top  = Math.min(r.bottom + 6, window.innerHeight - 220);
       var left = Math.max(8, Math.min(r.left - 8, window.innerWidth - 296));
       pinCardEl.style.top  = top  + 'px';
       pinCardEl.style.left = left + 'px';
     } else {
-      // Fallback if no pin element
       pinCardEl.style.bottom = '80px';
       pinCardEl.style.right  = '16px';
     }
@@ -342,6 +349,7 @@
   function closePinCard() {
     if (pinCardEl) { pinCardEl.remove(); pinCardEl = null; }
     openCommentId = null;
+    openCardPinEl = null;
   }
 
   // ── Add button ────────────────────────────────────────────────────────────────

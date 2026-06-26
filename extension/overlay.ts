@@ -21,6 +21,7 @@ interface SelectionRect { x: number; y: number; width: number; height: number }
 let isActive = false            // editing mode on/off
 let activeMode: 'ai' | 'tailwind' | 'comment' = 'ai'
 let pinsVisible = true          // user toggle — persists across mode switches
+let hasAiEdits = false          // becomes true once any AI edit is applied this session
 
 // Comment mode state
 let commentComposerEl: HTMLDivElement | null = null
@@ -226,9 +227,9 @@ function updateToolbar(): void {
   const undoBtn = toolbar.querySelector('.patchly-tb-undo') as HTMLButtonElement
   const redoBtn = toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement
   if (activeMode === 'ai') {
-    // AI is undo-only; redo is hidden.
+    // AI is undo-only; redo is hidden. Button disabled until an edit is confirmed.
     undoBtn.style.display = ''
-    undoBtn.disabled = false
+    undoBtn.disabled = !hasAiEdits
     redoBtn.style.display = 'none'
   } else if (activeMode === 'comment') {
     // Comment mode has no undo/redo.
@@ -1650,18 +1651,48 @@ window.__patchlyCancel = exitEditing
 window.__patchlySetConnected = setConnectedDot
 window.__patchlyHistoryChanged = updateToolbar
 
+// Helper: if a pin card is open for the given comment, close and reopen it so
+// the reply thread refreshes in-place (preserves position via the rebuilt pin element).
+function refreshOpenCard(comment: import('../shared/comments').ReviewComment): void {
+  if (openPinCommentId !== comment.id) return
+  const sorted = openCommentsSorted()
+  const pinNum = sorted.findIndex((c) => c.id === comment.id) + 1
+  if (pinNum > 0) {
+    closePinCard()
+    openPinCard(comment, pinNum)
+  }
+}
+
 // Comment mode inbound handlers
 window.__patchlyOnCommentAdded = (comment) => {
-  if (!cachedComments.find((c) => c.id === comment.id)) {
+  const idx = cachedComments.findIndex((c) => c.id === comment.id)
+  if (idx >= 0) {
+    // Replace existing (REPLY_ADDED sends the full updated comment including new replies)
+    cachedComments = [...cachedComments.slice(0, idx), comment, ...cachedComments.slice(idx + 1)]
+  } else {
     cachedComments = [...cachedComments, comment]
   }
   buildPins()
+  refreshOpenCard(comment)
 }
 window.__patchlyOnComments = (sessionId, comments) => {
   if (sessionId !== listCommentsSessionId) return
   listCommentsSessionId = null
+
+  // Check if the open card's comment has new replies before we replace the cache.
+  const prevOpen = openPinCommentId ? cachedComments.find((c) => c.id === openPinCommentId) : null
+  const prevReplyCount = prevOpen?.replies?.length ?? -1
+
   cachedComments = comments
   buildPins()
+
+  // Refresh open card only when its reply thread changed (poll brought new replies).
+  if (prevOpen) {
+    const updated = cachedComments.find((c) => c.id === prevOpen.id)
+    if (updated && (updated.replies?.length ?? 0) !== prevReplyCount) {
+      refreshOpenCard(updated)
+    }
+  }
 }
 window.__patchlyOnCommentResolved = (id) => {
   // Comment is marked resolved (still in JSON); remove from open-comments cache
@@ -2019,7 +2050,20 @@ function showInfoToast(message: string): void {
   }, 8000)
 }
 
-window.__patchlyShowSuccess = showSuccessToast
+window.__patchlyShowSuccess = (opts) => {
+  if (opts.editId) {
+    // A new AI edit was confirmed — enable undo.
+    hasAiEdits = true
+    updateToolbar()
+  }
+  if (opts.showUndo === false) {
+    // Undo was just performed; the agent tells us showUndo:false when the stack
+    // is empty (nothing left to undo). In that case, disable the button.
+    hasAiEdits = false
+    updateToolbar()
+  }
+  showSuccessToast(opts)
+}
 window.__patchlyShowError = showErrorToast
 window.__patchlyShowInfo = showInfoToast
 
