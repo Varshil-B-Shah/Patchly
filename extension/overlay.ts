@@ -154,7 +154,10 @@ function buildToolbar(): void {
     <button class="patchly-tb-redo" title="Redo">↷</button>
     <span class="patchly-tb-identity" style="display:none"></span>
     <span class="patchly-tb-sep"></span>
-    <button class="patchly-tb-pins active" title="Show/hide comment pins">📌</button>
+    <label class="patchly-tb-pins-toggle" title="Show/hide comment pins">
+      <input type="checkbox" class="patchly-tb-pins-check" checked />
+      <span class="patchly-tb-pins-track"><span class="patchly-tb-pins-thumb"></span></span>
+    </label>
     <button class="patchly-tb-settings" title="Settings">⚙</button>
     <span class="patchly-tb-dot" title="Agent status"></span>
     <button class="patchly-tb-close" title="Exit editing (Esc)">×</button>
@@ -183,10 +186,9 @@ function buildToolbar(): void {
   ;(toolbar.querySelector('.patchly-tb-redo') as HTMLButtonElement).addEventListener('click', onRedo)
   ;(toolbar.querySelector('.patchly-tb-close') as HTMLButtonElement).addEventListener('click', exitEditing)
   ;(toolbar.querySelector('.patchly-tb-settings') as HTMLButtonElement).addEventListener('click', toggleSettings)
-  ;(toolbar.querySelector('.patchly-tb-pins') as HTMLButtonElement).addEventListener('click', () => {
-    pinsVisible = !pinsVisible
-    const btn = toolbar?.querySelector('.patchly-tb-pins') as HTMLElement | null
-    if (btn) btn.classList.toggle('active', pinsVisible)
+  ;(toolbar.querySelector('.patchly-tb-pins-check') as HTMLInputElement).addEventListener('change', (e) => {
+    pinsVisible = (e.target as HTMLInputElement).checked
+    try { chrome.storage.local.set({ patchlyPinsVisible: pinsVisible }) } catch { /* unavailable */ }
     buildPins()
   })
 
@@ -323,10 +325,25 @@ function activate(): void {
   updateToolbar()
   window.addEventListener('scroll', onViewportChange, true)
   window.addEventListener('resize', onViewportChange)
-  // Keep comments in sync in EVERY mode (not just Comment mode) so the dev sees
-  // reviewer comments arrive live while in AI/Tailwind mode too.
   requestCommentList()
   startPoll()
+
+  // Restore persisted settings: last mode + pin visibility.
+  // Runs after the toolbar is shown so any mode switch is instant and visible.
+  try {
+    chrome.storage.local.get(['patchlyLastMode', 'patchlyPinsVisible'], (s) => {
+      const savedMode = s.patchlyLastMode as string | undefined
+      if (savedMode && ['ai', 'tailwind', 'comment'].includes(savedMode) && savedMode !== activeMode) {
+        setMode(savedMode as 'ai' | 'tailwind' | 'comment')
+      }
+      if (typeof s.patchlyPinsVisible === 'boolean' && s.patchlyPinsVisible !== pinsVisible) {
+        pinsVisible = s.patchlyPinsVisible
+        const chk = toolbar?.querySelector('.patchly-tb-pins-check') as HTMLInputElement | null
+        if (chk) chk.checked = pinsVisible
+        buildPins()
+      }
+    })
+  } catch { /* storage unavailable in some contexts */ }
 }
 
 function exitEditing(): void {
@@ -383,13 +400,10 @@ function onViewportChange(): void {
 // ─── Modes ───────────────────────────────────────────────────────────────────
 
 function setMode(mode: 'ai' | 'tailwind' | 'comment'): void {
-  // Cleanup when leaving comment mode. Polling stays on (it's lifecycle-scoped to
-  // the active session now, not to Comment mode) so pins keep syncing in all modes.
-  if (activeMode === 'comment') {
-    hideCommentComposer()
-  }
+  if (activeMode === 'comment') hideCommentComposer()
 
   activeMode = mode
+  try { chrome.storage.local.set({ patchlyLastMode: mode }) } catch { /* unavailable */ }
   root?.classList.remove('mode-ai', 'mode-tailwind', 'mode-comment')
   root?.classList.add(`mode-${mode}`)
   updateToolbar()
@@ -471,10 +485,9 @@ function updateCommentBadge(): void {
   tab.textContent = openCount > 0 ? `Comment · ${openCount}` : 'Comment'
 }
 
-// Pins show in all modes when the user has them toggled ON; when toggled OFF they
-// still appear in Comment mode so the dev can always see what they're working on.
+// Toggle is the user's explicit choice — respected unconditionally.
 function pinsShown(): boolean {
-  return pinsVisible || activeMode === 'comment'
+  return pinsVisible
 }
 
 // Open comments for the current page, oldest first → pin #1 is the earliest.
@@ -514,7 +527,6 @@ function findAnchorEl(comment: import('../shared/comments').ReviewComment): Elem
 
 function buildPins(): void {
   if (!pinsContainerEl) return
-  closePinCard()
   pinsContainerEl.innerHTML = ''
   if (!pinsShown()) { updateCommentBadge(); return }
   const openComments = openCommentsSorted()
@@ -541,8 +553,9 @@ function buildPins(): void {
   updatePinPositions()
   updateCommentBadge()
 
-  // Keep the open card alive across rebuilds (polling/nav) — only close it if its
-  // comment is gone, so the user can read/reply without it vanishing.
+  // Close the open card ONLY if its comment was deleted/resolved and is no longer
+  // in the list. Otherwise keep it alive so the user can read/reply without the
+  // card vanishing every 5s when the poll fires.
   if (openPinCommentId && !openComments.some((c) => c.id === openPinCommentId)) {
     closePinCard()
   }
@@ -696,8 +709,8 @@ function openPinCard(
   const actions = document.createElement('div')
   actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;'
 
-  if (comment.status === 'open') {
-    // The dev (extension) always has full power on any comment, in any mode.
+  if (comment.status === 'open' && isActive) {
+    // Toolbar is open — full dev actions available.
     const fixAIBtn = document.createElement('button')
     fixAIBtn.textContent = 'Fix with AI'
     fixAIBtn.style.cssText =
@@ -717,6 +730,13 @@ function openPinCard(
     resolveBtn.addEventListener('click', () => resolveComment(comment.id, 'dev'))
 
     actions.append(fixAIBtn, editClassBtn, resolveBtn)
+  } else if (comment.status === 'open') {
+    // Toolbar closed — read-only view. Reply thread still works (shown separately).
+    // Clicking the pin re-opens the toolbar automatically if the user wants to act.
+    const hint = document.createElement('span')
+    hint.style.cssText = 'font-size:11px;color:#555577;'
+    hint.textContent = 'Open Patchly to fix or resolve.'
+    actions.appendChild(hint)
   } else {
     const resolvedLabel = document.createElement('span')
     resolvedLabel.style.cssText = 'color:#4ade80;font-size:12px;'
@@ -791,7 +811,7 @@ function openPinCard(
 
   pinCardEl.appendChild(actions)
 
-  if (comment.status === 'open') {
+  if (comment.status === 'open' && isActive) {
     const hints = document.createElement('div')
     hints.style.cssText = 'color:#555577;font-size:10px;margin-top:2px;'
     hints.textContent = 'A · Fix with AI  T · Tailwind  R · Resolve  Esc · Close'
@@ -803,8 +823,8 @@ function openPinCard(
 
   pinCardKeyHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); closePinCard() }
-    // Action shortcuts available whenever the card is open (dev has full power).
-    if (comment.status === 'open') {
+    // Action shortcuts only when toolbar is open.
+    if (comment.status === 'open' && isActive) {
       if (e.key === 'a' || e.key === 'A') { e.preventDefault(); fixWithAI(comment) }
       else if (e.key === 't' || e.key === 'T') { e.preventDefault(); editClasses(comment) }
       else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resolveComment(comment.id, 'dev') }

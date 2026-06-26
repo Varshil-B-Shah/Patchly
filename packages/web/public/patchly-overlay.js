@@ -363,7 +363,10 @@
     inMode = !inMode;
     addBtn.style.background = inMode ? '#16a34a' : '#7c3aed';
     addBtn.textContent = inMode ? '×' : '+';
-    document.body.style.cursor = inMode ? 'crosshair' : '';
+    // Do NOT touch document.body.style — it causes a React hydration mismatch because
+    // React diffs the server-rendered <body> against the client one and sees the
+    // style attribute appearing unexpectedly. The hover highlight already shows which
+    // element is targeted, so no cursor change is needed.
     if (!inMode) { hideHighlight(); hideComposer(); }
   }
 
