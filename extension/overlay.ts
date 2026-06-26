@@ -487,7 +487,10 @@ function updateCommentBadge(): void {
 
 // Toggle is the user's explicit choice — respected unconditionally.
 function pinsShown(): boolean {
-  return pinsVisible
+  // Comment mode with toolbar open: always show pins so the dev can see what
+  // comments exist while working. Toggle only hides pins in AI/Tailwind mode
+  // and when the toolbar is closed (isActive = false after Esc).
+  return pinsVisible || (isActive && activeMode === 'comment')
 }
 
 // Open comments for the current page, oldest first → pin #1 is the earliest.
