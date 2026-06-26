@@ -38,7 +38,7 @@ export function ReviewSection() {
                 <div key={i} className="flex items-center gap-4">
                   {i > 0 && <div className="absolute ml-5 -mt-5 w-px h-4 bg-white/10" />}
                   <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
+                    className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shrink-0"
                     style={{ background: `${step.color}20`, border: `1px solid ${step.color}40`, color: step.color }}
                   >
                     {step.icon}
@@ -60,7 +60,7 @@ export function ReviewSection() {
             <ul className="space-y-5">
               {BULLETS.map((b, i) => (
                 <li key={i} className="flex items-start gap-3">
-                  <span className="mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'rgba(200,168,105,0.7)' }} />
+                  <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(200,168,105,0.7)' }} />
                   <span className="text-[0.92rem] leading-relaxed" style={{ color: 'var(--w-pale)' }}>{b}</span>
                 </li>
               ))}

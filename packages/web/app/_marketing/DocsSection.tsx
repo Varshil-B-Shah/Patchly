@@ -1,24 +1,41 @@
+import Link from 'next/link'
+
 const DOCS = [
   {
-    title: 'Documentation',
-    desc: 'Full setup guide, architecture deep-dive, and protocol reference.',
-    link: 'https://github.com/varshil-b-shah/patchly#readme',
-    cta: 'Read the README →',
-    tape: 'tape rotate-[-3deg] left-5',
+    title: 'Quick start',
+    desc: 'Install, add the plugin, load the extension. Up in 5 minutes.',
+    href: '/docs/getting-started',
+    tape: 'tape -rotate-3 left-5',
   },
   {
-    title: 'Community',
-    desc: 'Ask questions, share workflows, and report issues with the team.',
-    link: 'https://github.com/varshil-b-shah/patchly/discussions',
-    cta: 'GitHub Discussions →',
-    tape: 'tape-warm tape rotate-[4deg] left-7',
+    title: 'AI Mode',
+    desc: 'Click an element, describe the change, review the diff.',
+    href: '/docs/ai-mode',
+    tape: 'tape-warm tape rotate-3 left-6',
   },
   {
-    title: 'Changelog',
-    desc: 'See what\'s new in each release — features, fixes, and breaking changes.',
-    link: 'https://github.com/varshil-b-shah/patchly/releases',
-    cta: 'GitHub Releases →',
-    tape: 'tape-cool tape rotate-[-5deg] left-5',
+    title: 'Tailwind Mode',
+    desc: 'Toggle and search Tailwind classes in a live inspector sidebar.',
+    href: '/docs/tailwind-mode',
+    tape: 'tape-cool tape -rotate-2 left-5',
+  },
+  {
+    title: 'Comment Mode',
+    desc: 'Pin numbered comments, share with clients, fix inline.',
+    href: '/docs/comment-mode',
+    tape: 'tape rotate-[2deg] left-7',
+  },
+  {
+    title: 'Cloud setup',
+    desc: 'MongoDB, GitHub OAuth, UploadThing, and env vars.',
+    href: '/docs/cloud-setup',
+    tape: 'tape-warm tape -rotate-3 left-5',
+  },
+  {
+    title: 'MCP Server',
+    desc: 'Give Claude Code or Copilot eyes on your running browser.',
+    href: '/docs/mcp',
+    tape: 'tape-cool tape rotate-3 left-6',
   },
 ]
 
@@ -39,28 +56,49 @@ export function DocsSection() {
           Everything you need to get started.
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {DOCS.map(({ title, desc, link, cta, tape }) => (
-            <a
-              key={title}
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="wood-card relative p-7 rounded-sm block group no-underline transition-opacity hover:opacity-90"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          {DOCS.map(({ title, desc, href, tape }) => (
+            <Link
+              key={href}
+              href={href}
+              className="wood-card relative p-6 rounded-sm block group no-underline transition-opacity hover:opacity-90"
             >
               <div className={`absolute -top-1.5 w-11 h-2.5 ${tape}`} />
-              <div
-                className="text-[1.05rem] mb-2"
-                style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)' }}
-              >
+              <div className="text-[1rem] mb-1.5" style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)' }}>
                 {title}
               </div>
-              <p className="text-[0.82rem] leading-relaxed mb-4" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-[0.8rem] leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
                 {desc}
               </p>
-              <span className="text-[0.8rem]" style={{ color: 'rgba(200,168,105,0.75)' }}>{cta}</span>
-            </a>
+              <span className="text-[0.78rem]" style={{ color: 'rgba(200,168,105,0.75)' }}>Read more →</span>
+            </Link>
           ))}
+        </div>
+
+        {/* GitHub issues strip */}
+        <div
+          className="rounded-sm p-6 border text-center"
+          style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(100,75,45,0.2)' }}
+        >
+          <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+            Bug? Feature request? Feedback? Open an issue on GitHub — all reports are welcome.
+          </p>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <a href="https://github.com/varshil-b-shah/patchly/issues/new?template=bug_report.md" target="_blank" rel="noreferrer"
+              className="text-[0.8rem] px-4 py-2 rounded-sm border transition-opacity hover:opacity-80"
+              style={{ borderColor: 'rgba(150,110,70,0.3)', color: 'var(--text-muted)' }}>
+              Report a bug
+            </a>
+            <a href="https://github.com/varshil-b-shah/patchly/issues/new?template=feature_request.md" target="_blank" rel="noreferrer"
+              className="text-[0.8rem] px-4 py-2 rounded-sm border transition-opacity hover:opacity-80"
+              style={{ borderColor: 'rgba(150,110,70,0.3)', color: 'var(--text-muted)' }}>
+              Request a feature
+            </a>
+            <Link href="/docs" className="text-[0.8rem] px-4 py-2 rounded-sm border transition-opacity hover:opacity-80"
+              style={{ borderColor: 'rgba(150,110,70,0.3)', color: 'var(--text-muted)' }}>
+              Browse all docs
+            </Link>
+          </div>
         </div>
       </div>
     </section>

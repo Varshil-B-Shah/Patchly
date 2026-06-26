@@ -5,6 +5,7 @@ import { Comment } from '@/lib/models/Comment'
 import Link from 'next/link'
 import { createProject } from '@/app/actions'
 import { ensureUser } from '@/lib/users'
+import { DashboardShell, Card, CardTitle } from '../_dashboard/DashboardShell'
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -12,82 +13,106 @@ export default async function DashboardPage() {
 
   await ensureUser(session)
   await connectDb()
-  // Projects I own OR am a member of.
   const projects = await Project.find({
     $or: [{ ownerId: userId }, { 'members.userId': userId }],
   }).sort({ createdAt: -1 }).lean()
 
-  // Open comment count per project
   const counts = await Promise.all(
     projects.map((p) => Comment.countDocuments({ projectId: p._id, status: 'open' }))
   )
 
   return (
-    <div className="max-w-3xl mx-auto py-10 px-4 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Projects</h1>
-        <form action={async () => { 'use server'; await signOut({ redirectTo: '/login' }) }}>
-          <button className="text-sm text-gray-500 hover:text-gray-700">Sign out</button>
-        </form>
-      </div>
-
-      {/* Project list */}
-      {projects.length === 0 ? (
-        <p className="text-gray-500 text-sm">No projects yet. Create one below.</p>
-      ) : (
-        <div className="space-y-3">
-          {projects.map((p, i) => (
-            <Link
-              key={String(p._id)}
-              href={`/dashboard/${p._id}`}
-              className="block bg-white border border-gray-200 rounded-xl p-4 hover:border-indigo-300 transition"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-gray-900">{p.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{p.domains.join(', ') || 'no domains'}</div>
-                </div>
-                {counts[i] > 0 && (
-                  <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                    {counts[i]} open
-                  </span>
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/* New project form */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-        <h2 className="font-semibold text-gray-900">New project</h2>
-        <form action={createProject} className="space-y-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Name</label>
-            <input
-              name="name"
-              required
-              placeholder="Acme App"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Domains (comma-separated)</label>
-            <input
-              name="domains"
-              placeholder="localhost:5173, acme-preview.vercel.app"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
-          <button
-            type="submit"
-            className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 transition font-medium"
+    <DashboardShell
+      breadcrumb={[{ label: 'Projects' }]}
+      userName={session?.user?.name ?? undefined}
+    >
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-end justify-between">
+          <h1
+            className="text-[1.7rem]"
+            style={{ fontFamily: 'var(--font-display)', color: 'var(--w-cream)', textShadow: '0 2px 12px rgba(0,0,0,.4)' }}
           >
-            Create project
-          </button>
-        </form>
+            Projects
+          </h1>
+          <span className="text-[0.78rem]" style={{ color: 'var(--text-muted)' }}>
+            {projects.length} project{projects.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {/* Project list */}
+        {projects.length === 0 ? (
+          <div
+            className="py-10 text-center text-sm rounded-sm border"
+            style={{ color: 'var(--text-muted)', borderColor: 'rgba(100,75,45,0.2)', background: 'rgba(255,255,255,0.02)' }}
+          >
+            No projects yet — create one below.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {projects.map((p, i) => (
+              <Link
+                key={String(p._id)}
+                href={`/dashboard/${p._id}`}
+                className="block rounded-sm transition-opacity hover:opacity-90 relative"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(150,110,70,0.18)' }}
+              >
+                <div className="tape-warm tape absolute -top-1 left-4 w-8 h-2 -rotate-3" />
+                <div className="px-5 py-4 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-[0.95rem]" style={{ color: 'var(--w-cream)' }}>{p.name}</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {p.domains.join(', ') || 'no domains configured'}
+                    </div>
+                  </div>
+                  {counts[i] > 0 && (
+                    <span
+                      className="text-xs font-bold px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(99,102,241,0.25)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }}
+                    >
+                      {counts[i]} open
+                    </span>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* New project */}
+        <Card>
+          <div className="tape absolute -top-1.5 left-6 w-12 h-3 rotate-[-4deg] tape" />
+          <CardTitle>New project</CardTitle>
+          <form action={createProject} className="space-y-3">
+            <div>
+              <label className="block text-xs mb-1" style={{ color: '#6b4e30' }}>Name</label>
+              <input
+                name="name"
+                required
+                placeholder="Acme App"
+                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                style={{ borderColor: 'rgba(160,120,70,0.35)', background: 'rgba(255,248,235,0.8)', color: '#2a1c0e', '--tw-ring-color': 'rgba(160,120,70,0.4)' } as React.CSSProperties}
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1" style={{ color: '#6b4e30' }}>Domains (comma-separated)</label>
+              <input
+                name="domains"
+                placeholder="localhost:5173, acme-preview.vercel.app"
+                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                style={{ borderColor: 'rgba(160,120,70,0.35)', background: 'rgba(255,248,235,0.8)', color: '#2a1c0e', '--tw-ring-color': 'rgba(160,120,70,0.4)' } as React.CSSProperties}
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-5 py-2 rounded-sm text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ background: 'rgba(200,168,100,0.22)', border: '1px solid rgba(200,168,100,0.45)', color: '#2a1c0e' }}
+            >
+              Create project
+            </button>
+          </form>
+        </Card>
       </div>
-    </div>
+    </DashboardShell>
   )
 }
