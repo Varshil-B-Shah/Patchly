@@ -8,7 +8,7 @@ export function Navbar({ isLoggedIn }: { isLoggedIn: boolean }) {
       className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-10 py-3 border-b border-[rgba(150,110,70,0.12)]"
       style={{ background: 'rgba(20,12,5,0.85)', backdropFilter: 'blur(14px) saturate(1.2)' }}
     >
-      <Link href="/" className="flex-shrink-0">
+      <Link href="/" className="shrink-0">
         <Logo size="sm" />
       </Link>
 
@@ -17,7 +17,7 @@ export function Navbar({ isLoggedIn }: { isLoggedIn: boolean }) {
           { href: '#features', label: 'Features' },
           { href: '#how', label: 'How it works' },
           { href: '#review', label: 'Review' },
-          { href: '#docs', label: 'Docs' },
+          { href: '/docs', label: 'Docs' },
           { href: 'https://github.com/varshil-b-shah/patchly', label: 'GitHub', external: true },
         ].map(({ href, label, external }) => (
           <li key={label}>

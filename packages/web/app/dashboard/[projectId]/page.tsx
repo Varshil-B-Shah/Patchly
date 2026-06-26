@@ -12,10 +12,6 @@ import { isMember, isOwner } from '@/lib/projectAccess'
 import { ensureUser, getUsers } from '@/lib/users'
 import { DashboardShell, Card, CardTitle } from '../../_dashboard/DashboardShell'
 
-function fmt(d: Date | string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 const inputCls = 'w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1'
 const inputStyle = { borderColor: 'rgba(160,120,70,0.35)', background: 'rgba(255,248,235,0.85)', color: '#2a1c0e' }
 const btnPrimary = 'px-4 py-2 rounded-sm text-sm font-semibold transition-opacity hover:opacity-80 whitespace-nowrap'
@@ -137,12 +133,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
               </form>
             </Card>
 
-            {/* Dev token */}
+            {/* MCP / agent token */}
             <Card>
               <div className="tape-warm tape absolute -top-1.5 left-5 w-12 h-3 rotate-[-5deg]" />
-              <CardTitle>Dev token</CardTitle>
-              <p className="text-xs mb-3" style={{ color: '#6b4e30' }}>
-                Add to your project's <code className="font-mono">.env</code> as <code className="font-mono">PATCHLY_DEV_TOKEN</code>. Treat like a secret.
+              <CardTitle>MCP token</CardTitle>
+              <p className="text-xs mb-1" style={{ color: '#6b4e30' }}>
+                Only needed if you use the <strong>MCP server</strong> (Claude Code, Copilot, Cline) or run the agent
+                without the extension open (CI, scripts). Add it to your project's{' '}
+                <code className="font-mono">.env</code> as <code className="font-mono">PATCHLY_DEV_TOKEN</code>.
+              </p>
+              <p className="text-xs mb-3" style={{ color: '#8a6a44' }}>
+                If you only use the extension — just sign in with GitHub and skip this entirely.
               </p>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-sm select-none" style={{ color: '#8a6a44' }}>{'•'.repeat(32)}</span>
@@ -150,59 +151,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
               </div>
             </Card>
 
-            {/* Review links */}
+            {/* Review token */}
             <Card>
               <div className="tape absolute -top-1.5 right-6 w-10 h-3 rotate-3" />
-              <CardTitle>Review links</CardTitle>
-              {links.length > 0 && (
-                <div className="overflow-x-auto mb-5">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs border-b" style={{ color: '#8a6a44', borderColor: 'rgba(160,120,70,0.2)' }}>
-                        <th className="pb-2 font-medium">Label</th>
-                        <th className="pb-2 font-medium">Created</th>
-                        <th className="pb-2 font-medium">Expires</th>
-                        <th className="pb-2 font-medium">Status</th>
-                        <th className="pb-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody style={{ color: '#3a2a18' }}>
-                      {links.map((l) => {
-                        const isRevoked = !!l.revokedAt
-                        const isExpired = l.expiresAt ? new Date(l.expiresAt) < new Date() : false
-                        const status = isRevoked ? 'Revoked' : isExpired ? 'Expired' : 'Active'
-                        const shareUrl = `${appUrl}/review/${l.token}`
-                        return (
-                          <tr key={String(l._id)} className="border-b" style={{ borderColor: 'rgba(160,120,70,0.1)' }}>
-                            <td className="py-2.5 pr-4 font-medium">{l.label}</td>
-                            <td className="py-2.5 pr-4 text-xs" style={{ color: '#6b4e30' }}>{fmt(l.createdAt)}</td>
-                            <td className="py-2.5 pr-4 text-xs" style={{ color: '#6b4e30' }}>{l.expiresAt ? fmt(l.expiresAt) : '—'}</td>
-                            <td className="py-2.5 pr-4">
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: status === 'Active' ? 'rgba(34,197,94,0.12)' : 'rgba(0,0,0,0.06)', color: status === 'Active' ? '#15803d' : '#6b4e30' }}>
-                                {status}
-                              </span>
-                            </td>
-                            <td className="py-2.5">
-                              {status === 'Active' && (
-                                <div className="flex items-center gap-2">
-                                  <CopyButton text={shareUrl} label="Copy URL" />
-                                  <form action={revokeLink.bind(null, projectId, String(l._id))}>
-                                    <button className={btnDanger} style={btnDangerStyle}>Revoke</button>
-                                  </form>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+              <CardTitle>Review token</CardTitle>
+              <p className="text-xs mb-4" style={{ color: '#6b4e30' }}>
+                Generate a token and add it to your app's{' '}
+                <code className="font-mono">.env.local</code> as{' '}
+                <code className="font-mono">PATCHLY_REVIEW_TOKEN</code>.
+                Share your tunnel URL with the client — the review overlay appears automatically.
+              </p>
+
+              {/* Active tokens */}
+              {links.filter((l) => !l.revokedAt && !(l.expiresAt && new Date(l.expiresAt) < new Date())).length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {links
+                    .filter((l) => !l.revokedAt && !(l.expiresAt && new Date(l.expiresAt) < new Date()))
+                    .map((l) => (
+                      <div key={String(l._id)} className="flex items-center gap-2">
+                        <code className="flex-1 text-xs font-mono px-2 py-1.5 rounded-sm truncate" style={{ background: 'rgba(0,0,0,0.07)', color: '#5a3010' }}>
+                          {l.token}
+                        </code>
+                        <CopyButton text={l.token} label="Copy" />
+                        <form action={revokeLink.bind(null, projectId, String(l._id))}>
+                          <button className={btnDanger} style={btnDangerStyle}>Revoke</button>
+                        </form>
+                      </div>
+                    ))}
                 </div>
               )}
-              <div className="pt-3" style={{ borderTop: links.length > 0 ? '1px solid rgba(160,120,70,0.2)' : undefined }}>
-                <p className="text-xs mb-3 font-medium" style={{ color: '#5a3c1a' }}>New review link</p>
-                <NewLinkForm projectId={projectId} />
-              </div>
+
+              <NewLinkForm projectId={projectId} />
             </Card>
           </>
         )}

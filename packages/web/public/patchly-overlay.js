@@ -51,8 +51,17 @@
     try { extPresent = sessionStorage.getItem('__patchly_ext') === '1'; } catch { /* blocked */ }
     if (extPresent) return;
 
-    reviewerName = localStorage.getItem('patchly_reviewer_name') || '';
-    if (!reviewerName) reviewerName = await promptNameOnce();
+    // Use the link's label as the reviewer display name — the dev already named
+    // this session when they created the link (e.g. "Client Review — June").
+    // Only fall back to the name prompt if the link has no label at all.
+    var linkLabel = (data.linkLabel || '').trim();
+    if (linkLabel) {
+      reviewerName = linkLabel;
+      localStorage.setItem('patchly_reviewer_name', reviewerName);
+    } else {
+      reviewerName = localStorage.getItem('patchly_reviewer_name') || '';
+      if (!reviewerName) reviewerName = await promptNameOnce();
+    }
 
     buildPinsLayer();
     buildHighlight();

@@ -88,15 +88,11 @@ export async function patchDomains(projectId: string, formData: FormData) {
 
 // ── Review links ───────────────────────────────────────────────────────────────
 
-export async function createLink(projectId: string, formData: FormData) {
+export async function createLink(projectId: string) {
   await requireOwner(projectId)
-  const userId    = await requireSession()
-  const label     = String(formData.get('label') ?? '').trim()
-  const expiresAt = formData.get('expiresAt') ? new Date(String(formData.get('expiresAt'))) : undefined
-  if (!label) return { error: 'Label is required' }
-  const link = await ReviewLink.create({ projectId, label, createdBy: userId, expiresAt })
-  // The token goes in the dev's .env (PATCHLY_REVIEW_TOKEN); the Vite plugin injects
-  // the overlay. There's no /review page — clients open the tunnel URL directly.
+  const userId = await requireSession()
+  // Label is optional — review tokens no longer have visible labels in the UI.
+  const link = await ReviewLink.create({ projectId, label: '', createdBy: userId })
   revalidatePath(`/dashboard/${projectId}`)
   return { token: link.token }
 }

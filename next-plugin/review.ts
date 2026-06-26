@@ -8,15 +8,15 @@
 //   ... <body>{children}<PatchlyReview /></body>
 //
 // Env (in your Next project's .env.local):
-//   NEXT_PUBLIC_PATCHLY_REVIEW_TOKEN=<review link token from the dashboard>
-//   NEXT_PUBLIC_PATCHLY_CLOUD_HOST=http://localhost:3000
+//   PATCHLY_REVIEW_TOKEN=<review token from the dashboard>
+//   PATCHLY_CLOUD_HOST=http://localhost:3000
 
 import * as React from 'react'
 
 export function PatchlyReview(): React.ReactElement | null {
   if (process.env.NODE_ENV === 'production') return null
-  const token = process.env.NEXT_PUBLIC_PATCHLY_REVIEW_TOKEN
-  const host = process.env.NEXT_PUBLIC_PATCHLY_CLOUD_HOST
+  const token = process.env.PATCHLY_REVIEW_TOKEN
+  const host = process.env.PATCHLY_CLOUD_HOST
   if (!token || !host) return null
 
   return React.createElement('script', {
