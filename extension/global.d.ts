@@ -1,8 +1,3 @@
-// extension/global.d.ts
-// Typed declarations for the window.__patchly* globals shared between the two
-// content scripts (content.ts defines the send functions; overlay.ts defines the
-// UI functions). Both bundles must honour this contract.
-
 import type { ReviewComment } from '../shared/comments'
 
 export {}
@@ -30,13 +25,13 @@ declare global {
     __patchlyGetTheme?: () => Record<string, unknown> | null
     __patchlyGetTailwindConfigured?: () => boolean | null
     __patchlyIsConnected?: () => boolean
-    // Cloud identity (Phase D2): cloud info from STATUS + sign-out + identity callback
+    // Cloud identity
     __patchlyGetCloudApiUrl?: () => string | null
     __patchlyGetCloudProjectId?: () => string | null
     __patchlySignOut?: () => void
     __patchlyOnIdentity?: (identity: { userId: string; name: string; image?: string } | null) => void
 
-    // ── Defined by overlay.ts, called by content.ts ──────────────────────────
+    // ── Defined by overlay.ts, called by content.ts
     __patchlyActivate?: () => void
     __patchlyToggle?: () => void
     __patchlySetConnected?: (connected: boolean) => void

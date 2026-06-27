@@ -1,27 +1,16 @@
-// extension/classPanel.ts
-// Figma-style docked inspector sidebar for direct Tailwind class editing.
-// No LLM in the loop; edits go through APPLY_OPS → applyEditOperations.
-//
-// Bundled into overlay.js by esbuild (imported by overlay.ts). The panel keeps
-// its OWN per-target class model + undo/redo stack — the agent APPLY_OPS path is
-// stateless and these edits never enter the AI "Patchly edits" history.
-
 import { computeClassAdd, computeClassRemove, applyClassEdit } from '../shared/tailwindClasses.js'
 import { searchClasses, defaultSuggestions } from '../shared/tailwindCatalog.js'
 import type { ClassInfo, ThemeTokens } from '../shared/protocol.js'
 import type { SetClassNameOp, EditTarget } from '../shared/operations.js'
 
-// One selected element's live model.
 interface TargetState {
   patchlySrc: string
   info: ClassInfo
   classes: string[]
 }
 
-// One undo/redo step: the before/after class list of each affected target.
 type Step = { patchlySrc: string; before: string[]; after: string[] }[]
 
-// A snapshot to restore if the in-flight op fails.
 interface Pending {
   sessionId: string
   models: Map<string, string[]>
@@ -29,7 +18,6 @@ interface Pending {
   redoStack: Step[]
 }
 
-// ─── State ─────────────────────────────────────────────────────────────────────
 let panelEl: HTMLDivElement | null = null
 let targets: TargetState[] = []
 let theme: ThemeTokens = { colors: [] }
@@ -37,7 +25,6 @@ let undoStack: Step[] = []
 let redoStack: Step[] = []
 let pending: Pending | null = null
 let pendingSessionId = ''
-// Per-section search queries. Key is 'all' (apply-to-all bar) or 'el<i>' (element i).
 let queries: Record<string, string> = {}
 const scopeToSrc = new Map<string, string>()
 
@@ -60,20 +47,15 @@ function editableTargets(): TargetState[] {
   return targets.filter(isEditable)
 }
 
-// ─── Lifecycle ──────────────────────────────────────────────────────────────────
-
-/** Create the docked sidebar container (once). Called from overlay init(). */
 export function initClassPanel(): void {
   if (document.getElementById('patchly-class-panel')) return
   panelEl = document.createElement('div')
   panelEl.id = 'patchly-class-panel'
   panelEl.style.display = 'none'
   document.body.appendChild(panelEl)
-  // Don't let clicks/drags inside the panel reach the selection canvas.
   panelEl.addEventListener('mousedown', (e) => e.stopPropagation())
 }
 
-/** Populate from inspected element(s) and show the docked sidebar. */
 export function showClassPanel(elements: ClassInfo[], themeTokens: ThemeTokens): void {
   theme = themeTokens ?? { colors: [] }
   targets = elements.map((info) => ({
@@ -81,7 +63,6 @@ export function showClassPanel(elements: ClassInfo[], themeTokens: ThemeTokens):
     info,
     classes: info.classNameKind === 'static' ? [...info.classes] : [],
   }))
-  // New selection → fresh undo/redo (v1 scope: per-selection history).
   undoStack = []
   redoStack = []
   pending = null
@@ -90,7 +71,6 @@ export function showClassPanel(elements: ClassInfo[], themeTokens: ThemeTokens):
   if (panelEl) panelEl.style.display = 'flex'
 }
 
-/** Hide and clear (cancel / switch to AI tab). */
 export function hideClassPanel(): void {
   if (panelEl) panelEl.style.display = 'none'
   targets = []
@@ -99,12 +79,10 @@ export function hideClassPanel(): void {
   pending = null
 }
 
-/** content.ts: an APPLY_OPS for this session succeeded — drop the revert snapshot. */
 export function classEditApplied(sessionId: string): void {
   if (pending && pending.sessionId === sessionId) pending = null
 }
 
-/** content.ts: an APPLY_OPS for this session failed — revert the optimistic step. */
 export function classEditError(sessionId: string): void {
   if (!pending || pending.sessionId !== sessionId) return
   for (const t of targets) {
@@ -117,21 +95,16 @@ export function classEditError(sessionId: string): void {
   renderPanel()
 }
 
-// ─── Dispatch (optimistic apply + send) ──────────────────────────────────────────
-
 function buildTarget(info: ClassInfo): EditTarget {
   return { file: info.filePath, line: info.lineNumber, column: info.column, tagName: info.tagName }
 }
 
 interface Transition { src: string; from: string[]; to: string[] }
 
-// Apply a set of transitions optimistically, snapshot for revert, and send ops.
-// Returns false if nothing actually changed.
 function dispatch(transitions: Transition[], explanation: string): boolean {
   const changed = transitions.filter((t) => !sameSet(t.from, t.to))
   if (!changed.length) return false
 
-  // Snapshot BEFORE mutating, so a failure can restore models + stacks exactly.
   const sessionId = newId()
   pendingSessionId = sessionId
   pending = {
@@ -158,7 +131,6 @@ function dispatch(transitions: Transition[], explanation: string): boolean {
   return true
 }
 
-// Build + commit a fresh edit (from the user) across all editable targets.
 function commit(mutate: (classes: string[]) => { add: string[]; remove: string[] } | null, explanation: string): void {
   const transitions: Transition[] = editableTargets().map((t) => {
     const edit = mutate(t.classes)
@@ -212,9 +184,6 @@ export function redo(): void {
   }
 }
 
-// ─── Edit intents ────────────────────────────────────────────────────────────────
-
-// Apply-to-all (every editable target).
 function addClassAll(cls: string): void {
   commit((classes) => computeClassAdd(classes, cls), `Add ${cls} to all`)
 }
@@ -222,7 +191,6 @@ function removeClassAll(cls: string): void {
   commit((classes) => (classes.includes(cls) ? computeClassRemove(cls) : null), `Remove ${cls} from all`)
 }
 
-// Per-element (one target). Reuses dispatch so undo/redo + revert work unchanged.
 function commitOne(src: string, mutate: (classes: string[]) => { add: string[]; remove: string[] } | null, explanation: string): void {
   const t = bySrc(src)
   if (!t || !isEditable(t)) return
@@ -243,8 +211,6 @@ function addClassOne(src: string, cls: string): void {
 function removeClassOne(src: string, cls: string): void {
   commitOne(src, (classes) => (classes.includes(cls) ? computeClassRemove(cls) : null), `Remove ${cls}`)
 }
-
-// ─── Render ────────────────────────────────────────────────────────────────────
 
 interface ClassState { cls: string; count: number; total: number }
 
@@ -267,7 +233,6 @@ function classExistsAll(cls: string): boolean {
   return ed.length > 0 && ed.every((t) => t.classes.includes(cls))
 }
 
-// Render the search-results list for one scope ('all' or 'el<i>').
 function renderResultsFor(scope: string): void {
   const box = panelEl?.querySelector(`.patchly-cp-results[data-scope="${scope}"]`) as HTMLElement | null
   if (!box) return
@@ -297,7 +262,6 @@ function renderResultsFor(scope: string): void {
   })
 }
 
-// HTML for a search box + results container for a scope.
 function searchHtml(scope: string): string {
   return (
     `<div class="patchly-cp-search">` +
@@ -308,7 +272,6 @@ function searchHtml(scope: string): string {
   )
 }
 
-// HTML for a class row (devtools-style). `mixed` only applies to the apply-all union.
 function classRowHtml(cls: string, scope: string, mixed = false, count = 0, total = 0): string {
   const mark = mixed ? '–' : '✓'
   return (
@@ -322,7 +285,6 @@ function classRowHtml(cls: string, scope: string, mixed = false, count = 0, tota
 }
 
 function renderPanel(): void {
-  // renderPanel runs after every stack-changing action — let the toolbar refresh.
   window.__patchlyHistoryChanged?.()
   if (!panelEl) return
   scopeToSrc.clear()
@@ -332,13 +294,11 @@ function renderPanel(): void {
     return
   }
 
-  // Block editing if Tailwind isn't in the project — classes would be written to
-  // source but have no visual effect, which is confusing.
   if (window.__patchlyGetTailwindConfigured?.() === false) {
     panelEl.innerHTML = `
       <div class="patchly-cp-toolbar">
         <span class="patchly-cp-title">Inspector</span>
-        <button class="patchly-cp-close" title="Close">×</button>
+        <button class="patchly-cp-close" title="Close">x</button>
       </div>
       <div style="padding:16px;font-size:13px;color:#f59e0b;line-height:1.5;">
         ⚠ Tailwind CSS is not detected in this project.<br/>
@@ -356,7 +316,6 @@ function renderPanel(): void {
   const showApplyAll = editable.length > 1
   const titleText = multi ? `${targets.length} elements` : 'Inspector'
 
-  // Apply-to-all bar (multi-select only)
   let applyAllHtml = ''
   if (showApplyAll) {
     const states = unionClassStates()
@@ -371,7 +330,6 @@ function renderPanel(): void {
       </div>`
   }
 
-  // Per-element sections
   const sections = targets
     .map((t, i) => {
       const info = t.info
@@ -407,13 +365,11 @@ function renderPanel(): void {
     </div>
   `
 
-  // Close
   ;(panelEl.querySelector('.patchly-cp-close') as HTMLButtonElement | null)?.addEventListener('click', () => {
     hideClassPanel()
     window.__patchlyClassPanelClosed?.()
   })
 
-  // Class rows (scope-aware)
   panelEl.querySelectorAll<HTMLElement>('.patchly-cp-row').forEach((row) => {
     const cls = row.getAttribute('data-cls')!
     const scope = row.getAttribute('data-scope')!
@@ -426,7 +382,6 @@ function renderPanel(): void {
     ;(row.querySelector('.patchly-cp-rm') as HTMLButtonElement).onclick = removeFn
   })
 
-  // Search inputs (scope-aware)
   panelEl.querySelectorAll<HTMLInputElement>('.patchly-cp-search-input').forEach((input) => {
     const scope = input.getAttribute('data-scope')!
     input.value = queries[scope] ?? ''
@@ -449,7 +404,6 @@ function renderPanel(): void {
     renderResultsFor(scope)
   })
 
-  // Per-element section hover → highlight the corresponding DOM element
   panelEl.querySelectorAll<HTMLElement>('.patchly-cp-section[data-scope]').forEach((section) => {
     const scope = section.getAttribute('data-scope')!
     const src = scopeToSrc.get(scope)

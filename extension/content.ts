@@ -1,14 +1,3 @@
-// extension/content.ts
-// Manages the WebSocket connection to the local agent and routes incoming
-// messages to the overlay UI (via window.__patchly* globals).
-
-// Stamp the DOM so page scripts (like patchly-overlay.js) can detect the extension.
-// Skip on the Patchly dashboard itself (it self-identifies via a meta tag) to avoid
-// SSR hydration mismatches. A meta check — not host/port — so a user's Next app on
-// :3000 is NOT mistaken for the dashboard.
-// Signal the overlay (patchly-overlay.js, which runs in the page world) that the
-// extension is present. sessionStorage is shared between the isolated world and the
-// page world, touches no DOM, and clears when the tab closes — zero hydration impact.
 const _isDashboard = !!document.querySelector('meta[name="patchly-dashboard"]')
 if (!_isDashboard) {
   try { sessionStorage.setItem('__patchly_ext', '1') } catch { /* storage blocked */ }

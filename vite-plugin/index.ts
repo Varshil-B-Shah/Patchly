@@ -1,6 +1,5 @@
 import { instrumentJsx } from '../instrument/index.js'
 
-// Minimal Vite plugin shape — avoids adding `vite` as a dependency just for types.
 interface HtmlTagDescriptor {
   tag: string
   attrs?: Record<string, string>
@@ -21,9 +20,7 @@ interface MinimalVitePlugin {
 }
 
 export interface PatchlyPluginOptions {
-  /** Review link token. If set (or PATCHLY_REVIEW_TOKEN env), the overlay is auto-injected in dev. */
   reviewToken?: string
-  /** Patchly web host that serves /patchly-overlay.js, e.g. "https://patchly.app" or "http://localhost:3000". */
   cloudHost?: string
 }
 
@@ -38,9 +35,6 @@ export function patchlyPlugin(options: PatchlyPluginOptions = {}): MinimalVitePl
       projectRoot = config.root
     },
 
-    // Auto-inject the client review overlay in dev/serve when a review token is
-    // configured. ctx.server is undefined during `vite build`, so this never
-    // leaks into a production bundle (Phase E adds an opt-in build path).
     transformIndexHtml: {
       order: 'pre',
       handler(html, ctx) {
