@@ -1,15 +1,9 @@
-// agent/ast/safety.ts
-// Reusable write-path safety rails for the AST editing pipeline. Ported from the
-// inline checks in agent/fileEditor.js so the new pipeline (and, after the 6.9
-// cutover, the server) share one canonical set of rails.
-
 import fs from 'fs'
 import path from 'path'
 import type { OpResult } from './types.js'
 
 const MAX_FILE_SIZE_BYTES = 500 * 1024
 
-// Directories that must never be written to.
 export const FORBIDDEN_PATHS: string[] = [
   'node_modules',
   '.git',
@@ -19,7 +13,6 @@ export const FORBIDDEN_PATHS: string[] = [
   'out',
 ]
 
-// Files that must never be written to.
 export const FORBIDDEN_FILES: string[] = [
   '.env',
   '.env.local',
@@ -35,7 +28,6 @@ export const FORBIDDEN_FILES: string[] = [
   'next.config.ts',
 ]
 
-// Validate that absolutePath is a safe target to write to inside projectRoot.
 export function checkWritePath({ absolutePath, projectRoot }: { absolutePath: string; projectRoot: string }): OpResult {
   const resolvedPath = path.resolve(absolutePath)
   const resolvedRoot = path.resolve(projectRoot)

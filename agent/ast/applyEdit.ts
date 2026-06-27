@@ -1,8 +1,3 @@
-// agent/ast/applyEdit.ts
-// The LLM-independent edit pipeline: resolve → confirm → mutate → syntax-guard →
-// format → write → diff. The same entry point the LLM path (6.9) and the future
-// drag-drop UI both call. Undo stays in the server (it keeps the returned snapshot).
-
 import fs from 'fs'
 import path from 'path'
 import { getProject, getSourceFile } from './project.js'
@@ -14,9 +9,6 @@ import { makeDiff } from './diff.js'
 import type { ApplyResult } from './types.js'
 import type { EditOperation } from '../../shared/operations.js'
 
-// Apply a batch of EditOperations (each carrying its own target) to one file.
-// With { dryRun: true } everything runs except the write — used to compute a
-// preview diff without touching disk.
 export async function applyEditOperations({
   projectRoot,
   operations,
@@ -30,7 +22,6 @@ export async function applyEditOperations({
     return { ok: false, code: 'NO_OPERATIONS', message: 'No operations to apply.' }
   }
 
-  // Single-file for now (schema already allows multi-file later).
   const file = operations[0].target.file
   if (operations.some((op) => op.target.file !== file)) {
     return { ok: false, code: 'UNSUPPORTED_MULTIFILE', message: 'All operations must target the same file.' }
@@ -39,13 +30,12 @@ export async function applyEditOperations({
   const absolutePath = path.resolve(projectRoot, file)
   const relativePath = path.relative(path.resolve(projectRoot), absolutePath).replace(/\\/g, '/')
 
-  // ── Safety rails ──
+  // Safety rails
   const pathCheck = checkWritePath({ absolutePath, projectRoot })
   if (!pathCheck.ok) return pathCheck
   const sizeCheck = checkFileSize(absolutePath)
   if (!sizeCheck.ok) return sizeCheck
 
-  // ── Load (refreshed from disk) ──
   const sourceFile = getSourceFile(projectRoot, absolutePath)
   if (!sourceFile) {
     return { ok: false, code: 'FILE_NOT_FOUND', message: `Could not load ${relativePath}.` }
@@ -53,13 +43,9 @@ export async function applyEditOperations({
 
   const project = getProject(projectRoot)
 
-  // Disk is authoritative. refreshFromFileSystemSync() does NOT discard prior
-  // in-memory edits when the file is unchanged on disk (e.g. a preceding dry
-  // run), so force the AST back to the current disk content before editing.
   const diskText = fs.readFileSync(absolutePath, 'utf8')
   if (sourceFile.getFullText() !== diskText) sourceFile.replaceWithText(diskText)
 
-  // ── Pre-edit syntax guard ──
   if (project.getProgram().getSyntacticDiagnostics(sourceFile).length > 0) {
     return {
       ok: false,
@@ -70,11 +56,6 @@ export async function applyEditOperations({
 
   const snapshot = diskText
 
-  // ── Two-phase batch: resolve ALL targets BEFORE any mutations ──
-  // If we called resolveTarget inside the apply loop, the first op's AST
-  // mutation (e.g. inserting a `style` attr) can invalidate the line/column
-  // positions recorded in subsequent ops, causing a false TARGET_DRIFTED.
-  // Resolving everything upfront against the clean AST avoids this.
   const resolvedOps: { node: import('./types.js').JsxNode; op: EditOperation }[] = []
   for (const op of operations) {
     const resolved = resolveTarget(sourceFile, op.target)
@@ -82,13 +63,11 @@ export async function applyEditOperations({
     resolvedOps.push({ node: resolved.node, op })
   }
 
-  // ── Apply each resolved operation ──
   for (const { node, op } of resolvedOps) {
     const result = applyOperation(node, op, project)
     if (!result.ok) return result
   }
 
-  // ── Post-edit syntax guard (discard on failure, write nothing) ──
   if (project.getProgram().getSyntacticDiagnostics(sourceFile).length > 0) {
     return {
       ok: false,
@@ -97,17 +76,12 @@ export async function applyEditOperations({
     }
   }
 
-  // ── Format ──
   let formatted = await formatEdited(sourceFile, snapshot, absolutePath)
 
-  // Preserve the file's original line-ending style. ts-morph (replaceWithText)
-  // and Prettier (endOfLine: 'lf') both normalize to LF, which would silently
-  // rewrite every CRLF line. Match the snapshot so the diff stays minimal.
   const eol = snapshot.includes('\r\n') ? '\r\n' : '\n'
   formatted = formatted.replace(/\r\n/g, '\n')
   if (eol === '\r\n') formatted = formatted.replace(/\n/g, '\r\n')
 
-  // ── Write (skipped on dry run) ──
   if (!dryRun) {
     try {
       fs.writeFileSync(absolutePath, formatted, 'utf8')
