@@ -1,10 +1,7 @@
-// agent/comments/store.ts
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import type { ReviewComment } from '../../shared/comments.js'
-
-// TODO(PhaseB): swap JSON file read/write for a remote API call — see CloudCommentClient.
 
 export interface CommentStoreInterface {
   add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): Promise<ReviewComment>
@@ -29,7 +26,7 @@ export class CommentStore implements CommentStoreInterface {
       const parsed = JSON.parse(raw)
       return Array.isArray(parsed) ? (parsed as ReviewComment[]) : []
     } catch {
-      return [] // missing or corrupt file — tolerate gracefully
+      return []
     }
   }
 
@@ -38,7 +35,7 @@ export class CommentStore implements CommentStoreInterface {
     fs.mkdirSync(dir, { recursive: true })
     const tmp = this.filePath + '.tmp'
     fs.writeFileSync(tmp, JSON.stringify(comments, null, 2), 'utf-8')
-    fs.renameSync(tmp, this.filePath) // atomic on POSIX; best-effort on Windows
+    fs.renameSync(tmp, this.filePath)
   }
 
   async add(data: Omit<ReviewComment, 'id' | 'createdAt' | 'status'>): Promise<ReviewComment> {

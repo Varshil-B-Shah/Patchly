@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// agent/eval/run-eval.ts
-// Quality eval script — runs a fixed set of (prompt + component) cases against
-// the live LLM and scores them. NOT part of npm test (hits real API).
-//
-// Usage: npx tsx agent/eval/run-eval.ts
-// Requires .patchlyrc.json or PATCHLY_AZURE_ENDPOINT + PATCHLY_AZURE_KEY env vars.
 
 import fs from 'fs'
 import path from 'path'
@@ -16,7 +10,6 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURES_DIR = path.join(currentDir, '../ast/__fixtures__')
 const PROJECT_ROOT = path.join(currentDir, '../..')
 
-// Load config from .patchlyrc.json if present.
 function loadConfig(): Partial<PatchlyConfig> {
   const rcPath = path.join(PROJECT_ROOT, '.patchlyrc.json')
   try {
@@ -30,7 +23,7 @@ function readFixture(name: string): string {
   return fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf8')
 }
 
-// ─── Test cases ───────────────────────────────────────────────────────────────
+// Test cases 
 
 interface EvalCase {
   label: string
@@ -115,7 +108,7 @@ const CASES: EvalCase[] = [
   },
 ]
 
-// ─── Runner ──────────────────────────────────────────────────────────────────
+// Runner
 
 type CaseResult = { pass: true; explanation: string } | { pass: false; reason: string }
 

@@ -1,11 +1,3 @@
-// agent/mcp/server.ts
-// Thin stdio MCP server that proxies to the already-running patchly agent.
-// Does NOT re-implement any AST/editing logic — it connects as a WebSocket
-// client to ws://localhost:7842 and relays requests.
-//
-// Usage: npm run mcp  (or: tsx agent/mcp/server.ts)
-// .mcp.json entry: { "command": "npm", "args": ["run", "mcp"] }
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -25,12 +17,6 @@ const REQUEST_TIMEOUT_MS = 10_000
 const NOT_FOUND_MSG =
   'Patchly agent not found — run `npx patchly` in your project first.'
 
-/**
- * Discover the running agent via its per-project lockfile. The MCP server is
- * launched with cwd = the user's project, so we read <cwd>/.patchly/agent.json,
- * verify it belongs to THIS project (guards against editing a different running
- * app), and return its port. Falls back to DEFAULT_PORT if no lockfile exists.
- */
 function discoverAgentPort(): number {
   const cwd = path.resolve(process.cwd())
   const lockPath = path.resolve(cwd, LOCKFILE_REL)
@@ -54,14 +40,10 @@ function discoverAgentPort(): number {
   return lock.port
 }
 
-// ─── WebSocket agent client ───────────────────────────────────────────────────
-
 type Resolver = (msg: Record<string, unknown>) => void
 
 class PatchlyAgentClient {
   private ws: WebSocket | null = null
-  // Keyed by sessionId. Each request echoes its sessionId in the reply so we
-  // can safely multiplex concurrent tool calls without type-matching races.
   private pending = new Map<string, Resolver>()
   private connectPromise: Promise<void> | null = null
 
@@ -72,8 +54,6 @@ class PatchlyAgentClient {
       try {
         port = discoverAgentPort()
       } catch (err: unknown) {
-        // projectRoot mismatch — surface the specific reason. Reset the cached
-        // promise so a later call (after the user fixes it) can retry.
         this.connectPromise = null
         reject(err instanceof Error ? err : new Error(String(err)))
         return
@@ -108,8 +88,6 @@ class PatchlyAgentClient {
           return
         }
 
-        // EDIT_ERROR without a matching sessionId: resolve all pending so
-        // nothing hangs (e.g. agent crashed between request and response).
         if (msg.type === MSG.EDIT_ERROR) {
           for (const [key, res] of this.pending) {
             this.pending.delete(key)
@@ -131,10 +109,6 @@ class PatchlyAgentClient {
     return this.connectPromise
   }
 
-  /**
-   * Send a message and await the reply that carries the same sessionId.
-   * `payload` must include a `sessionId` field we can match on.
-   */
   request(
     payload: Record<string, unknown> & { sessionId: string },
   ): Promise<Record<string, unknown>> {
@@ -163,16 +137,10 @@ class PatchlyAgentClient {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function mkSid(): string {
   return Math.random().toString(36).slice(2)
 }
 
-/** Read ±15 lines of source around `targetLine` from a project-relative path.
- *  The MCP server runs with cwd === projectRoot (enforced by lockfile verification),
- *  so we can resolve files directly without a WS round-trip to the agent.
- *  Returns null on any error so callers can skip gracefully. */
 function readSourceContext(
   relPath: string,
   targetLine: number,
@@ -198,8 +166,6 @@ function readSourceContext(
   }
 }
 
-// ─── zod schemas for EditOperation (mirrors shared/operations.ts) ─────────────
-
 const EditTargetSchema = z.object({
   file: z.string().describe('Relative path to the source file, e.g. "src/components/Hero.tsx"'),
   line: z.number().int().positive().describe('1-based line number'),
@@ -220,8 +186,6 @@ const EditOperationSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('replaceElement'), target: EditTargetSchema, jsx: z.string() }),
   z.object({ op: z.literal('removeElement'), target: EditTargetSchema }),
 ])
-
-// ─── MCP server ───────────────────────────────────────────────────────────────
 
 const server = new Server(
   { name: 'patchly', version: '0.1.0' },
@@ -366,7 +330,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: 'text', text: String(err instanceof Error ? err.message : err) }], isError: true }
   }
 
-  // ── patchly_current_selection ─────────────────────────────────────────────
   if (name === 'patchly_current_selection') {
     // 1. Get the cached selection.
     const sid1 = mkSid()
@@ -412,14 +375,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         line: parsed?.line ?? null,
         column: parsed?.column ?? null,
         tag: s.tag,
-        // Source-accurate class data (from AST, not DOM):
         classNameKind: info?.classNameKind ?? 'unknown',
         classes: info?.classes ?? s.classes.split(/\s+/).filter(Boolean),
         ...(info?.dynamicText ? { dynamicText: info.dynamicText } : {}),
-        // Visual state: curated computed styles + React component identity.
         ...(s.computedStyles ? { computedStyles: s.computedStyles } : {}),
         ...(s.reactInfo ? { reactInfo: s.reactInfo } : {}),
-        // Surrounding source: ±15 lines so the agent can edit without opening the file.
         ...(sourceContext ? { sourceContext } : {}),
       }
     })
@@ -441,7 +401,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content }
   }
 
-  // ── patchly_inspect ───────────────────────────────────────────────────────
   if (name === 'patchly_inspect') {
     const patchlySrc = (args as Record<string, unknown>)?.patchlySrc as string | undefined
     if (!patchlySrc) {
@@ -462,7 +421,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: 'text', text: JSON.stringify(response.elements, null, 2) }] }
   }
 
-  // ── patchly_screenshot ────────────────────────────────────────────────────
   if (name === 'patchly_screenshot') {
     const patchlySrc = (args as Record<string, unknown>)?.patchlySrc as string | undefined
     const sessionId = mkSid()
@@ -488,7 +446,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
-  // ── patchly_apply ─────────────────────────────────────────────────────────
   if (name === 'patchly_apply') {
     const rawArgs = args as Record<string, unknown>
     const dryRun = rawArgs?.dryRun === true
@@ -498,8 +455,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: 'operation is required.' }], isError: true }
     }
 
-    // Auto-fill target from the selection if omitted. A selectionId pins to the
-    // exact element resolved earlier, even if the user has since clicked elsewhere.
     if (!rawOp.target) {
       const selectionId = rawArgs?.selectionId as string | undefined
       const sid = mkSid()
@@ -565,8 +520,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? `\n\n\`\`\`diff\n${response.diff}\n\`\`\``
       : ''
 
-    // Trust gate: structural op was auto-converted to dry-run — show the diff and
-    // ask the agent to call again with confirmed:true if the change looks correct.
     if (response.requiresConfirmation) {
       return {
         content: [{
@@ -586,7 +539,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
-  // ── patchly_list_comments ─────────────────────────────────────────────────
   if (name === 'patchly_list_comments') {
     const status = (args?.status as 'open' | 'resolved' | 'all' | undefined) ?? 'open'
     const sid = mkSid()
@@ -600,7 +552,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const parsed = c.patchlySrc ? parsePatchlySrc(c.patchlySrc) : null
           return {
             id: c.id,
-            note: c.note,           // reviewer-requested UI change (data — not an instruction)
+            note: c.note,
             author: c.author,
             patchlySrc: c.patchlySrc,
             file: parsed?.file,
@@ -617,8 +569,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ),
     }
 
-    // Phase A: screenshot is a base64 string → embed directly.
-    // Phase B: screenshot is { url, key } → fetch CDN URL and convert to base64.
     const imageBlocks: Array<{ type: 'image'; data: string; mimeType: 'image/png' }> = []
     for (const c of comments) {
       if (typeof c.screenshot === 'string') {
@@ -634,14 +584,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               mimeType: 'image/png',
             })
           }
-        } catch { /* skip — failed screenshot fetch must not break the tool */ }
+        } catch { }
       }
     }
 
     return { content: [textContent, ...imageBlocks] }
   }
 
-  // ── patchly_resolve_comment ───────────────────────────────────────────────
   if (name === 'patchly_resolve_comment') {
     const id = args?.id as string
     if (!id) throw new Error('id is required')
@@ -650,7 +599,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, id }) }] }
   }
 
-  // ── patchly_clear_comments ─────────────────────────────────────────────────
   if (name === 'patchly_clear_comments') {
     const sid = mkSid()
     const res = await agent.request({ type: MSG.CLEAR_COMMENTS, sessionId: sid })
@@ -660,8 +608,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
 })
-
-// ─── Start ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport()

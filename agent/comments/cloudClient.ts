@@ -1,12 +1,3 @@
-// agent/comments/cloudClient.ts
-// Cloud proxy for the comment store — calls the Patchly web API instead of
-// reading/writing a local JSON file. Activated when PATCHLY_CLOUD_API_URL,
-// PATCHLY_DEV_TOKEN, and PATCHLY_PROJECT_ID are all set in the environment.
-//
-// SERIALIZATION BOUNDARY: toReviewComment() maps cloud API responses (which
-// use authorDisplayName, ObjectId strings, ISO Date strings) to the local
-// ReviewComment shape. Nothing past this function sees raw API objects.
-
 import type { ReviewComment } from '../../shared/comments.js'
 import type { CommentStoreInterface } from './store.js'
 
@@ -21,7 +12,6 @@ function toReviewComment(c: Record<string, unknown>): ReviewComment {
     rect: c.rect as ReviewComment['rect'],
     pageUrl: c.pageUrl as string,
     note: c.note as string,
-    // Cloud uses authorDisplayName; ReviewComment uses author — map here once.
     author: c.authorDisplayName as string | undefined,
     authorAvatar: c.authorAvatar as string | undefined,
     screenshot: c.screenshot as ReviewComment['screenshot'],
@@ -43,8 +33,6 @@ function toReviewComment(c: Record<string, unknown>): ReviewComment {
 }
 
 export class CloudCommentClient implements CommentStoreInterface {
-  // Set when a teammate signs into the extension (PATCHLY_SET_IDENTITY). When present,
-  // comment writes use this verified member token so authorship is attributed to them.
   private memberToken: string | null = null
 
   constructor(
@@ -134,8 +122,6 @@ export class CloudCommentClient implements CommentStoreInterface {
       rect: data.rect,
       pageUrl: data.pageUrl,
       note: data.note,
-      // Fallback display name for the devToken path; ignored when a member token is used
-      // (the cloud derives identity from the verified token instead).
       authorDisplayName: data.author ?? 'Dev',
       ...(screenshotUploadKey ? { screenshotUploadKey } : {}),
     }
@@ -152,7 +138,6 @@ export class CloudCommentClient implements CommentStoreInterface {
   }
 
   async get(id: string): Promise<ReviewComment | undefined> {
-    // No single-comment GET endpoint — fetch all and find.
     const all = await this.list('all')
     return all.find((c) => c.id === id)
   }
