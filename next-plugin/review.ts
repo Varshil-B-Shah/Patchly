@@ -1,16 +1,3 @@
-// next-plugin/review.ts
-// <PatchlyReview /> — the Next.js equivalent of the Vite plugin's transformIndexHtml.
-// Drop it once into your root layout's <body>; it renders the client-review overlay
-// <script> in development when a review token is configured, and nothing in production.
-//
-// Usage (app/layout.tsx):
-//   import { PatchlyReview } from 'patchly/next/review'
-//   ... <body>{children}<PatchlyReview /></body>
-//
-// Env (in your Next project's .env.local):
-//   PATCHLY_REVIEW_TOKEN=<review token from the dashboard>
-//   PATCHLY_CLOUD_HOST=http://localhost:3000
-
 import * as React from 'react'
 
 export function PatchlyReview(): React.ReactElement | null {

@@ -1,8 +1,3 @@
-// instrument/index.ts
-// Node-only shared JSX instrumentation: injects data-patchly-src="file:line:col"
-// onto every JSX opening element. Used by BOTH the Vite plugin and the Next.js
-// loader so the emitted attribute format is byte-identical across frameworks.
-
 import { parse } from '@babel/parser'
 import traverse from '@babel/traverse'
 import generate from '@babel/generator'
@@ -11,10 +6,6 @@ import path from 'path'
 
 const SKIP_SEGMENTS = ['node_modules', '.next', 'dist', 'build', 'out']
 
-/**
- * Returns instrumented code (+ optional source map), or null to signal "no rewrite"
- * (passthrough) — production builds, non-JSX files, or excluded paths.
- */
 export function instrumentJsx(
   code: string,
   filePath: string,
