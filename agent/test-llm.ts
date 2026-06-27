@@ -1,7 +1,3 @@
-// agent/test-llm.ts
-// Run: npx tsx agent/test-llm.ts
-// Tests the Azure connection in isolation — no agent, no extension needed
-
 import fs from 'fs'
 import path from 'path'
 

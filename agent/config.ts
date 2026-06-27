@@ -1,4 +1,3 @@
-// agent/config.ts
 import fs from 'fs'
 import path from 'path'
 
@@ -11,7 +10,6 @@ export interface PatchlyConfig {
   model?: string
 }
 
-/** A config guaranteed to have a non-null projectRoot (post-startup check). */
 export type ResolvedConfig = PatchlyConfig & { projectRoot: string }
 
 export async function loadConfig(): Promise<PatchlyConfig> {

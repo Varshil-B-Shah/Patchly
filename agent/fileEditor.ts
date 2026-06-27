@@ -1,9 +1,3 @@
-// agent/fileEditor.ts
-// In-memory undo: restore a file to a previously snapshotted content.
-// (The string find/replace edit path was removed in Phase 6.9 — all edits now
-// go through the AST pipeline in agent/ast/. Write-path safety rails live in
-// agent/ast/safety.ts.)
-
 import fs from 'fs'
 import path from 'path'
 
