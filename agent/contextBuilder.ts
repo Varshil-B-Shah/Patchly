@@ -1,8 +1,3 @@
-// agent/contextBuilder.ts
-// Builds supplementary context for the LLM: direct imports, global CSS, and
-// Tailwind design tokens. All reads are capped and safety-guarded — no path
-// traversal, no node_modules, nothing outside projectRoot.
-
 import fs from 'fs'
 import path from 'path'
 import type { ThemeTokens, ThemeColor } from '../shared/protocol.js'
@@ -11,11 +6,10 @@ const IMPORT_RE = /^import\s+.*?from\s+['"]([^'"]+)['"]/gm
 const MAX_IMPORT_CHARS = 1500
 const MAX_GLOBAL_CSS_CHARS = 1500
 const MAX_TAILWIND_CHARS = 400
-const MAX_IMPORTS = 3
+const MAX_IMPORTS = 4
 
 const FORBIDDEN_SEGMENTS = ['node_modules', '.git', 'dist', 'build', '.next', 'out']
 
-/** A single imported file's path (relative) and (capped) contents. */
 export interface ImportContext {
   path: string
   content: string
@@ -23,12 +17,11 @@ export interface ImportContext {
 
 export interface ProjectContext {
   imports: ImportContext[]
-  callers: ImportContext[]   // files that USE this component (empty for non-components)
+  callers: ImportContext[]
   globalCss: string | null
   tailwindTokens: string
 }
 
-/** Minimal shape the context builder needs from a resolved source. */
 interface SourceLike {
   relativePath: string
   fullContent: string
@@ -51,8 +44,6 @@ function tryRead(filePath: string, maxChars: number): string | null {
   }
 }
 
-// Parse static import paths from source text, resolve them relative to the
-// source file's directory, and return up to MAX_IMPORTS that exist on disk.
 function resolveImports(sourceContent: string, sourceAbsolutePath: string, projectRoot: string): string[] {
   const dir = path.dirname(sourceAbsolutePath)
   const results: string[] = []
@@ -63,7 +54,6 @@ function resolveImports(sourceContent: string, sourceAbsolutePath: string, proje
     const specifier = match[1]
     if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue
 
-    // Resolve without an extension first, then try common extensions.
     const base = path.resolve(dir, specifier)
     const candidates = [base, `${base}.js`, `${base}.jsx`, `${base}.ts`, `${base}.tsx`]
 
@@ -81,7 +71,6 @@ function resolveImports(sourceContent: string, sourceAbsolutePath: string, proje
   return results
 }
 
-// Find the project's global CSS file by probing common locations.
 function findGlobalCss(projectRoot: string): string | null {
   const probes = [
     'src/index.css',
@@ -97,16 +86,14 @@ function findGlobalCss(projectRoot: string): string | null {
   return null
 }
 
-// Find Tailwind config: v3 uses tailwind.config.*, v4 uses @tailwindcss/postcss
-// in postcss config or @import "tailwindcss" in a CSS file — no config file at all.
 function findTailwindConfig(projectRoot: string): string | null {
-  // Tailwind v3: explicit config file
+  // Tailwind v3
   for (const name of ['tailwind.config.js', 'tailwind.config.ts', 'tailwind.config.mjs']) {
     const abs = path.join(projectRoot, name)
     if (fs.existsSync(abs)) return abs
   }
 
-  // Tailwind v4: detected via postcss config referencing @tailwindcss/postcss
+  // Tailwind v4
   for (const name of ['postcss.config.mjs', 'postcss.config.js', 'postcss.config.cjs']) {
     const abs = path.join(projectRoot, name)
     if (!fs.existsSync(abs)) continue
@@ -114,7 +101,7 @@ function findTailwindConfig(projectRoot: string): string | null {
     if (content?.includes('@tailwindcss/postcss')) return abs
   }
 
-  // Tailwind v4: detected via @import "tailwindcss" in a global CSS file
+  // Tailwind v4
   for (const cssCandidate of ['app/globals.css', 'src/index.css', 'src/App.css', 'styles/globals.css']) {
     const abs = path.join(projectRoot, cssCandidate)
     if (!fs.existsSync(abs)) continue
@@ -125,12 +112,9 @@ function findTailwindConfig(projectRoot: string): string | null {
   return null
 }
 
-// Extract custom theme keys from raw Tailwind config text.
-// Text-regex only — no require(), no eval. Returns a capped summary string.
 export function parseTailwindConfig(configText: string): string {
   const parts: string[] = []
 
-  // Pull top-level key names from theme.extend.colors / theme.colors blocks.
   const colorBlockRe = /colors\s*:\s*\{([^}]+)\}/gs
   const colorKeys: string[] = []
   let m: RegExpExecArray | null
@@ -144,7 +128,7 @@ export function parseTailwindConfig(configText: string): string {
   }
   if (colorKeys.length > 0) parts.push(`Custom colors: ${colorKeys.join(', ')}`)
 
-  // Pull spacing keys.
+  // Pull spacing keys
   const spacingBlockRe = /spacing\s*:\s*\{([^}]+)\}/gs
   const spacingEntries: string[] = []
   while ((m = spacingBlockRe.exec(configText)) !== null) {
@@ -161,29 +145,15 @@ export function parseTailwindConfig(configText: string): string {
   return summary.length > MAX_TAILWIND_CHARS ? summary.slice(0, MAX_TAILWIND_CHARS) + '...' : summary
 }
 
-/**
- * Extract structured color tokens for the class panel swatches.
- * Unlike parseTailwindConfig (which returns a string summary for the LLM), this
- * returns {name, value} pairs for every custom color, flattening nested shades.
- *
- * Examples:
- *   brand: { DEFAULT: '#6366f1', light: '#a5b4fc' }
- *   → [{name:'brand', value:'#6366f1'}, {name:'brand-light', value:'#a5b4fc'}]
- *
- *   accent: '#f59e0b'
- *   → [{name:'accent', value:'#f59e0b'}]
- */
 export function extractThemeTokens(configText: string): ThemeTokens {
   const colors: ThemeColor[] = []
   const seen = new Set<string>()
 
-  // Match colors: { ... } blocks (handles theme.colors and theme.extend.colors)
   const colorBlockRe = /colors\s*:\s*\{([\s\S]*?)\}/g
   let blockMatch: RegExpExecArray | null
   while ((blockMatch = colorBlockRe.exec(configText)) !== null) {
     const block = blockMatch[1]
 
-    // Flat entry: colorName: '#hexval' or colorName: "hexval"
     const flatRe = /^\s*['"]?(\w[\w-]*)['"]?\s*:\s*['"]([#\w()%.,\s]+)['"]/gm
     let m: RegExpExecArray | null
     while ((m = flatRe.exec(block)) !== null) {
@@ -195,7 +165,6 @@ export function extractThemeTokens(configText: string): ThemeTokens {
       }
     }
 
-    // Nested entry: colorName: { DEFAULT: '#hex', shade: '#hex', ... }
     const nestedRe = /['"]?(\w[\w-]*)['"]?\s*:\s*\{([^}]+)\}/g
     while ((m = nestedRe.exec(block)) !== null) {
       const prefix = m[1]
@@ -218,12 +187,10 @@ export function extractThemeTokens(configText: string): ThemeTokens {
   return { colors }
 }
 
-/** Best-effort check: does the project have a tailwind.config.*? Gates Tailwind mode. */
 export function isTailwindConfigured(projectRoot: string): boolean {
   return findTailwindConfig(projectRoot) !== null
 }
 
-/** Load theme tokens from the project's Tailwind config (or return empty). */
 export function loadThemeTokens(projectRoot: string): ThemeTokens {
   const twPath = findTailwindConfig(projectRoot)
   if (!twPath) return { colors: [] }
@@ -235,15 +202,9 @@ export function loadThemeTokens(projectRoot: string): ThemeTokens {
 const MAX_CALLER_CHARS = 2500
 const MAX_CALLERS = 3
 
-/**
- * Find files in the project that import and use the given component.
- * Only runs when the source file is a reusable component (capital-letter filename).
- * Used to give the LLM the call site context so it can edit prop values there
- * instead of hardcoding values inside the component template.
- */
 export function findCallerFiles(componentRelPath: string, projectRoot: string): ImportContext[] {
   const componentName = path.basename(componentRelPath).replace(/\.(tsx?|jsx?)$/, '')
-  if (!/^[A-Z]/.test(componentName)) return []  // not a component file
+  if (!/^[A-Z]/.test(componentName)) return []
 
   const results: ImportContext[] = []
   const componentAbs = path.resolve(projectRoot, componentRelPath)
@@ -260,8 +221,6 @@ export function findCallerFiles(componentRelPath: string, projectRoot: string): 
       } else if (/\.(tsx?|jsx?)$/.test(e.name) && abs !== componentAbs) {
         const content = tryRead(abs, MAX_CALLER_CHARS)
         if (!content) continue
-        // File uses the component as a JSX tag — both conditions required to avoid
-        // false positives from files that just happen to mention the name in comments.
         if (content.includes(`<${componentName}`) && content.includes(componentName)) {
           const rel = path.relative(projectRoot, abs).replace(/\\/g, '/')
           results.push({ path: rel, content })
@@ -274,7 +233,6 @@ export function findCallerFiles(componentRelPath: string, projectRoot: string): 
   return results
 }
 
-// Read import files + global CSS for the given source file.
 export function buildFileContext(sourceResult: SourceLike, projectRoot: string): { imports: ImportContext[]; globalCss: string | null } {
   const sourceAbsPath = path.resolve(projectRoot, sourceResult.relativePath)
   const importPaths = resolveImports(sourceResult.fullContent, sourceAbsPath, projectRoot)
@@ -294,7 +252,6 @@ export function buildFileContext(sourceResult: SourceLike, projectRoot: string):
   return { imports, globalCss }
 }
 
-// Full context load: imports + callers + global CSS + tailwind tokens.
 export function loadProjectContext(sourceResult: SourceLike, projectRoot: string): ProjectContext {
   const { imports, globalCss } = buildFileContext(sourceResult, projectRoot)
   const callers = findCallerFiles(sourceResult.relativePath, projectRoot)

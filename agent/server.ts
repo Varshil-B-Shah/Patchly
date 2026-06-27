@@ -1,4 +1,3 @@
-// agent/server.ts
 import { WebSocketServer, WebSocket } from 'ws'
 import { MSG } from '../shared/protocol.js'
 import type { BatchEditEntry, ThemeTokens, ClassInfo, SelectionItem } from '../shared/protocol.js'
@@ -13,22 +12,14 @@ import { inspectElement } from './ast/inspect.js'
 import { loadThemeTokens, isTailwindConfigured } from './contextBuilder.js'
 import type { ResolvedConfig } from './config.js'
 
-/** Ops that inject or remove JSX nodes. These require explicit `confirmed:true` from
- *  the MCP caller when not running as a dry-run; auto-converted to dry-run otherwise. */
 const STRUCTURAL_OPS = new Set(['wrapElement', 'insertChild', 'replaceElement', 'removeElement'])
 
-// Theme is loaded once on first connection and cached for the lifetime of the
-// server process. The project's tailwind.config rarely changes during a session.
 let cachedTheme: ThemeTokens | null = null
 let cachedTailwindConfigured: boolean | null = null
 
-// Latest browser selection, pushed by the extension on every selection change.
-// Process-lifetime cache (like the theme above), read by the MCP bridge via
-// GET_SELECTION. Kept entirely out of editHistory — it's transient UI state.
 let latestSelection: SelectionItem[] = []
 let latestSelectionId = ''
-// Bounded history so the MCP bridge can pin to a specific prior selection by
-// selectionId even after the user clicks elsewhere. Keeps the last 10.
+
 const recentSelections = new Map<string, SelectionItem[]>()
 const MAX_RECENT_SELECTIONS = 10
 
@@ -51,18 +42,13 @@ type PendingEdit =
   | { batch: true; groups: ApplyGroup[] }
   | { batch?: false; operations: EditOperation[]; explanation: string; lineNumber: number }
 
-const pendingEdits = new Map<string, PendingEdit>() // sessionId → pending edit
-// editId → snapshot entry. One per applied edit so the extension's history
-// sidebar can undo any of them individually. Note: undoing an older edit when a
-// newer edit touched the same file restores the older snapshot wholesale
-// (last-write-wins) — acceptable for v2, no per-hunk stacking.
+const pendingEdits = new Map<string, PendingEdit>() 
+
 const editHistory = new Map<string, EditHistoryEntry>()
 
 export async function startServer(port: number, config: ResolvedConfig): Promise<WebSocketServer> {
   const wss = new WebSocketServer({ port })
 
-  // Resolve only once the port is actually bound; reject on bind failure (e.g.
-  // EADDRINUSE) so the caller can try the next port in the scan range.
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error) => { wss.off('listening', onListening); reject(err) }
     const onListening = () => { wss.off('error', onError); resolve() }
@@ -70,9 +56,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
     wss.once('listening', onListening)
   })
 
-  // Track which connected ws clients are extensions (sent PING) vs MCP clients.
-  // Needed to route SCREENSHOT_REQUEST to the extension and the result back to the
-  // MCP client that asked for it.
   const extensionClients = new Set<import('ws').WebSocket>()
   const screenshotCallbacks = new Map<string, import('ws').WebSocket>() // sessionId → requesting ws
 
@@ -80,8 +63,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
   const cloudDevToken = process.env.PATCHLY_DEV_TOKEN
   const cloudProjectId = process.env.PATCHLY_PROJECT_ID
 
-  // Current signed-in member identity (set via PATCHLY_SET_IDENTITY from the extension).
-  // Used to attribute replies with the correct display name + avatar.
   let currentMemberIdentity: { name: string; image?: string } | null = null
 
   const commentStore: CommentStoreInterface = (cloudUrl && cloudDevToken && cloudProjectId)
@@ -114,7 +95,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       projectRoot: config.projectRoot,
       theme: cachedTheme,
       tailwindConfigured: cachedTailwindConfigured,
-      // Cloud info so the extension knows where to sign in + which project to bind.
       cloudApiUrl: cloudUrl ?? null,
       cloudProjectId: cloudProjectId ?? null,
     }))
@@ -135,7 +115,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         ws.send(JSON.stringify({ type: MSG.PONG }))
       }
 
-      // ── MCP bridge: cache the browser selection / answer selection queries ──
       if (msg.type === MSG.SELECTION_UPDATE) {
         latestSelectionId = Math.random().toString(36).slice(2)
         latestSelection = Array.isArray(msg.selection) ? (msg.selection as SelectionItem[]) : []
@@ -153,7 +132,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           if (pinned) {
             ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId, selectionId, selection: pinned }))
           } else {
-            // Requested a selection we no longer have — tell the caller to re-resolve.
             ws.send(JSON.stringify({ type: MSG.SELECTION, sessionId, selectionId, selection: [], stale: true }))
           }
           return
@@ -162,7 +140,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         return
       }
 
-      // ── MCP screenshot verify: forward request to extension, route result back ──
       if (msg.type === MSG.SCREENSHOT_REQUEST) {
         const { sessionId, patchlySrc } = msg as { sessionId: string; patchlySrc?: string }
         if (extensionClients.size === 0) {
@@ -189,12 +166,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       if (msg.type === MSG.EDIT_REQUEST) {
         const { patchlySrc, elementHtml, elementClasses, prompt, sessionId, screenshot_base64, targets } = msg
 
-        // ── Multi-select fan-out ────────────────────────────────────────────
-        // Targets are grouped by file and each file is sent to the LLM exactly
-        // ONCE (with all its targets), which returns one coherent operations[]
-        // for that file. This avoids the per-op drift of stitching together
-        // independent single-target responses, and sends each file once instead
-        // of once per target (big token saving for same-file selections).
         if (Array.isArray(targets) && targets.length > 1) {
           const sendProgress = (stage: string, text?: string) =>
             ws.send(JSON.stringify({ type: MSG.PROGRESS, sessionId, stage, ...(text ? { text } : {}) }))
@@ -202,7 +173,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           console.log(`Batch edit request: "${prompt}" on ${targets.length} targets`)
           sendProgress('analyzing')
 
-          // Resolve every target (cheap, local) and group by file.
           const fileGroups = new Map<string, { sourceResult: ResolvedSource; items: BatchItem[] }>()
           const failed: BatchEditEntry[] = []
           for (const t of targets) {
@@ -238,13 +208,10 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
               llm.ok ? `ok — ${llm.operations.length} op(s): ${llm.operations.map((o) => o.op).join(', ')}` : `FAIL ${llm.code} — ${'message' in llm ? llm.message : llm.explanation}`)
 
             if (!llm.ok) {
-              // Treat "model declined" the same as any other per-file failure.
               edits.push({ ok: false, filePath: relativePath, code: llm.code, message: 'message' in llm ? llm.message : undefined })
               continue
             }
 
-            // Pin file + apply bottom-to-top so a line-shifting op can't
-            // invalidate the line numbers of not-yet-applied ops above it.
             const operations = llm.operations
               .map((op) => ({ ...op, target: { ...op.target, file: relativePath } }) as EditOperation)
               .sort((a, b) => (b.target?.line || 0) - (a.target?.line || 0))
@@ -332,8 +299,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
             return
           }
 
-          // The change belongs to an imported child component — offer to retry
-          // against that file instead of failing.
           if (llmResult.code === 'REDIRECT_SUGGESTED') {
             console.log('Redirect suggested:', llmResult.suggestions.map((s) => s.file).join(', '))
             ws.send(JSON.stringify({
@@ -357,9 +322,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         console.log('LLM response:', llmResult.explanation)
         console.log('  operations:', llmResult.operations.map((o) => o.op).join(', '))
 
-        // Allow cross-file edits (e.g. editing a caller file) when the LLM targets
-        // a file it was explicitly given context for. Any file outside that allowlist
-        // is pinned back to the selected source to prevent LLM path slips.
         const allowedFiles = new Set(llmResult.allowedFiles ?? [sourceResult.relativePath])
         const operations = llmResult.operations.map((op) => {
           const file = allowedFiles.has(op.target.file) ? op.target.file : sourceResult.relativePath
@@ -377,7 +339,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
 
         sendProgress('building')
 
-        // Dry-run the pipeline to produce a preview diff without writing.
         const preview = await applyEditOperations({
           projectRoot: config.projectRoot,
           operations,
@@ -426,8 +387,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           return
         }
 
-        // Batch confirm: apply each file group; emit EDIT_DONE per success (a
-        // history row each) and EDIT_ERROR per group that fails to write.
         if (pending.batch) {
           pendingEdits.delete(sessionId)
           for (const g of pending.groups) {
@@ -489,7 +448,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         pendingEdits.delete(msg.sessionId)
       }
 
-      // ── Direct class panel: inspect element className(s) from source ────────
       if (msg.type === MSG.INSPECT) {
         const { sessionId, patchlySources } = msg as { sessionId: string; patchlySources: string[] }
         const sources = Array.isArray(patchlySources) ? patchlySources : []
@@ -517,7 +475,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           elements.push(result.info)
         }
 
-        // Only fail outright if NOTHING could be inspected.
         if (elements.length === 0) {
           const err = lastError ?? { code: 'NO_SOURCE_ATTR', message: 'Nothing to inspect.' }
           ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: err.code, message: err.message }))
@@ -528,9 +485,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         return
       }
 
-      // ── Direct class panel: apply pre-built ops (no LLM, no preview) ────────
-      // STATELESS: does NOT record into editHistory and does NOT emit EDIT_DONE —
-      // the class panel keeps its own undo/redo. Supports ops across multiple files.
       if (msg.type === MSG.APPLY_OPS) {
         const { sessionId, operations, dryRun, confirmed } = msg as { sessionId: string; operations: EditOperation[]; explanation: string; dryRun?: boolean; confirmed?: boolean }
 
@@ -539,15 +493,10 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           return
         }
 
-        // Trust gate: structural ops (JSX injection/removal) must be explicitly confirmed
-        // when executing for real. Without confirmed:true we auto-convert to dry-run so the
-        // caller sees the diff and can decide before anything is written.
         const hasStructural = operations.some((op) => STRUCTURAL_OPS.has(op.op))
         const forcedDryRun = hasStructural && !dryRun && !confirmed
         const effectiveDryRun = !!dryRun || forcedDryRun
 
-        // Pin each op's file via source-mapper (per-op, so a spoofed path can't
-        // escape and multi-file selections resolve correctly), then group by file.
         const opsByFile = new Map<string, EditOperation[]>()
         for (const op of operations) {
           const t = op.target
@@ -563,7 +512,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
           opsByFile.set(sourceResult.relativePath, group)
         }
 
-        // Apply (or dry-run) each file's ops in one pass. First failure stops.
         let combinedDiff = ''
         for (const fileOps of opsByFile.values()) {
           const editResult = await applyEditOperations({ projectRoot: config.projectRoot, operations: fileOps, dryRun: effectiveDryRun })
@@ -571,7 +519,7 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
             ws.send(JSON.stringify({ type: MSG.EDIT_ERROR, sessionId, code: editResult.code, message: editResult.message }))
             return
           }
-          combinedDiff += editResult.diff  // always collect; MCP uses it to show what changed
+          combinedDiff += editResult.diff
         }
 
         ws.send(JSON.stringify({
@@ -585,7 +533,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
       }
 
       if (msg.type === MSG.UNDO) {
-        // Resolve the target edit: explicit editId, else the most recent entry.
         let editId = msg.editId
         if (!editId) {
           const ids = [...editHistory.keys()]
@@ -619,9 +566,8 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         ws.send(JSON.stringify({ type: MSG.UNDO_DONE, editId }))
       }
 
-      // ── Comment system ────────────────────────────────────────────────────────
+      // Comment system
       if (msg.type === MSG.ADD_COMMENT) {
-        // TODO(PhaseB): validate per-link token from msg.token before storing
         try {
           const comment = await commentStore.add(msg.comment)
           broadcast({ type: MSG.COMMENT_ADDED, comment })
@@ -681,8 +627,6 @@ export async function startServer(port: number, config: ResolvedConfig): Promise
         return
       }
 
-      // Extension teammate signed in (or out) — set the member token so cloud
-      // comment writes are attributed to the verified member. Cloud mode only.
       if (msg.type === 'PATCHLY_SET_IDENTITY') {
         const { token, identity } = msg as { token: string | null; identity?: { name: string; image?: string } | null }
         if (commentStore instanceof CloudCommentClient) {

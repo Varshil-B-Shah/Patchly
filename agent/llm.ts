@@ -1,8 +1,3 @@
-// agent/llm.ts
-// Calls Azure OpenAI and returns a structured EditRequest.
-// Sends a screenshot (vision), direct imports, global CSS, and Tailwind design
-// tokens alongside the component source so the model can see what it's editing.
-
 import { OPS, type EditOperation } from '../shared/operations.js'
 import type { ErrorCode, RedirectSuggestion } from '../shared/protocol.js'
 import { loadProjectContext, type ImportContext } from './contextBuilder.js'
@@ -10,9 +5,6 @@ import type { ResolvedConfig } from './config.js'
 
 const VALID_OPS = new Set<string>(Object.values(OPS))
 
-// ─── Result + input types ─────────────────────────────────────────────────────
-
-/** Minimal source shape the LLM path needs (server passes the full ResolvedSource). */
 export interface LLMSourceInput {
   relativePath: string
   lineNumber: number
@@ -20,7 +12,6 @@ export interface LLMSourceInput {
   fullContent: string
 }
 
-/** One element in a same-file batch edit. */
 export interface BatchItem {
   lineNumber: number
   colNumber: number
@@ -36,9 +27,6 @@ export interface LLMSuccess {
   operations: EditOperation[]
   explanation: string
   confidence: number
-  /** Files the LLM was explicitly given context for — used by the server to
-   *  allow cross-file edits (e.g. editing a caller file). Any op targeting a
-   *  file NOT in this list is pinned back to the originally-selected source. */
   allowedFiles: string[]
 }
 export interface LLMRedirect {
@@ -54,11 +42,11 @@ export interface LLMFailure {
   code: ErrorCode
   message: string
 }
+
 export type LLMResult = LLMSuccess | LLMRedirect | LLMFailure
 
 type CallLLMResult = { ok: true; rawContent: string } | LLMFailure
 
-/** OpenAI chat content: plain text, or a multimodal blocks array (text + image). */
 type UserContent =
   | string
   | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
@@ -69,7 +57,6 @@ interface PromptContext {
   globalCss?: string | null
 }
 
-// Single-element edit (the interactive path): one target + optional screenshot.
 export async function getEditInstruction({
   sourceResult,
   elementHtml,
@@ -87,7 +74,6 @@ export async function getEditInstruction({
   screenshot_base64?: string | null
   onProgress?: ProgressFn
 }): Promise<LLMResult> {
-  // Context (imports, callers, global CSS, tailwind tokens). Best-effort — never blocks.
   let context = { imports: [] as ImportContext[], callers: [] as ImportContext[], globalCss: null as string | null, tailwindTokens: '' }
   try {
     context = loadProjectContext(sourceResult, config.projectRoot)
@@ -109,9 +95,6 @@ export async function getEditInstruction({
   const parsed = parseEditRequest(res.rawContent)
   if (!parsed.ok || !parsed.success) return parsed
 
-  // Collect every file we explicitly sent to the LLM. The server uses this list
-  // to allow cross-file edits (e.g. editing a caller file) while still blocking
-  // any file the LLM invented on its own.
   const allowedFiles = [
     sourceResult.relativePath,
     ...context.imports.map((i) => i.path),
@@ -120,11 +103,6 @@ export async function getEditInstruction({
   return { ...parsed, allowedFiles }
 }
 
-// Multi-element edit within ONE file (the batch / fan-out path): all targets are
-// sent with the file body included exactly once, and the model returns a single
-// coherent operations[] covering every target. This both avoids the per-op drift
-// of merging independent single-target responses AND sends the file once instead
-// of N times. No screenshot (batch is text-context only).
 export async function getBatchEditInstruction({
   sourceResult,
   items,
@@ -149,13 +127,10 @@ export async function getBatchEditInstruction({
   const res = await callLLM({ config, systemPrompt, userContent: userPrompt, onProgress })
   if (!res.ok) return res
   const parsed = parseEditRequest(res.rawContent)
-  // Batch path always stays in the selected file — no callers needed.
   if (parsed.ok && parsed.success) return { ...parsed, allowedFiles: [sourceResult.relativePath] }
   return parsed
 }
 
-// Shared LLM transport: credentials, streaming fetch, idle timeout, finish_reason
-// handling. Returns { ok:true, rawContent } or { ok:false, code, message }.
 async function callLLM({
   config,
   systemPrompt,
@@ -185,8 +160,6 @@ async function callLLM({
   console.log('[LLM] Calling:', url)
   console.log('[LLM] Model:', modelName, '| includeModelInBody:', includeModelInBody)
 
-  // Idle-based abort: reset on every streamed chunk so a long (but progressing)
-  // generation isn't killed, while a truly stalled request still times out.
   const IDLE_TIMEOUT_MS = 45000
   const controller = new AbortController()
   let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -244,7 +217,6 @@ async function callLLM({
       return { ok: false, success: false, code: 'EMPTY_RESPONSE', message: 'LLM returned empty response' }
     }
 
-    // The model hit the token ceiling mid-response — the JSON is truncated.
     if (finishReason === 'length') {
       return {
         ok: false, success: false,
@@ -267,10 +239,6 @@ async function callLLM({
   }
 }
 
-// Read an OpenAI/Azure SSE stream to completion, accumulating the assistant
-// content. Calls armTimeout() on each chunk (idle reset) and onProgress({ stage,
-// text }) with the explanation as soon as it can be extracted from the partial
-// JSON. Returns { content, finishReason }.
 async function consumeStream(
   body: ReadableStream<Uint8Array>,
   armTimeout: () => void,
@@ -285,7 +253,6 @@ async function consumeStream(
 
   const maybeEmitExplanation = () => {
     if (explanationSent || !onProgress) return
-    // explanation is the first JSON field; capture it once its closing quote lands.
     const m = content.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/)
     if (m) {
       explanationSent = true
@@ -300,9 +267,8 @@ async function consumeStream(
     armTimeout()
     buffer += decoder.decode(value, { stream: true })
 
-    // SSE frames are separated by newlines; each data line is a JSON delta.
     const lines = buffer.split('\n')
-    buffer = lines.pop() ?? '' // keep the trailing partial line
+    buffer = lines.pop() ?? ''
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -546,9 +512,6 @@ function buildUserPrompt({
   return lines.join('\n')
 }
 
-// Build a prompt that edits MULTIPLE elements in one file. The file body appears
-// exactly once; each target is listed with its line/column so the model can emit
-// one operation per change with correct positions.
 function buildBatchUserPrompt({
   sourceResult,
   items,
@@ -613,7 +576,6 @@ function parseEditRequest(rawContent: string): LLMResult {
     return { ok: false, success: false, code: 'JSON_PARSE_FAILED', message: "Patchly couldn't understand the AI's response. Please try again." }
   }
 
-  // Validate top-level shape.
   if (
     typeof parsed.explanation !== 'string' ||
     !Array.isArray(parsed.operations) ||
@@ -623,7 +585,6 @@ function parseEditRequest(rawContent: string): LLMResult {
     return { ok: false, success: false, code: 'LLM_BAD_OUTPUT', message: 'LLM response does not match EditRequest schema.' }
   }
 
-  // Cross-file redirect: the target lives in an imported child component.
   if (Array.isArray(parsed.redirect) && parsed.redirect.length > 0) {
     const suggestions: RedirectSuggestion[] = parsed.redirect
       .filter((r: any) => r && typeof r.file === 'string')
@@ -633,12 +594,10 @@ function parseEditRequest(rawContent: string): LLMResult {
     }
   }
 
-  // Cannot edit.
   if (parsed.operations.length === 0) {
     return { ok: false, success: false, code: 'LLM_CANNOT_EDIT', message: parsed.explanation || 'LLM could not make this edit.' }
   }
 
-  // Validate each operation.
   for (const op of parsed.operations) {
     if (!VALID_OPS.has(op.op)) {
       console.log('[LLM] Unknown op:', op.op)
@@ -656,6 +615,6 @@ function parseEditRequest(rawContent: string): LLMResult {
     operations: parsed.operations as EditOperation[],
     explanation: parsed.explanation,
     confidence: parsed.confidence,
-    allowedFiles: [],  // populated by the callers (getEditInstruction / getBatchEditInstruction)
+    allowedFiles: [],
   }
 }

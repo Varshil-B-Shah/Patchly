@@ -1,11 +1,9 @@
-// agent/sourceMapper.ts
 import fs from 'fs'
 import path from 'path'
 import type { ErrorCode } from '../shared/protocol.js'
 
 const MAX_FILE_SIZE_BYTES = 500 * 1024
 
-/** A successfully resolved source location with surrounding context. */
 export interface ResolvedSource {
   success: true
   absolutePath: string
@@ -50,7 +48,6 @@ export function resolveSource(patchlySrc: string | null | undefined, projectRoot
 
   const absolutePath = path.resolve(projectRoot, filePath)
 
-  // Security: ensure the file is inside projectRoot
   if (!absolutePath.startsWith(path.resolve(projectRoot))) {
     return {
       success: false,
