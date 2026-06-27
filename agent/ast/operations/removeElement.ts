@@ -1,6 +1,3 @@
-// agent/ast/operations/removeElement.ts
-// Remove the target element along with its leading whitespace/trivia.
-
 import type { JsxNode, OpResult } from '../types.js'
 import type { RemoveElementOp } from '../../../shared/operations.js'
 

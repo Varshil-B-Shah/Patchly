@@ -1,6 +1,3 @@
-// agent/ast/operations/setText.ts
-// Replace the text content of an element whose only children are text.
-
 import { SyntaxKind, type JsxElement } from 'ts-morph'
 import type { JsxNode, OpResult } from '../types.js'
 import type { SetTextOp } from '../../../shared/operations.js'
@@ -12,7 +9,6 @@ export function setText(node: JsxNode, op: SetTextOp): OpResult {
 
   const el = node as JsxElement
 
-  // Refuse anything other than plain text children (elements/expressions/fragments).
   for (const child of el.getJsxChildren()) {
     const kind = child.getKind()
     if (kind === SyntaxKind.JsxText) continue

@@ -1,6 +1,3 @@
-// agent/ast/operations/replaceElement.ts
-// Replace the whole target element with parsed jsx.
-
 import { validateJsxSnippet } from './_util.js'
 import type { JsxNode, OpResult } from '../types.js'
 import type { ReplaceElementOp } from '../../../shared/operations.js'

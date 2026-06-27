@@ -1,6 +1,3 @@
-// agent/ast/operations/insertChild.ts
-// Parse a jsx payload and insert it as a child at first / last / index.
-
 import { SyntaxKind, type JsxElement } from 'ts-morph'
 import { validateJsxSnippet } from './_util.js'
 import type { JsxNode, OpResult } from '../types.js'
@@ -21,7 +18,6 @@ export function insertChild(node: JsxNode, op: InsertChildOp): OpResult {
   const opening = el.getOpeningElement()
   const closing = el.getClosingElement()
 
-  // Meaningful children = elements, fragments and expressions (skip whitespace text).
   const children = el.getJsxChildren().filter((c) => {
     const kind = c.getKind()
     if (kind === SyntaxKind.JsxText) return c.getText().trim() !== ''

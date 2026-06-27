@@ -1,7 +1,3 @@
-// agent/ast/operations/setInlineStyle.ts
-// Merge keys into the style={{ ... }} object literal (create it if absent).
-// This is the operation the future drag-drop layer calls most.
-
 import {
   SyntaxKind,
   type JsxAttribute,
@@ -21,7 +17,6 @@ export function setInlineStyle(node: JsxNode, op: SetInlineStyleOp): OpResult {
   const opening = getOpening(node)
   const attr = opening.getAttribute('style')
 
-  // No style attribute — create style={{ ... }}.
   if (!attr) {
     const pairs = entries.map(([k, v]) => `${propName(k)}: ${quoteAttr(v)}`).join(', ')
     opening.addAttribute({ name: 'style', initializer: `{{ ${pairs} }}` })
@@ -48,14 +43,12 @@ export function setInlineStyle(node: JsxNode, op: SetInlineStyleOp): OpResult {
 
   const objExpr = expr as ObjectLiteralExpression
 
-  // Merge each key into the existing object literal.
   for (const [k, v] of entries) {
     const name = propName(k)
     const existing = objExpr.getProperty(name)
     if (existing && existing.getKind() === SyntaxKind.PropertyAssignment) {
       ;(existing as PropertyAssignment).setInitializer(quoteAttr(v))
     } else if (existing) {
-      // shorthand / spread / accessor with this name — replace it.
       existing.replaceWithText(`${name}: ${quoteAttr(v)}`)
     } else {
       objExpr.addPropertyAssignment({ name, initializer: quoteAttr(v) })

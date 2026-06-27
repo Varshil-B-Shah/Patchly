@@ -1,6 +1,3 @@
-// agent/ast/operations/wrapElement.ts
-// Wrap the target element in a new element with an optional className.
-
 import { isValidTagName, quoteAttr, validateJsxSnippet } from './_util.js'
 import type { JsxNode, OpResult } from '../types.js'
 import type { WrapElementOp } from '../../../shared/operations.js'

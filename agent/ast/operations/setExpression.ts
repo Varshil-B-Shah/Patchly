@@ -1,11 +1,3 @@
-// agent/ast/operations/setExpression.ts
-// Set a JSX attribute to an arbitrary JS expression, e.g.
-//   disabled={loading || !hasPermission}
-//   style={isActive ? { color: 'red' } : { color: 'gray' }}
-//   className={cn('btn', { 'btn-active': isActive })}
-// The expression string is the raw JS that goes INSIDE the braces.
-// Validated via ts-morph before the file is mutated.
-
 import { SyntaxKind, type JsxAttribute, type Project } from 'ts-morph'
 import { getOpening, validateJsxSnippet } from './_util.js'
 import type { JsxNode, OpResult } from '../types.js'

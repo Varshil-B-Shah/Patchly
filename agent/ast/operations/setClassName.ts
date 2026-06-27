@@ -1,6 +1,3 @@
-// agent/ast/operations/setClassName.ts
-// Add/remove className tokens surgically. Never mangles dynamic classNames.
-
 import {
   SyntaxKind,
   type JsxAttribute,
@@ -17,7 +14,6 @@ export function setClassName(node: JsxNode, op: SetClassNameOp): OpResult {
   const attr =
     opening.getAttribute('className') || opening.getAttribute('class')
 
-  // No className attribute yet — create one if there's anything to add.
   if (!attr) {
     if (add.length === 0) return { ok: true }
     const merged = mergeClasses([], add, remove)
@@ -31,7 +27,6 @@ export function setClassName(node: JsxNode, op: SetClassNameOp): OpResult {
 
   const initializer = (attr as JsxAttribute).getInitializer()
 
-  // className="..."
   if (initializer && initializer.getKind() === SyntaxKind.StringLiteral) {
     const lit = initializer as StringLiteral
     const merged = mergeClasses(tokenizeClasses(lit.getLiteralValue()), add, remove)
@@ -39,7 +34,6 @@ export function setClassName(node: JsxNode, op: SetClassNameOp): OpResult {
     return { ok: true }
   }
 
-  // className={ ... } — only safe if statically a plain string.
   if (initializer && initializer.getKind() === SyntaxKind.JsxExpression) {
     const expr = (initializer as JsxExpression).getExpression()
     const exprKind = expr && expr.getKind()
@@ -48,13 +42,11 @@ export function setClassName(node: JsxNode, op: SetClassNameOp): OpResult {
       exprKind === SyntaxKind.NoSubstitutionTemplateLiteral
     ) {
       const merged = mergeClasses(tokenizeClasses((expr as StringLiteral).getLiteralValue()), add, remove)
-      // Keep the expression-wrapped form: className={"..."}
       expr!.replaceWithText(quoteAttr(merged.join(' ')))
       return { ok: true }
     }
   }
 
-  // clsx(...), ternaries, variables, templates with substitutions, etc.
   return {
     ok: false,
     code: 'DYNAMIC_CLASSNAME',
